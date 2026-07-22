@@ -2,6 +2,8 @@
 
 An enterprise AI agent platform (智能体中台) built with Next.js. It lets organizations build and operate AI agent applications on top of their own knowledge and business processes — from RAG-powered knowledge bases and intelligent Q&A to visual workflow orchestration, process management, and multi-tenant administration.
 
+![RAgent screenshot](docs/assets/screenshot01.png)
+
 ## Core Features
 
 - 🤖 **AI Agent Apps** — build, configure, and publish agent applications, including embeddable chatbots
