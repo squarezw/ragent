@@ -1,0 +1,13 @@
+{
+  "saved": "保存成功",
+  "updated": "更新成功",
+  "deleted": "删除成功",
+  "created": "创建成功",
+  "personalInfoUpdated": "个人信息更新成功",
+  "passwordChanged": "密码修改成功",
+  "wechatUnbound": "企业微信解绑成功",
+  "codeCopied": "代码已复制到剪贴板",
+  "copyFailed": "复制失败，请手动复制",
+  "exportSuccess": "导出成功",
+  "messageSent": "消息已发送"
+}

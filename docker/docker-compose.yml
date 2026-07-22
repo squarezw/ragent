@@ -1,0 +1,84 @@
+services:
+  web:
+    image: squarezw/ragent
+    container_name: ragent-web
+    restart: always
+    ports:
+      - "3001:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../public:/app/public
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+    networks:
+      - ragent-service
+
+  markdown-to-pdf:
+    image: squarezw/markdown-to-pdf
+    container_name: ragent-markdown-to-pdf
+    restart: always
+    # 不映射宿主机端口：web 走 docker 网络 markdown-to-pdf:3000
+    networks:
+      - ragent-service
+
+  onlyoffice:
+    image: onlyoffice/documentserver
+    container_name: ragent-onlyoffice
+    restart: always
+    ports:
+      - "127.0.0.1:18443:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-onlyoffice-dev-secret}
+      - PLUGINS_ENABLED=false
+    entrypoint: ["/usr/local/bin/add-custom-fonts.sh"]
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_lib:/var/lib/onlyoffice
+      - onlyoffice_logs:/var/log/onlyoffice
+      - ./onlyoffice/add-custom-fonts.sh:/usr/local/bin/add-custom-fonts.sh:ro
+      - ./onlyoffice/fonts:/usr/share/fonts/custom:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    networks:
+      - ragent-service
+
+  kkfileview:
+    image: squarezw/kkfileview:v4.4.0
+    container_name: kkfileview
+    restart: always
+    ports:
+      - "127.0.0.1:18012:8012"
+    environment:
+      # 通过环境变量设置信任站点（允许来自这些站点的文件预览）
+      # 由于我们的文件代理服务在 Docker 网络内使用服务名 'web'，需要将其加入信任列表
+      - KK_TRUST_HOST=${KK_TRUST_HOST:-web,localhost,127.0.0.1,0.0.0.0}
+      # 清空不信任站点列表（允许所有站点）
+      - KK_NOT_TRUST_HOST=
+      - KK_OFFICE_PREVIEW_TYPE=pdf
+      - KK_OFFICE_PREVIEW_SWITCH_DISABLED=true
+      - WATERMARK_TXT=${WATERMARK_TXT:-}
+      - KK_BASE_URL=${KK_BASE_URL:-http://localhost:3000/kkpreview}
+      - KK_CONTEXT_PATH=/kkpreview
+      - KK_CACHE_TYPE=default
+      - KK_CACHE_ENABLED=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ragent-service
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_lib:
+  onlyoffice_logs:
+
+networks:
+  ragent-service:
+    name: ragent-service
+    external: true

@@ -1,0 +1,11 @@
+{
+  "title": "Demo 页面",
+  "description": "这里展示各种演示页面和表单组件",
+  "businessTripForm": "公出申请单",
+  "businessTripFormDesc": "企业出差申请表单，包含申请信息和出差主体信息",
+  "salesOrder": "销售订单",
+  "salesOrderDesc": "企业销售订单表单，包含客户信息、产品明细和订单金额",
+  "viewDemo": "查看 Demo",
+  "addNewDemoTip": "想要添加新的 Demo 页面？",
+  "addNewDemoInstruction": "在目录下创建新的页面即可"
+}

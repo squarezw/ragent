@@ -1,0 +1,168 @@
+{
+  "title": "运行时监控",
+  "subtitle": "预审工单实时状态与日志（只读）",
+  "refresh": "刷新",
+  "refreshedAgo": "上次刷新于 {seconds} 秒前",
+  "refreshedJustNow": "刚刚刷新",
+  "autoRefreshHint": "每 30 秒自动刷新",
+  "loadFailed": "加载失败",
+  "retry": "重试",
+  "deepLinkNotFound": "未找到工单 {id}",
+  "stats": {
+    "total": "总任务数",
+    "inProgress": "进行中",
+    "reviewing": "预审中",
+    "avgProgress": "预审进度",
+    "failed": "失败"
+  },
+  "states": {
+    "queued": "排队中",
+    "downloading": "下载中",
+    "archived": "已归档",
+    "reviewing": "预审中",
+    "done": "已完成",
+    "failed": "失败"
+  },
+  "nodeStatus": {
+    "done": "已完成",
+    "active": "进行中",
+    "pending": "待开始",
+    "failed": "异常"
+  },
+  "ordersTabs": {
+    "active": "进行中",
+    "terminal": "已结束"
+  },
+  "activeOrders": {
+    "title": "进行中的任务",
+    "count": "· 共 {total} 个",
+    "empty": "当前没有进行中的任务",
+    "searchPlaceholder": "搜索流水号 / 客户 / 产品名 / 产品号"
+  },
+  "terminalOrders": {
+    "title": "已结束的工单 · 已完成 + 失败",
+    "count": "· 共 {total} 个",
+    "empty": "暂无已结束的工单",
+    "searchPlaceholder": "搜索流水号 / 客户 / 产品名 / 产品号"
+  },
+  "orderColumns": {
+    "serialNumber": "流水号",
+    "customer": "客户",
+    "product": "产品",
+    "productCode": "产品号",
+    "producer": "制作人",
+    "state": "状态",
+    "progress": "进度",
+    "deadline": "交期",
+    "createdAt": "创建时间",
+    "endTime": "结束时间"
+  },
+  "axis": {
+    "title": "流程追踪",
+    "selectPrompt": "从上方任务列表选择一个工单查看流程",
+    "failedBanner": "失败阶段：{phase} · 原因：{reason}",
+    "expand": "展开",
+    "collapse": "收起",
+    "details": "详情"
+  },
+  "axisDetail": {
+    "filesProgress": "已下载 {done}/{total} 个文件",
+    "filesFailed": "失败文件",
+    "sessionDetailId": "预审会话 ID",
+    "noDetail": "无可展开内容",
+    "sourceBaidu": "百度网盘",
+    "sourceAttachment": "附件",
+    "notStarted": "暂未开始",
+    "bucketProgress": "{percent}%",
+    "failedFilesCount": "失败 {count}",
+    "doneFiles": "已完成 {count} 个文件",
+    "doneFilesTruncated": "…仅列出前 {shown} 个"
+  },
+  "params": {
+    "title": "出入参",
+    "oaSubmit": "OA 入参",
+    "baidu": "百度网盘",
+    "attachments": "附件下载",
+    "previewAgent": "预审智能体",
+    "wecom": "企微拉群",
+    "shareUrl": "分享链接",
+    "instruction": "下载指令",
+    "sharePwd": "提取码",
+    "appId": "应用 ID",
+    "salesperson": "销售员",
+    "content": "Prompt 全文",
+    "detailId": "会话 ID",
+    "finishReason": "结束原因",
+    "weChatIds": "企微成员",
+    "chatId": "群 ID",
+    "viewJson": "查看 JSON 原文",
+    "copy": "复制",
+    "copied": "已复制",
+    "empty": "暂无数据"
+  },
+  "logs": {
+    "title": "节点日志",
+    "selectNodePrompt": "点击上方流程节点查看该阶段日志",
+    "errorOnly": "只看错误",
+    "empty": "该阶段暂无日志",
+    "loadMore": "加载更多",
+    "viewDetail": "明细",
+    "levels": {
+      "debug": "调试",
+      "info": "信息",
+      "warn": "警告",
+      "error": "错误"
+    },
+    "sources": {
+      "file-agent": "归档代理",
+      "baidu-agent": "百度代理",
+      "preview-agent": "预审智能体",
+      "system": "系统"
+    }
+  },
+  "pagination": {
+    "prev": "上一页",
+    "next": "下一页",
+    "pageInfo": "第 {page} / 共 {totalPages} 页"
+  },
+  "reviewReport": {
+    "button": "AI 预审报告",
+    "title": "AI 预审报告",
+    "empty": "报告生成中或暂未接入",
+    "loading": "正在加载报告…",
+    "loadFailed": "报告加载失败，请关闭后重试",
+    "stats": {
+      "total": "总检查",
+      "passed": "通过",
+      "failed": "未通过"
+    },
+    "verdict": {
+      "pass": "通过",
+      "fail": "不通过"
+    },
+    "infoChapter": {
+      "title": "图文预审信息章",
+      "fileName": "文件名",
+      "productCode": "产品编号",
+      "colorName": "颜色名称",
+      "artboardSize": "画板尺寸",
+      "unfoldedSize": "展开尺寸",
+      "reviewDate": "预审日期",
+      "operator": "印前制作员"
+    },
+    "checks": "详细检测结果",
+    "checkStatus": {
+      "pass": "通过",
+      "fail": "未通过",
+      "skipped": "未检查"
+    },
+    "skipped": {
+      "title": "未执行预审 · 需人工确认",
+      "hint": "文档颜色模式不是 CMYK，已跳过全部检查，请人工确认。"
+    },
+    "fix": {
+      "title": "修复建议"
+    },
+    "issues": "AI 检测发现问题"
+  }
+}

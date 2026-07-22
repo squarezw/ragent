@@ -1,0 +1,2 @@
+export const SEGMENT_ALL_BATCH_SIZE = 5;
+export const SEGMENT_ALL_MAX_CONCURRENT_BATCHES = 1;

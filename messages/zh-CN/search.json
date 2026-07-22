@@ -1,0 +1,22 @@
+{
+  "title": "搜索",
+  "description": "支持自然语言查询和政策条款关联推导",
+  "backToDatasets": "返回知识库",
+  "selectDataset": "知识库：",
+  "selectDatasetPlaceholder": "请选择知识库",
+  "searchPlaceholder": "如：企业税收优惠政策",
+  "searching": "检索中...",
+  "search": "检索",
+  "searchTopN": "检索前 {n} 条",
+  "deepSearch": "深度搜索",
+  "searchError": "检索异常",
+  "enterQueryAndSearch": "请输入查询内容并点击检索",
+  "segmentId": "分段ID",
+  "relevance": "相关度",
+  "deepRelevance": "深度相关度",
+  "previewOriginal": "预览原文件",
+  "loadFailed": "加载失败",
+  "collapse": "收起",
+  "expand": "展开",
+  "fetchDatasetsFailed": "获取知识库失败"
+}

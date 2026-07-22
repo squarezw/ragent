@@ -1,0 +1,12 @@
+FROM node:22-alpine
+
+# 设置 npm 镜像源
+RUN npm config set registry https://registry.npmmirror.com
+
+# 全局安装 pnpm (避免运行时下载)
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# 默认命令
+CMD ["pnpm", "dev"]

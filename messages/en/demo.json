@@ -1,0 +1,11 @@
+{
+  "title": "Demo Pages",
+  "description": "Showcase various demo pages and form components",
+  "businessTripForm": "Business Trip Application",
+  "businessTripFormDesc": "Enterprise business trip application form with applicant and trip details",
+  "salesOrder": "Sales Order",
+  "salesOrderDesc": "Enterprise sales order form with customer information, product details, and order amount",
+  "viewDemo": "View Demo",
+  "addNewDemoTip": "Want to add a new demo page?",
+  "addNewDemoInstruction": "Create a new page in the directory"
+}

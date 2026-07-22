@@ -1,0 +1,13 @@
+{
+  "saved": "Saved successfully",
+  "updated": "Updated successfully",
+  "deleted": "Deleted successfully",
+  "created": "Created successfully",
+  "personalInfoUpdated": "Personal info updated",
+  "passwordChanged": "Password changed",
+  "wechatUnbound": "WeChat Work unbound",
+  "codeCopied": "Code copied to clipboard",
+  "copyFailed": "Copy failed, please copy manually",
+  "exportSuccess": "Export successful",
+  "messageSent": "Message sent"
+}

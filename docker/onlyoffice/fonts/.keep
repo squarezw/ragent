@@ -1,0 +1,3 @@
+# Drop OnlyOffice custom fonts (.ttf / .ttc / .otf) here.
+# Binaries are .gitignored on purpose — never commit them (bloat + licensing).
+# Registration logic: docker/onlyoffice/add-custom-fonts.sh

@@ -1,0 +1,168 @@
+{
+  "title": "Runtime Monitoring",
+  "subtitle": "Real-time state and logs of pre-review orders (read-only)",
+  "refresh": "Refresh",
+  "refreshedAgo": "Refreshed {seconds}s ago",
+  "refreshedJustNow": "Just refreshed",
+  "autoRefreshHint": "Auto-refreshes every 30s",
+  "loadFailed": "Failed to load",
+  "retry": "Retry",
+  "deepLinkNotFound": "Work order {id} not found",
+  "stats": {
+    "total": "Total Orders",
+    "inProgress": "In Progress",
+    "reviewing": "Reviewing",
+    "avgProgress": "Avg Progress",
+    "failed": "Failed"
+  },
+  "states": {
+    "queued": "Queued",
+    "downloading": "Downloading",
+    "archived": "Archived",
+    "reviewing": "Reviewing",
+    "done": "Done",
+    "failed": "Failed"
+  },
+  "nodeStatus": {
+    "done": "Done",
+    "active": "Active",
+    "pending": "Pending",
+    "failed": "Failed"
+  },
+  "ordersTabs": {
+    "active": "In Progress",
+    "terminal": "Finished"
+  },
+  "activeOrders": {
+    "title": "Active Orders",
+    "count": "· {total} total",
+    "empty": "No active orders",
+    "searchPlaceholder": "Search serial / customer / product / code"
+  },
+  "terminalOrders": {
+    "title": "Finished Orders · Done + Failed",
+    "count": "· {total} total",
+    "empty": "No finished orders",
+    "searchPlaceholder": "Search serial / customer / product / code"
+  },
+  "orderColumns": {
+    "serialNumber": "Serial No.",
+    "customer": "Customer",
+    "product": "Product",
+    "productCode": "Code",
+    "producer": "Producer",
+    "state": "State",
+    "progress": "Progress",
+    "deadline": "Deadline",
+    "createdAt": "Created",
+    "endTime": "Ended"
+  },
+  "axis": {
+    "title": "Process Tracking",
+    "selectPrompt": "Select an order above to view its process",
+    "failedBanner": "Failed phase: {phase} · Reason: {reason}",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "details": "Details"
+  },
+  "axisDetail": {
+    "filesProgress": "Downloaded {done}/{total} files",
+    "filesFailed": "Failed files",
+    "sessionDetailId": "Review Session ID",
+    "noDetail": "Nothing to expand",
+    "sourceBaidu": "Baidu Netdisk",
+    "sourceAttachment": "Attachments",
+    "notStarted": "Not started",
+    "bucketProgress": "{percent}%",
+    "failedFilesCount": "{count} failed",
+    "doneFiles": "{count} files done",
+    "doneFilesTruncated": "…showing first {shown}"
+  },
+  "params": {
+    "title": "Inputs & Outputs",
+    "oaSubmit": "OA Input",
+    "baidu": "Baidu Netdisk",
+    "attachments": "Attachments",
+    "previewAgent": "Pre-review Agent",
+    "wecom": "WeChat Group",
+    "shareUrl": "Share URL",
+    "instruction": "Instruction",
+    "sharePwd": "Extract Code",
+    "appId": "App ID",
+    "salesperson": "Salesperson",
+    "content": "Full Prompt",
+    "detailId": "Session ID",
+    "finishReason": "Finish Reason",
+    "weChatIds": "WeChat Members",
+    "chatId": "Chat ID",
+    "viewJson": "View raw JSON",
+    "copy": "Copy",
+    "copied": "Copied",
+    "empty": "No data"
+  },
+  "logs": {
+    "title": "Node Logs",
+    "selectNodePrompt": "Click a process node above to view its logs",
+    "errorOnly": "Errors only",
+    "empty": "No logs for this phase",
+    "loadMore": "Load more",
+    "viewDetail": "Detail",
+    "levels": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
+    "sources": {
+      "file-agent": "File Agent",
+      "baidu-agent": "Baidu Agent",
+      "preview-agent": "Pre-review Agent",
+      "system": "System"
+    }
+  },
+  "pagination": {
+    "prev": "Prev",
+    "next": "Next",
+    "pageInfo": "Page {page} / {totalPages}"
+  },
+  "reviewReport": {
+    "button": "AI Report",
+    "title": "AI Pre-review Report",
+    "empty": "Report is being generated or not yet available",
+    "loading": "Loading report…",
+    "loadFailed": "Failed to load report, close and retry",
+    "stats": {
+      "total": "Checks",
+      "passed": "Passed",
+      "failed": "Failed"
+    },
+    "verdict": {
+      "pass": "Passed",
+      "fail": "Failed"
+    },
+    "infoChapter": {
+      "title": "Pre-review Info Stamp",
+      "fileName": "File Name",
+      "productCode": "Product Code",
+      "colorName": "Colors",
+      "artboardSize": "Artboard Size",
+      "unfoldedSize": "Unfolded Size",
+      "reviewDate": "Review Date",
+      "operator": "Prepress Operator"
+    },
+    "checks": "Detailed Results",
+    "checkStatus": {
+      "pass": "Pass",
+      "fail": "Fail",
+      "skipped": "Not checked"
+    },
+    "skipped": {
+      "title": "Pre-review skipped · Manual check required",
+      "hint": "Document color mode is not CMYK; all checks were skipped. Please verify manually."
+    },
+    "fix": {
+      "title": "Suggested Fix"
+    },
+    "issues": "Issues Found by AI"
+  }
+}

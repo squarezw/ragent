@@ -1,0 +1,22 @@
+{
+  "title": "Search",
+  "description": "Supports natural language queries and policy inference",
+  "backToDatasets": "Back to Datasets",
+  "selectDataset": "Select Dataset:",
+  "selectDatasetPlaceholder": "Select a dataset",
+  "searchPlaceholder": "e.g.: Corporate tax incentive policy",
+  "searching": "Searching...",
+  "search": "Search",
+  "searchTopN": "Top {n} results",
+  "deepSearch": "Deep Search",
+  "searchError": "Search error",
+  "enterQueryAndSearch": "Enter query and click search",
+  "segmentId": "Segment ID",
+  "relevance": "Relevance",
+  "deepRelevance": "Deep Relevance",
+  "previewOriginal": "Preview original file",
+  "loadFailed": "Load failed",
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "fetchDatasetsFailed": "Failed to fetch datasets"
+}

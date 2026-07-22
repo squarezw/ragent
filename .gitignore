@@ -1,0 +1,50 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+.DS_Store
+
+# dependencies
+/node_modules
+package-lock.json
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+public/uploads/
+public/sop-images/
+logs
+.cursor
+
+backup/
+*.xlsx
+*.csv
+docker/certs/
+
+.pnpm-store/
+.claude/
+.data/
+
+# OnlyOffice custom fonts live in docker/onlyoffice/fonts/ on each
+# deployment. Keep the directory (via .keep) but never commit the
+# font binaries themselves.
+docker/onlyoffice/fonts/*
+!docker/onlyoffice/fonts/.keep
