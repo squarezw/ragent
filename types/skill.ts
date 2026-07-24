@@ -1,6 +1,11 @@
 // Skills 架构类型定义（对齐后端 /api/v1/skills 契约）
 
+import type { ReviewStatus } from "@/lib/reviewStatus";
+
 export type SkillVisibility = "private" | "dept" | "tenant" | "public";
+
+/** P5 审核状态（draft/pending_review/rejected/published），is_active 独立管启停 */
+export type SkillStatus = ReviewStatus;
 
 export interface SkillRequires {
   tools?: string[];
@@ -18,6 +23,8 @@ export interface Skill {
   published_content: string | null;
   requires: SkillRequires | null;
   visibility: SkillVisibility;
+  /** 审核生命周期状态；后端并行开发中可能缺失，用 resolveReviewStatus 容错归一化 */
+  status?: SkillStatus;
   is_active: boolean;
   created_at: string;
   updated_at: string;
