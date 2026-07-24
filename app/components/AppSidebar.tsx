@@ -19,10 +19,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { usePendingReviewCount } from "@/hooks/useReviews";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import {
   Building2,
+  ClipboardCheck,
   GitGraph,
   Home,
   LibraryBig,
@@ -68,11 +70,17 @@ export default function AppSidebar() {
   const canManageOrg = user?.canManageOrg || false;
   const canManageStaff = user?.canManageStaff || false;
 
+  // 待审数徽标（60s 轮询；仅超管/租户管理员可见审核队列）
+  const canReviewQueue = isSuperAdmin || isTenantAdmin;
+  const pendingReviewCount = usePendingReviewCount(canReviewQueue);
+
   type MenuItem = {
     title: string;
     icon: React.ComponentType<{ className?: string }>;
     path: string;
     visible?: boolean;
+    /** 右侧数字徽标（0 不显示） */
+    badge?: number;
   };
   type MenuGroup = { label: string; visible: boolean; items: MenuItem[] };
 
@@ -122,10 +130,17 @@ export default function AppSidebar() {
           visible: isSuperAdmin || isTenantAdmin,
         },
         {
+          // P5 开放自建：普通用户也可创建自己的 Skill（草稿走提交审核）
           title: t("skillsManagement"),
           icon: Sparkles,
           path: "/skills",
-          visible: isSuperAdmin || isTenantAdmin,
+        },
+        {
+          title: t("reviewQueue"),
+          icon: ClipboardCheck,
+          path: "/reviews",
+          visible: canReviewQueue,
+          badge: pendingReviewCount,
         },
         {
           title: t("systemMonitoring"),
@@ -219,6 +234,11 @@ export default function AppSidebar() {
                         >
                           <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>
+                          {item.badge != null && item.badge > 0 && (
+                            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+                              {item.badge > 99 ? "99+" : item.badge}
+                            </span>
+                          )}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}

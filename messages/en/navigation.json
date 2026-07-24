@@ -27,5 +27,6 @@
   "promptMonitoring": "Prompt",
   "toolsManagement": "Tools",
   "processManagement": "Process",
-  "skillsManagement": "Skills"
+  "skillsManagement": "Skills",
+  "reviewQueue": "Review Queue"
 }
