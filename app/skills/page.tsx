@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +27,11 @@ import { Loader2, Plus, Search, Sparkles } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills } from "@/hooks/useSkills";
-import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import {
+  hasUnpublishedChanges,
+  resolveReviewStatus,
+  reviewStatusBadge,
+} from "@/lib/reviewStatus";
 import type { Skill } from "@/types/skill";
 
 const visibilityColors: Record<string, string> = {
@@ -51,8 +55,6 @@ export default function SkillsPage() {
   const [referencedApps, setReferencedApps] = useState<any[] | null>(null);
   const [deletingSkill, setDeletingSkill] = useState<Skill | null>(null);
 
-  const canManage = useMemo(() => checkSuperAdmin(user) || checkTenantAdmin(user), [user]);
-
   const handleDelete = async (skill: Skill) => {
     if (!confirm(t("deleteConfirm", { name: skill.name }))) return;
     const result = await deleteSkill(skill.id);
@@ -62,12 +64,9 @@ export default function SkillsPage() {
     }
   };
 
+  // P5 开放自建：普通用户也可进入 Skill 列表创建自己的 Skill（可见范围由后端裁剪）
   if (userLoading || !user) {
     return <div className="flex items-center justify-center h-64">{tc("loading")}</div>;
-  }
-
-  if (!canManage) {
-    return <div className="flex items-center justify-center h-64">{t("noPermission")}</div>;
   }
 
   return (
@@ -120,9 +119,12 @@ export default function SkillsPage() {
               </TableHeader>
               <TableBody>
                 {skills.map((skill) => {
-                  const isPublished = skill.published_content !== null;
-                  const hasUnpublishedChanges =
-                    isPublished && skill.content !== skill.published_content;
+                  const status = resolveReviewStatus(skill.status, skill.published_content);
+                  const badge = reviewStatusBadge(status);
+                  const unpublishedChanges = hasUnpublishedChanges(
+                    skill.content,
+                    skill.published_content
+                  );
                   return (
                     <TableRow
                       key={skill.id}
@@ -145,12 +147,10 @@ export default function SkillsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {isPublished ? (
-                            <Badge>{t("statusPublished")}</Badge>
-                          ) : (
-                            <Badge variant="secondary">{t("statusDraft")}</Badge>
-                          )}
-                          {hasUnpublishedChanges && (
+                          <Badge variant={badge.variant} className={badge.className}>
+                            {t(badge.labelKey)}
+                          </Badge>
+                          {unpublishedChanges && (
                             <Badge variant="outline" className="text-amber-600 border-amber-300">
                               {t("statusUnpublishedChanges")}
                             </Badge>

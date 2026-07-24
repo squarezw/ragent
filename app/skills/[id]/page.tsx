@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import SkillEditor from "../components/SkillEditor";
+import SkillDiffDialog from "../components/SkillDiffDialog";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
@@ -19,11 +20,15 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const skillId = Number(id);
 
   const { user, loading: userLoading } = useCurrentUser();
-  const { skill, loading, saveDraft, publish, exportMarkdown } = useSkill(
+  const { skill, loading, saveDraft, publish, submitReview, exportMarkdown } = useSkill(
     Number.isFinite(skillId) ? skillId : null
   );
   const [saving, setSaving] = useState(false);
   const [exportContent, setExportContent] = useState<string | null>(null);
+  const [diffSkillId, setDiffSkillId] = useState<number | null>(null);
+
+  // P5：具备审核权者直接发布（自审即过），普通用户走提交审核
+  const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
 
   const handleSaveDraft = async (payload: SkillPayload) => {
     setSaving(true);
@@ -36,6 +41,15 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     const saved = await saveDraft(payload);
     if (saved) {
       await publish();
+    }
+    setSaving(false);
+  };
+
+  const handleSubmitReview = async (payload: SkillPayload) => {
+    setSaving(true);
+    const saved = await saveDraft(payload);
+    if (saved) {
+      await submitReview();
     }
     setSaving(false);
   };
@@ -55,10 +69,6 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
     );
-  }
-
-  if (!checkSuperAdmin(user) && !checkTenantAdmin(user)) {
-    return <div className="flex items-center justify-center h-64">{t("noPermission")}</div>;
   }
 
   if (!skill) {
@@ -88,9 +98,19 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
       <SkillEditor
         skill={skill}
         saving={saving}
+        canReview={canReview}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}
+        onSubmitReview={handleSubmitReview}
+        onShowDiff={() => setDiffSkillId(skill.id)}
         onCancel={() => router.push("/skills")}
+      />
+
+      {/* 草稿 vs 已发布对照 */}
+      <SkillDiffDialog
+        skillId={diffSkillId}
+        skillName={skill.name}
+        onOpenChange={(open) => !open && setDiffSkillId(null)}
       />
 
       {/* SKILL.md 导出预览 */}

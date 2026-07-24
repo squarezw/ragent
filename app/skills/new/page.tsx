@@ -53,21 +53,41 @@ export default function NewSkillPage() {
     }
   };
 
+  // 普通用户：创建即 draft，随后提交审核
+  const handleSubmitReview = async (payload: SkillPayload) => {
+    try {
+      setSaving(true);
+      const skill = await createSkill(payload);
+      if (skill?.id) {
+        await axios.post(`/api/v1/skills/${skill.id}/submit-review`);
+        toast.success(t("submitReviewSuccess"));
+        router.push(`/skills/${skill.id}`);
+      } else {
+        router.push("/skills");
+      }
+    } catch (error) {
+      console.error("Create+submit-review skill error:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (userLoading || !user) {
     return <div className="flex items-center justify-center h-64">{tc("loading")}</div>;
   }
 
-  if (!checkSuperAdmin(user) && !checkTenantAdmin(user)) {
-    return <div className="flex items-center justify-center h-64">{t("noPermission")}</div>;
-  }
+  // P5 开放自建：普通用户也可创建（建即 draft），审核权决定「发布」还是「提交审核」
+  const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <SkillEditor
         skill={null}
         saving={saving}
+        canReview={canReview}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}
+        onSubmitReview={handleSubmitReview}
         onCancel={() => router.push("/skills")}
       />
     </div>

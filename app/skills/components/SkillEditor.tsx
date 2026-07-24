@@ -19,6 +19,11 @@ import {
   isValidSkillName,
   parseNameList,
 } from "@/lib/skillValidation";
+import {
+  hasUnpublishedChanges as computeUnpublishedChanges,
+  resolveReviewStatus,
+  reviewStatusBadge,
+} from "@/lib/reviewStatus";
 import type { Skill, SkillVisibility } from "@/types/skill";
 import type { SkillPayload } from "@/hooks/useSkills";
 
@@ -26,16 +31,25 @@ interface SkillEditorProps {
   /** 编辑模式传入已加载的 skill；新建传 null */
   skill: Skill | null;
   saving: boolean;
+  /** 具备审核权（超管/租户管理员）：显示「发布」（自审即过）；否则显示「提交审核」 */
+  canReview: boolean;
   onSaveDraft: (payload: SkillPayload) => void;
   onPublish: (payload: SkillPayload) => void;
+  /** 普通用户提交审核（先保存草稿再 submit-review） */
+  onSubmitReview: (payload: SkillPayload) => void;
+  /** 「对照」入口（草稿 vs 已发布）；从未发布时不显示 */
+  onShowDiff?: () => void;
   onCancel: () => void;
 }
 
 export default function SkillEditor({
   skill,
   saving,
+  canReview,
   onSaveDraft,
   onPublish,
+  onSubmitReview,
+  onShowDiff,
   onCancel,
 }: SkillEditorProps) {
   const t = useTranslations("skills");
@@ -87,12 +101,16 @@ export default function SkillEditor({
     description.trim().length > 0 &&
     !descriptionTooLong;
 
+  // 四态审核状态（后端 status 缺失时按 published_content 兜底推断）
+  const status = skill ? resolveReviewStatus(skill.status, skill.published_content) : null;
+  const statusBadge = status ? reviewStatusBadge(status) : null;
   const isPublished = skill != null && skill.published_content !== null;
-  const hasUnpublishedChanges =
-    skill != null && isPublished && skill.content !== skill.published_content;
-  // 本地编辑未保存也算「与已发布版本有差异」
-  const localDiffersFromPublished =
-    skill != null && isPublished && content !== skill.published_content;
+  const isPending = status === "pending_review";
+  // 已保存或本地编辑未保存，与已发布版本有差异都算「有未发布修改」
+  const showUnpublishedChanges =
+    skill != null &&
+    (computeUnpublishedChanges(skill.content, skill.published_content) ||
+      computeUnpublishedChanges(content, skill.published_content));
 
   const payload = useMemo<SkillPayload>(
     () => ({
@@ -115,13 +133,12 @@ export default function SkillEditor({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CardTitle>{skill ? t("editSkill") : t("createSkill")}</CardTitle>
-            {skill &&
-              (isPublished ? (
-                <Badge>{t("statusPublished")}</Badge>
-              ) : (
-                <Badge variant="secondary">{t("statusDraft")}</Badge>
-              ))}
-            {(hasUnpublishedChanges || localDiffersFromPublished) && (
+            {statusBadge && (
+              <Badge variant={statusBadge.variant} className={statusBadge.className}>
+                {t(statusBadge.labelKey)}
+              </Badge>
+            )}
+            {showUnpublishedChanges && (
               <Badge variant="outline" className="text-amber-600 border-amber-300">
                 {t("statusUnpublishedChanges")}
               </Badge>
@@ -131,15 +148,35 @@ export default function SkillEditor({
             <Button variant="outline" onClick={onCancel} disabled={saving}>
               {tc("cancel")}
             </Button>
+            {skill != null && isPublished && onShowDiff && (
+              <Button variant="outline" onClick={onShowDiff} disabled={saving}>
+                {t("diffCompare")}
+              </Button>
+            )}
+            {/* 审核中也允许继续保存草稿 */}
             <Button variant="secondary" onClick={() => onSaveDraft(payload)} disabled={!canSubmit}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {t("saveDraft")}
             </Button>
-            <Button onClick={() => onPublish(payload)} disabled={!canSubmit}>
-              {t("publish")}
-            </Button>
+            {canReview ? (
+              // 具备审核权：直接发布（自审即过，后端照写审计）
+              <Button onClick={() => onPublish(payload)} disabled={!canSubmit}>
+                {t("publish")}
+              </Button>
+            ) : isPending ? (
+              // 审核中：禁用提交按钮
+              <Button disabled>{t("statusPendingReview")}</Button>
+            ) : (
+              <Button onClick={() => onSubmitReview(payload)} disabled={!canSubmit}>
+                {t("submitReview")}
+              </Button>
+            )}
           </div>
         </div>
+        {/* 被驳回：契约未含驳回理由字段，展示状态并提示查看审核记录 */}
+        {status === "rejected" && (
+          <p className="text-sm text-destructive mt-2">{t("rejectedHint")}</p>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
