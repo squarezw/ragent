@@ -30,7 +30,7 @@ export function normalizeAppSkill(row: AppSkill): {
   return {
     skillId: row.skill_id ?? (skill.id as number),
     name: row.skill_name || skill.name || "",
-    displayName: row.skill_display_name || skill.display_name || row.skill_name || skill.name || "",
+    displayName: row.display_name || row.skill_display_name || skill.display_name || row.skill_name || skill.name || "",
     description: row.description || skill.description || "",
     isPublished: published,
   };

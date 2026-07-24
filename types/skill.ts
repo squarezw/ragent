@@ -34,6 +34,7 @@ export interface AppSkill {
   // skill 摘要（后端可能平铺或嵌套，两种形状都兼容）
   skill_name?: string;
   skill_display_name?: string;
+  display_name?: string;
   description?: string;
   published_content?: string | null;
   is_published?: boolean;
