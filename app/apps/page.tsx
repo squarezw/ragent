@@ -35,6 +35,7 @@ import {
   Plus,
   Edit,
   Trash2,
+  Send,
   Smartphone,
   Globe,
   MessageCircle,
@@ -47,6 +48,11 @@ import {
   Sparkles,
   LayoutGrid,
 } from "lucide-react";
+import {
+  REVIEW_STATUSES,
+  reviewStatusBadge,
+  type ReviewStatus,
+} from "@/lib/reviewStatus";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -80,7 +86,21 @@ interface App {
   created_at: string;
   updated_at: string;
   is_default?: boolean;
+  /** P5 审核状态；后端并行开发中可能缺失（缺失时不渲染状态徽标，存量行为不变） */
+  status?: ReviewStatus;
+  visibility?: string;
+  owner_dept_id?: number | null;
+  owner_tenant_id?: number | null;
 }
+
+/** 只有后端明确返回合法 status 才渲染徽标（存量应用无 status 字段 → 不显示） */
+const appStatusBadge = (status?: string) =>
+  status && (REVIEW_STATUSES as string[]).includes(status)
+    ? reviewStatusBadge(status as ReviewStatus)
+    : null;
+
+/** draft / rejected 可（重新）提交审核 */
+const canSubmitAppReview = (app: App) => app.status === "draft" || app.status === "rejected";
 
 interface Dataset {
   id: string;
@@ -578,6 +598,21 @@ export default function AppsPage() {
     }
   }, [formData, editingApp, loadApps, datasets, streamFeeds]);
 
+  // 提交应用审核（draft/rejected → pending_review；建即 draft，仅 owner 可测）
+  const handleSubmitAppReview = useCallback(
+    async (app: App) => {
+      try {
+        await axios.post(`/api/v1/apps/${app.id}/submit-review`);
+        toast.success(ts("submitReviewSuccess"));
+        loadApps();
+      } catch (error: any) {
+        const detail = error.response?.data?.detail;
+        toast.error(typeof detail === "string" ? detail : t("operationFailed"));
+      }
+    },
+    [loadApps, t, ts]
+  );
+
   // 删除应用
   const handleDelete = useCallback(async () => {
     if (!deletingApp) return;
@@ -615,22 +650,25 @@ export default function AppsPage() {
               </CardTitle>
               <p className="text-sm text-muted-foreground leading-relaxed">{t("description")}</p>
             </div>
-            {isSuperAdmin && (
-              <div className="flex flex-wrap gap-2 justify-end shrink-0">
-                <Button onClick={handleCreate}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t("createApp")}
-                </Button>
-                <Button variant="outline" onClick={handleCreateFromTemplate}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t("appTemplate")}
-                </Button>
-                <Button variant="outline" onClick={() => setEmbedDialogOpen(true)}>
-                  <Code className="h-4 w-4 mr-2" />
-                  {t("websiteEmbed")}
-                </Button>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2 justify-end shrink-0">
+              {/* P5 开放自建：普通用户也可创建（建即 draft，走提交审核） */}
+              <Button onClick={handleCreate}>
+                <Plus className="h-4 w-4 mr-2" />
+                {t("createApp")}
+              </Button>
+              {isSuperAdmin && (
+                <>
+                  <Button variant="outline" onClick={handleCreateFromTemplate}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    {t("appTemplate")}
+                  </Button>
+                  <Button variant="outline" onClick={() => setEmbedDialogOpen(true)}>
+                    <Code className="h-4 w-4 mr-2" />
+                    {t("websiteEmbed")}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-6">
@@ -648,12 +686,10 @@ export default function AppsPage() {
                 <h3 className="text-lg font-semibold text-foreground">{t("noApps")}</h3>
                 <p className="text-sm text-muted-foreground max-w-md">{t("noAppsDesc")}</p>
               </div>
-              {isSuperAdmin && (
-                <Button onClick={handleCreate} size="lg" className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t("createApp")}
-                </Button>
-              )}
+              <Button onClick={handleCreate} size="lg" className="mt-4">
+                <Plus className="h-4 w-4 mr-2" />
+                {t("createApp")}
+              </Button>
             </div>
           ) : (
             <>
@@ -687,6 +723,7 @@ export default function AppsPage() {
                     <TableHeader>
                       <TableRow className="bg-muted/50 hover:bg-muted/50">
                         <TableHead className="font-semibold">{t("tableHeaderAppName")}</TableHead>
+                        <TableHead className="font-semibold">{tc("status")}</TableHead>
                         <TableHead className="font-semibold">{t("tableHeaderType")}</TableHead>
                         <TableHead className="font-semibold">{t("tableHeaderPlatform")}</TableHead>
                         <TableHead className="font-semibold">{t("tableHeaderAiModel")}</TableHead>
@@ -729,6 +766,18 @@ export default function AppsPage() {
                                   </div>
                                 )}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const badge = appStatusBadge(app.status);
+                                return badge ? (
+                                  <Badge variant={badge.variant} className={badge.className}>
+                                    {ts(badge.labelKey)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge className={`${appTypeColors[app.app_type]} font-medium`}>
@@ -825,6 +874,23 @@ export default function AppsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 )}
+                                {canSubmitAppReview(app) && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleSubmitAppReview(app)}
+                                          className="h-8 w-8 hover:bg-blue-500/10 hover:text-blue-600"
+                                        >
+                                          <Send className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{ts("submitReview")}</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
                                 {isSuperAdmin && (
                                   <>
                                     <TooltipProvider>
@@ -913,6 +979,14 @@ export default function AppsPage() {
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow">
                           <div className="flex flex-wrap gap-2 mb-4">
+                            {(() => {
+                              const badge = appStatusBadge(app.status);
+                              return badge ? (
+                                <Badge variant={badge.variant} className={badge.className}>
+                                  {ts(badge.labelKey)}
+                                </Badge>
+                              ) : null;
+                            })()}
                             <Badge className={`${appTypeColors[app.app_type]} font-medium`}>
                               {app.app_type}
                             </Badge>
@@ -1000,6 +1074,26 @@ export default function AppsPage() {
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>{t("workflowConfig")}</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              {canSubmitAppReview(app) && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSubmitAppReview(app);
+                                        }}
+                                        className="h-8 w-8"
+                                      >
+                                        <Send className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{ts("submitReview")}</TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
                               )}

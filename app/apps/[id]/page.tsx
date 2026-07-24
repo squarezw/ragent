@@ -36,6 +36,7 @@ import {
   ArrowLeft,
   Loader2,
   Plus,
+  Send,
   Settings,
   Trash2,
   Wrench,
@@ -46,8 +47,14 @@ import { useRouter } from "next/navigation";
 import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
 import AppSkillsSection from "../components/AppSkillsSection";
 import AgentMdEditor from "../components/AgentMdEditor";
+import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import {
+  REVIEW_STATUSES,
+  reviewStatusBadge,
+  type ReviewStatus,
+} from "@/lib/reviewStatus";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
@@ -62,12 +69,19 @@ interface AppInfo {
   created_at: string;
   updated_at: string;
   settings?: Record<string, any>;
+  /** P5 审核状态；后端并行开发中可能缺失（缺失时不渲染状态区，存量行为不变） */
+  status?: ReviewStatus;
+  visibility?: string;
+  owner_dept_id?: number | null;
+  owner_tenant_id?: number | null;
 }
 
 export default function AppDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const t = useTranslations("apps");
   const tc = useTranslations("common");
+  const ts = useTranslations("skills");
+  const tr = useTranslations("reviews");
   const { id } = use(params);
   const appId = Number(id);
 
@@ -76,6 +90,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [unbindDialogOpen, setUnbindDialogOpen] = useState(false);
   const [selectedAppToolId, setSelectedAppToolId] = useState<number | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [reviewActionPending, setReviewActionPending] = useState(false);
 
   const {
     tools: appTools,
@@ -126,6 +142,38 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
     }
   };
 
+  // P5：提交应用审核（draft/rejected → pending_review）
+  const handleSubmitReview = async () => {
+    setReviewActionPending(true);
+    try {
+      await axios.post(`/api/v1/apps/${appId}/submit-review`);
+      toast.success(ts("submitReviewSuccess"));
+      await loadAppInfo();
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : t("operationFailed"));
+    } finally {
+      setReviewActionPending(false);
+    }
+  };
+
+  // P5：审核（通过 / 驳回带理由）
+  const handleReview = async (approve: boolean, comment?: string): Promise<boolean> => {
+    setReviewActionPending(true);
+    try {
+      await axios.post(`/api/v1/apps/${appId}/review`, { approve, comment });
+      toast.success(approve ? tr("approveSuccess") : tr("rejectSuccess"));
+      await loadAppInfo();
+      return true;
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : t("operationFailed"));
+      return false;
+    } finally {
+      setReviewActionPending(false);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleString("zh-CN");
@@ -155,6 +203,14 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   }
 
   const isCustom = appInfo.app_type === "Custom";
+
+  // P5 审核状态区：只有后端明确返回合法 status 才渲染（存量应用不变）
+  const status =
+    appInfo.status && (REVIEW_STATUSES as string[]).includes(appInfo.status)
+      ? appInfo.status
+      : null;
+  const statusBadge = status ? reviewStatusBadge(status) : null;
+  const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
 
   return (
     <div
@@ -213,9 +269,64 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
               <div className="text-sm text-muted-foreground mb-1">{tc("createdAt")}</div>
               <div className="text-sm">{formatDate(appInfo.created_at)}</div>
             </div>
+            {statusBadge && (
+              <div className="col-span-2 md:col-span-4 pt-2 border-t">
+                <div className="text-sm text-muted-foreground mb-1">{tc("status")}</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant={statusBadge.variant} className={statusBadge.className}>
+                    {ts(statusBadge.labelKey)}
+                  </Badge>
+                  {(status === "draft" || status === "rejected") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSubmitReview}
+                      disabled={reviewActionPending}
+                    >
+                      <Send className="h-4 w-4 mr-1" />
+                      {ts("submitReview")}
+                    </Button>
+                  )}
+                  {status === "pending_review" && canReview && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleReview(true)}
+                        disabled={reviewActionPending}
+                      >
+                        {tr("approve")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setRejectDialogOpen(true)}
+                        disabled={reviewActionPending}
+                      >
+                        {tr("reject")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {/* 契约未含驳回理由字段：展示状态并提示查看审核记录 */}
+                {status === "rejected" && (
+                  <p className="text-xs text-destructive mt-2">{tr("rejectedHint")}</p>
+                )}
+                {status === "draft" && (
+                  <p className="text-xs text-muted-foreground mt-2">{tr("draftOwnerOnlyHint")}</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
+
+      {/* 驳回弹窗（理由必填） */}
+      <ReviewRejectDialog
+        open={rejectDialogOpen}
+        onOpenChange={setRejectDialogOpen}
+        targetName={appInfo.name}
+        onConfirm={(comment) => handleReview(false, comment)}
+      />
 
       {/* Custom 应用：渲染自定义视图（settings.view_key → 注册表组件）；缺 view_key 时由组件给出明确提示，不留白 */}
       {appInfo.app_type === "Custom" && (
