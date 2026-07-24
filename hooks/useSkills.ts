@@ -3,6 +3,7 @@ import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import type { Skill, SkillRequires, SkillVisibility } from "@/types/skill";
+import type { SkillDiff } from "@/types/review";
 
 export interface SkillPayload {
   name: string;
@@ -118,6 +119,33 @@ export const useSkill = (skillId: number | null) => {
     }
   };
 
+  // 普通用户：提交审核（draft/rejected → pending_review）
+  const submitReview = async (): Promise<boolean> => {
+    if (!skillId) return false;
+    try {
+      await axios.post(`/api/v1/skills/${skillId}/submit-review`);
+      toast.success(t("submitReviewSuccess"));
+      mutate();
+      return true;
+    } catch (error: any) {
+      console.error("Submit skill review error:", error);
+      return false;
+    }
+  };
+
+  // 草稿 vs 已发布对照
+  const fetchDiff = async (): Promise<SkillDiff | null> => {
+    if (!skillId) return null;
+    try {
+      const res = await axios.get(`/api/v1/skills/${skillId}/diff`);
+      const data = res.data as Partial<SkillDiff> | undefined;
+      return { draft: data?.draft ?? "", published: data?.published ?? null };
+    } catch (error: any) {
+      console.error("Fetch skill diff error:", error);
+      return null;
+    }
+  };
+
   const exportMarkdown = async (): Promise<string | null> => {
     if (!skillId) return null;
     try {
@@ -138,6 +166,8 @@ export const useSkill = (skillId: number | null) => {
     error,
     saveDraft,
     publish,
+    submitReview,
+    fetchDiff,
     exportMarkdown,
     refresh: mutate,
   };
