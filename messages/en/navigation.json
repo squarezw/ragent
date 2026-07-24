@@ -26,5 +26,6 @@
   "promptDetail": "Prompt Detail",
   "promptMonitoring": "Prompt",
   "toolsManagement": "Tools",
-  "processManagement": "Process"
+  "processManagement": "Process",
+  "skillsManagement": "Skills"
 }

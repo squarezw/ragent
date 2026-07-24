@@ -26,5 +26,6 @@
   "promptDetail": "提示词详情",
   "promptMonitoring": "提示词监控",
   "toolsManagement": "工具管理",
-  "processManagement": "流程管理"
+  "processManagement": "流程管理",
+  "skillsManagement": "Skill 管理"
 }

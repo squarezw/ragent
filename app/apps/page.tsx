@@ -72,6 +72,7 @@ interface App {
   user_id: number;
   ai_model: string;
   prompt_id: number | null;
+  agent_md?: string | null;
   dataset_ids: string[];
   tool_count?: number;
   email?: string;
@@ -137,6 +138,7 @@ export default function AppsPage() {
   const isSuperAdmin = checkSuperAdmin(user);
   const t = useTranslations("apps");
   const tc = useTranslations("common");
+  const ts = useTranslations("skills");
 
   const [apps, setApps] = useState<App[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -1418,34 +1420,60 @@ export default function AppsPage() {
                       <SelectItem value="openai">OpenAI</SelectItem>
                     </SelectContent>
                   </Select>
+                  {editingApp?.agent_md != null && (
+                    <p className="text-xs text-muted-foreground">{ts("modelOverriddenByAgentMd")}</p>
+                  )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">{t("prompt")}</Label>
-                  <Select
-                    value={formData.prompt_id?.toString() || "none"}
-                    onValueChange={(value) =>
-                      setFormData({
-                        ...formData,
-                        prompt_id: value === "none" ? null : parseInt(value, 10),
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("promptPlaceholder")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">{t("noPrompt")}</SelectItem>
-                      {prompts
-                        .filter((p) => p.is_active !== false)
-                        .map((prompt) => (
-                          <SelectItem key={prompt.id} value={prompt.id.toString()}>
-                            {prompt.role}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {editingApp?.agent_md != null ? (
+                  // 已升级 Agent.md 的应用：提示词选择区替换为模式徽标 + 详情页编辑入口
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">{t("prompt")}</Label>
+                    <div className="flex items-center gap-2 h-10">
+                      <Badge>
+                        <FileText className="h-3 w-3 mr-1" />
+                        {ts("agentMdMode")}
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        onClick={() => router.push(`/apps/${editingApp.id}`)}
+                      >
+                        {ts("editAgentMd")}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{ts("agentMdModeDesc")}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">{t("prompt")}</Label>
+                    <Select
+                      value={formData.prompt_id?.toString() || "none"}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          prompt_id: value === "none" ? null : parseInt(value, 10),
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("promptPlaceholder")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t("noPrompt")}</SelectItem>
+                        {prompts
+                          .filter((p) => p.is_active !== false)
+                          .map((prompt) => (
+                            <SelectItem key={prompt.id} value={prompt.id.toString()}>
+                              {prompt.role}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
 

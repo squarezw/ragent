@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
+import AppSkillsSection from "../components/AppSkillsSection";
+import AgentMdEditor from "../components/AgentMdEditor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import axios from "@/lib/axios";
@@ -56,6 +58,7 @@ interface AppInfo {
   app_type: string;
   platform: string;
   ai_model: string;
+  agent_md?: string | null;
   created_at: string;
   updated_at: string;
   settings?: Record<string, any>;
@@ -368,6 +371,12 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           )}
         </CardContent>
       </Card>
+
+      {/* Skills 绑定区 */}
+      <AppSkillsSection appId={appId} />
+
+      {/* Agent.md 编辑区块 */}
+      <AgentMdEditor appId={appId} platform={appInfo.platform} onChanged={loadAppInfo} />
         </>
       )}
 
