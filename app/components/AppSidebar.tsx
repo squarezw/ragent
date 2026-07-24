@@ -38,6 +38,7 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   User,
   Wrench,
 } from "lucide-react";
@@ -118,6 +119,12 @@ export default function AppSidebar() {
           title: t("promptManagement"),
           icon: MessageSquare,
           path: "/prompts",
+          visible: isSuperAdmin || isTenantAdmin,
+        },
+        {
+          title: t("skillsManagement"),
+          icon: Sparkles,
+          path: "/skills",
           visible: isSuperAdmin || isTenantAdmin,
         },
         {
