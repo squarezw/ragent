@@ -22,6 +22,21 @@
   "rejectReasonRequired": "A reason is required to reject",
   "approveSuccess": "Approved",
   "rejectSuccess": "Rejected",
-  "rejectedHint": "The last review was rejected. Revise and resubmit; see the review records for the rejection reason.",
-  "draftOwnerOnlyHint": "Draft: only the creator can chat-test it; once approved it becomes available per its visibility."
+  "rejectedHint": "The last review was rejected. Revise and resubmit.",
+  "draftOwnerOnlyHint": "Draft: only the creator can chat-test it; once approved it becomes available per its visibility.",
+  "viewRejectReason": "View Rejection Reason",
+  "reviewLogTitle": "Review History",
+  "reviewLogDesc": "Review history of \"{name}\"",
+  "reviewLogTooltip": "Review history",
+  "latestRejectReason": "Latest rejection reason",
+  "reviewerFallback": "Reviewer",
+  "actionSubmit": "Submitted for review",
+  "actionApprove": "Approved",
+  "actionReject": "Rejected",
+  "actionSelfPublish": "Self-published",
+  "earlierRecords": "Earlier records ({count})",
+  "noReviewLog": "No review records yet",
+  "noComment": "(no reason provided)",
+  "reviewLogLoadFailed": "Failed to load review records",
+  "selfReviewHint": "Content you submitted must be reviewed by another admin"
 }

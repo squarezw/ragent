@@ -47,9 +47,11 @@ import { useRouter } from "next/navigation";
 import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
 import AppSkillsSection from "../components/AppSkillsSection";
 import AgentMdEditor from "../components/AgentMdEditor";
+import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { isSelfReview } from "@/lib/reviewQueue";
 import {
   REVIEW_STATUSES,
   reviewStatusBadge,
@@ -72,6 +74,8 @@ interface AppInfo {
   /** P5 审核状态；后端并行开发中可能缺失（缺失时不渲染状态区，存量行为不变） */
   status?: ReviewStatus;
   visibility?: string;
+  /** 创建者（提交人）用户ID，自审判定用 */
+  user_id?: number | null;
   owner_dept_id?: number | null;
   owner_tenant_id?: number | null;
 }
@@ -92,6 +96,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const [selectedAppToolId, setSelectedAppToolId] = useState<number | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [reviewActionPending, setReviewActionPending] = useState(false);
+  const [reviewLogOpen, setReviewLogOpen] = useState(false);
 
   const {
     tools: appTools,
@@ -211,6 +216,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       : null;
   const statusBadge = status ? reviewStatusBadge(status) : null;
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
+  // 审核人不能审自己提交的对象（超管除外，后端违者 403）
+  const selfReview = isSelfReview(user?.id, appInfo.user_id, checkSuperAdmin(user));
 
   return (
     <div
@@ -287,29 +294,43 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                       {ts("submitReview")}
                     </Button>
                   )}
-                  {status === "pending_review" && canReview && (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() => handleReview(true)}
-                        disabled={reviewActionPending}
-                      >
-                        {tr("approve")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => setRejectDialogOpen(true)}
-                        disabled={reviewActionPending}
-                      >
-                        {tr("reject")}
-                      </Button>
-                    </>
-                  )}
+                  {status === "pending_review" &&
+                    canReview &&
+                    (selfReview ? (
+                      <span className="text-xs text-muted-foreground">{tr("selfReviewHint")}</span>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => handleReview(true)}
+                          disabled={reviewActionPending}
+                        >
+                          {tr("approve")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setRejectDialogOpen(true)}
+                          disabled={reviewActionPending}
+                        >
+                          {tr("reject")}
+                        </Button>
+                      </>
+                    ))}
                 </div>
-                {/* 契约未含驳回理由字段：展示状态并提示查看审核记录 */}
+                {/* 被驳回：提示 + 驳回理由入口（审核日志弹窗，惰性拉取） */}
                 {status === "rejected" && (
-                  <p className="text-xs text-destructive mt-2">{tr("rejectedHint")}</p>
+                  <p className="text-xs text-destructive mt-2">
+                    {tr("rejectedHint")}{" "}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs underline"
+                      onClick={() => setReviewLogOpen(true)}
+                    >
+                      {tr("viewRejectReason")}
+                    </Button>
+                  </p>
                 )}
                 {status === "draft" && (
                   <p className="text-xs text-muted-foreground mt-2">{tr("draftOwnerOnlyHint")}</p>
@@ -326,6 +347,14 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         onOpenChange={setRejectDialogOpen}
         targetName={appInfo.name}
         onConfirm={(comment) => handleReview(false, comment)}
+      />
+
+      {/* 审核记录（驳回理由）弹窗 */}
+      <ReviewLogDialog
+        targetType="app"
+        targetId={reviewLogOpen ? appId : null}
+        targetName={appInfo.name}
+        onOpenChange={(open) => !open && setReviewLogOpen(false)}
       />
 
       {/* Custom 应用：渲染自定义视图（settings.view_key → 注册表组件）；缺 view_key 时由组件给出明确提示，不留白 */}

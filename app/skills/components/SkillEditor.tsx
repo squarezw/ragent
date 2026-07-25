@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2 } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import ReviewLogDialog from "@/components/ReviewLogDialog";
 import VisibilitySelect from "@/components/VisibilitySelect";
 import axios from "@/lib/axios";
 import {
@@ -54,8 +55,10 @@ export default function SkillEditor({
 }: SkillEditorProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
+  const tr = useTranslations("reviews");
 
   const [name, setName] = useState(skill?.name || "");
+  const [reviewLogOpen, setReviewLogOpen] = useState(false);
   const [displayName, setDisplayName] = useState(skill?.display_name || "");
   const [description, setDescription] = useState(skill?.description || "");
   const [content, setContent] = useState(skill?.content || "");
@@ -173,10 +176,26 @@ export default function SkillEditor({
             )}
           </div>
         </div>
-        {/* 被驳回：契约未含驳回理由字段，展示状态并提示查看审核记录 */}
+        {/* 被驳回：提示 + 驳回理由入口（审核日志弹窗，惰性拉取） */}
         {status === "rejected" && (
-          <p className="text-sm text-destructive mt-2">{t("rejectedHint")}</p>
+          <p className="text-sm text-destructive mt-2">
+            {t("rejectedHint")}{" "}
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-sm underline"
+              onClick={() => setReviewLogOpen(true)}
+            >
+              {tr("viewRejectReason")}
+            </Button>
+          </p>
         )}
+        <ReviewLogDialog
+          targetType="skill"
+          targetId={reviewLogOpen && skill ? skill.id : null}
+          targetName={skill?.display_name || skill?.name}
+          onOpenChange={(open) => !open && setReviewLogOpen(false)}
+        />
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

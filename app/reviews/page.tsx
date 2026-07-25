@@ -14,16 +14,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle2, ClipboardCheck, Loader2, Smartphone, Sparkles } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, History, Loader2, Smartphone, Sparkles } from "lucide-react";
+import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import SkillDiffDialog from "@/app/skills/components/SkillDiffDialog";
 import { usePendingReviews } from "@/hooks/useReviews";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { isSelfReview } from "@/lib/reviewQueue";
 import type { PendingReviewApp, PendingReviewSkill } from "@/types/review";
 
 /** 驳回弹窗当前指向的对象 */
 interface RejectTarget {
+  kind: "skills" | "apps";
+  id: number;
+  name: string;
+}
+
+/** 审核记录弹窗当前指向的对象 */
+interface LogTarget {
   kind: "skills" | "apps";
   id: number;
   name: string;
@@ -35,10 +44,12 @@ export default function ReviewsPage() {
   const tc = useTranslations("common");
   const { user, loading: userLoading } = useCurrentUser();
 
-  const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
+  const isSuper = checkSuperAdmin(user);
+  const canReview = isSuper || checkTenantAdmin(user);
   const { pending, loading, review } = usePendingReviews(canReview);
 
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
+  const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
   const [diffSkill, setDiffSkill] = useState<PendingReviewSkill | null>(null);
   // 行内通过按钮的进行中标记（kind-id）
   const [approvingKey, setApprovingKey] = useState<string | null>(null);
@@ -64,38 +75,66 @@ export default function ReviewsPage() {
     return <div className="flex items-center justify-center h-64">{t("noPermission")}</div>;
   }
 
-  const renderActions = (kind: "skills" | "apps", id: number, name: string) => (
-    <div className="flex justify-end gap-2">
-      {kind === "skills" ? (
+  const renderActions = (
+    kind: "skills" | "apps",
+    id: number,
+    name: string,
+    submitterId?: number | null
+  ) => {
+    // 审核人不能审自己提交的对象（超管除外，后端违者 403）
+    const selfReview = isSelfReview(user?.id, submitterId, isSuper);
+    return (
+      <div className="flex items-center justify-end gap-2">
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          onClick={() => setDiffSkill(pending.skills.find((s) => s.id === id) || null)}
+          title={t("reviewLogTooltip")}
+          aria-label={t("reviewLogTooltip")}
+          onClick={() => setLogTarget({ kind, id, name })}
         >
-          {t("viewDiff")}
+          <History className="h-4 w-4" />
         </Button>
-      ) : (
-        <Button variant="outline" size="sm" onClick={() => router.push(`/apps/${id}`)}>
-          {t("viewDetail")}
-        </Button>
-      )}
-      <Button
-        size="sm"
-        onClick={() => handleApprove(kind, id)}
-        disabled={approvingKey === `${kind}-${id}`}
-      >
-        {approvingKey === `${kind}-${id}` ? (
-          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+        {kind === "skills" ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDiffSkill(pending.skills.find((s) => s.id === id) || null)}
+          >
+            {t("viewDiff")}
+          </Button>
         ) : (
-          <CheckCircle2 className="h-4 w-4 mr-1" />
+          <Button variant="outline" size="sm" onClick={() => router.push(`/apps/${id}`)}>
+            {t("viewDetail")}
+          </Button>
         )}
-        {t("approve")}
-      </Button>
-      <Button variant="destructive" size="sm" onClick={() => setRejectTarget({ kind, id, name })}>
-        {t("reject")}
-      </Button>
-    </div>
-  );
+        {selfReview ? (
+          <span className="text-xs text-muted-foreground">{t("selfReviewHint")}</span>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              onClick={() => handleApprove(kind, id)}
+              disabled={approvingKey === `${kind}-${id}`}
+            >
+              {approvingKey === `${kind}-${id}` ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+              )}
+              {t("approve")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setRejectTarget({ kind, id, name })}
+            >
+              {t("reject")}
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -148,7 +187,7 @@ export default function ReviewsPage() {
                           {formatDate(skill.submitted_at)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {renderActions("skills", skill.id, skill.name)}
+                          {renderActions("skills", skill.id, skill.name, skill.user_id)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -188,7 +227,7 @@ export default function ReviewsPage() {
                           {formatDate(app.submitted_at)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {renderActions("apps", app.id, app.name)}
+                          {renderActions("apps", app.id, app.name, app.user_id)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -216,6 +255,14 @@ export default function ReviewsPage() {
         skillId={diffSkill?.id ?? null}
         skillName={diffSkill?.name}
         onOpenChange={(open) => !open && setDiffSkill(null)}
+      />
+
+      {/* 审核记录（含驳回理由）弹窗 */}
+      <ReviewLogDialog
+        targetType={logTarget?.kind === "apps" ? "app" : "skill"}
+        targetId={logTarget?.id ?? null}
+        targetName={logTarget?.name}
+        onOpenChange={(open) => !open && setLogTarget(null)}
       />
     </div>
   );

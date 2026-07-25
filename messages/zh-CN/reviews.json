@@ -22,6 +22,21 @@
   "rejectReasonRequired": "驳回必须填写理由",
   "approveSuccess": "已通过",
   "rejectSuccess": "已驳回",
-  "rejectedHint": "最近一次审核被驳回，请修改后重新提交审核；驳回理由请查看审核记录。",
-  "draftOwnerOnlyHint": "草稿状态：仅创建者可对话测试，审核通过后按可见性对外开放。"
+  "rejectedHint": "最近一次审核被驳回，请修改后重新提交审核。",
+  "draftOwnerOnlyHint": "草稿状态：仅创建者可对话测试，审核通过后按可见性对外开放。",
+  "viewRejectReason": "查看驳回理由",
+  "reviewLogTitle": "审核记录",
+  "reviewLogDesc": "「{name}」的审核轨迹",
+  "reviewLogTooltip": "审核记录",
+  "latestRejectReason": "最近一次驳回理由",
+  "reviewerFallback": "审核员",
+  "actionSubmit": "提交审核",
+  "actionApprove": "通过",
+  "actionReject": "驳回",
+  "actionSelfPublish": "自行发布",
+  "earlierRecords": "更早记录（{count}）",
+  "noReviewLog": "暂无审核记录",
+  "noComment": "（未填写理由）",
+  "reviewLogLoadFailed": "审核记录加载失败",
+  "selfReviewHint": "自己提交的内容需由其他管理员审核"
 }

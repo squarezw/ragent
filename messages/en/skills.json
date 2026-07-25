@@ -42,7 +42,7 @@
   "publish": "Publish",
   "submitReview": "Submit for Review",
   "submitReviewSuccess": "Submitted for review",
-  "rejectedHint": "The last review was rejected. Revise and resubmit; see the review records for the rejection reason.",
+  "rejectedHint": "The last review was rejected. Revise and resubmit.",
   "diffCompare": "Compare",
   "diffTitle": "Draft vs Published",
   "diffDraft": "Draft",
