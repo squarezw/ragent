@@ -9,6 +9,7 @@ interface MergedPendingItem {
   name?: unknown;
   display_name?: unknown;
   user_id?: unknown;
+  submitter_name?: unknown;
   submitted_at?: unknown;
 }
 
@@ -18,6 +19,7 @@ function toEntry(item: MergedPendingItem): PendingReviewSkill & PendingReviewApp
     name: typeof item.name === "string" ? item.name : "",
     display_name: typeof item.display_name === "string" ? item.display_name : undefined,
     user_id: typeof item.user_id === "number" ? item.user_id : null,
+    submitter: typeof item.submitter_name === "string" ? item.submitter_name : undefined,
     submitted_at: typeof item.submitted_at === "string" ? item.submitted_at : undefined,
   };
 }

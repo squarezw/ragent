@@ -14,6 +14,7 @@ test("unwrapPendingReviews 后端实际形状：合并 items 按 target_type 拆
         name: "weekly-report",
         display_name: "周报",
         user_id: 42,
+        submitter_name: "test",
         submitted_at: "2026-07-25T01:00:00Z",
       },
       { target_type: "skill", id: 2, name: "meeting-notes", user_id: null },
@@ -25,7 +26,9 @@ test("unwrapPendingReviews 后端实际形状：合并 items 按 target_type 拆
   assert.equal(result.apps.length, 1);
   assert.equal(result.skills[0].display_name, "周报");
   assert.equal(result.skills[0].user_id, 42);
+  assert.equal(result.skills[0].submitter, "test");
   assert.equal(result.skills[1].user_id, null);
+  assert.equal(result.skills[1].submitter, undefined);
   assert.equal(result.apps[0].id, 9);
   assert.equal(result.apps[0].user_id, 7);
 });
