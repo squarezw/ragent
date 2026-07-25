@@ -11,6 +11,8 @@ interface MergedPendingItem {
   user_id?: unknown;
   submitter_name?: unknown;
   submitted_at?: unknown;
+  executable?: unknown;
+  asset_count?: unknown;
 }
 
 function toEntry(item: MergedPendingItem): PendingReviewSkill & PendingReviewApp {
@@ -21,6 +23,9 @@ function toEntry(item: MergedPendingItem): PendingReviewSkill & PendingReviewApp
     user_id: typeof item.user_id === "number" ? item.user_id : null,
     submitter: typeof item.submitter_name === "string" ? item.submitter_name : undefined,
     submitted_at: typeof item.submitted_at === "string" ? item.submitted_at : undefined,
+    // P8a：可执行标注 + draft 资产计数（app 条目后端恒 false/0）
+    executable: item.executable === true,
+    asset_count: typeof item.asset_count === "number" ? item.asset_count : 0,
   };
 }
 

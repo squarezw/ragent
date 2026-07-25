@@ -16,6 +16,8 @@ test("unwrapPendingReviews 后端实际形状：合并 items 按 target_type 拆
         user_id: 42,
         submitter_name: "test",
         submitted_at: "2026-07-25T01:00:00Z",
+        executable: true,
+        asset_count: 3,
       },
       { target_type: "skill", id: 2, name: "meeting-notes", user_id: null },
       { target_type: "app", id: 9, name: "客服助手", user_id: 7 },
@@ -31,6 +33,11 @@ test("unwrapPendingReviews 后端实际形状：合并 items 按 target_type 拆
   assert.equal(result.skills[1].submitter, undefined);
   assert.equal(result.apps[0].id, 9);
   assert.equal(result.apps[0].user_id, 7);
+  // P8a：可执行标注 + 资产计数；字段缺失时降级 false/0
+  assert.equal(result.skills[0].executable, true);
+  assert.equal(result.skills[0].asset_count, 3);
+  assert.equal(result.skills[1].executable, false);
+  assert.equal(result.skills[1].asset_count, 0);
 });
 
 test("unwrapPendingReviews items 形状缺 total 时按 items 长度补", () => {
