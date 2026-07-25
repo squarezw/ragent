@@ -7,11 +7,12 @@
 /**
  * Backend contract (ragent-service):
  *   event: tool_status
- *   data: {"name":"<tool>","skill":"<skill, optional>","phase":"started"|"finished","ok":<bool, finished only>}
+ *   data: {"name":"<tool>","skill":"<skill, optional>","display_name":"<human-readable skill name, optional>","phase":"started"|"finished","ok":<bool, finished only>}
  */
 export interface ToolStatusEvent {
   name: string;
   skill?: string;
+  display_name?: string;
   phase: "started" | "finished";
   ok?: boolean;
 }
@@ -26,6 +27,9 @@ export function parseToolStatusPayload(parsed: unknown): ToolStatusEvent | null 
   const event: ToolStatusEvent = { name: obj.name, phase: obj.phase };
   if (typeof obj.skill === "string" && obj.skill !== "") {
     event.skill = obj.skill;
+  }
+  if (typeof obj.display_name === "string" && obj.display_name !== "") {
+    event.display_name = obj.display_name;
   }
   if (typeof obj.ok === "boolean") {
     event.ok = obj.ok;

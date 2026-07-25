@@ -21,6 +21,37 @@ test("parseToolStatusPayload: started 帧（无 skill）", () => {
   assert.equal(parsed?.skill, undefined);
 });
 
+test("parseToolStatusPayload: 带 display_name 的帧", () => {
+  const parsed = parseToolStatusPayload({
+    name: "execute_skill",
+    skill: "fund-report",
+    display_name: "基金季报/年报生成器",
+    phase: "started",
+  });
+  assert.deepEqual(parsed, {
+    name: "execute_skill",
+    skill: "fund-report",
+    display_name: "基金季报/年报生成器",
+    phase: "started",
+  });
+});
+
+test("parseToolStatusPayload: 无 display_name 时字段缺省", () => {
+  const parsed = parseToolStatusPayload({
+    name: "execute_skill",
+    skill: "fund-report",
+    phase: "finished",
+    ok: true,
+  });
+  assert.deepEqual(parsed, {
+    name: "execute_skill",
+    skill: "fund-report",
+    phase: "finished",
+    ok: true,
+  });
+  assert.equal(parsed?.display_name, undefined);
+});
+
 test("parseToolStatusPayload: finished 帧携带 ok", () => {
   assert.deepEqual(parseToolStatusPayload({ name: "web_search", phase: "finished", ok: true }), {
     name: "web_search",
@@ -42,9 +73,19 @@ test("parseToolStatusPayload: 非法 payload 返回 null", () => {
   assert.equal(parseToolStatusPayload({ phase: "finished", ok: true }), null);
 });
 
-test("parseToolStatusPayload: 非字符串 skill / 非布尔 ok 被忽略", () => {
-  const parsed = parseToolStatusPayload({ name: "x", skill: 42, phase: "finished", ok: "yes" });
+test("parseToolStatusPayload: 非字符串 skill/display_name / 非布尔 ok 被忽略", () => {
+  const parsed = parseToolStatusPayload({
+    name: "x",
+    skill: 42,
+    display_name: ["nope"],
+    phase: "finished",
+    ok: "yes",
+  });
   assert.deepEqual(parsed, { name: "x", phase: "finished" });
+  assert.equal(
+    parseToolStatusPayload({ name: "x", display_name: "", phase: "started" })?.display_name,
+    undefined
+  );
 });
 
 test("extractSseErrorMessage: message/error/detail 字段优先", () => {

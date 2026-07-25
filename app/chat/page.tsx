@@ -232,7 +232,7 @@ export default function ChatPage() {
           attachRun(runId, kind);
         },
         onToolStatus: (status) => {
-          const label = status.skill || status.name;
+          const label = status.display_name || status.skill || status.name;
           if (status.phase === "started") {
             setToolStatus({ label, failed: false });
           } else if (status.ok === false) {
