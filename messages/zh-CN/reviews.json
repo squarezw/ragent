@@ -38,5 +38,6 @@
   "noReviewLog": "暂无审核记录",
   "noComment": "（未填写理由）",
   "reviewLogLoadFailed": "审核记录加载失败",
-  "selfReviewHint": "自己提交的内容需由其他管理员审核"
+  "selfReviewHint": "自己提交的内容需由其他管理员审核",
+  "executableAssets": "含 {count} 个可执行资产"
 }

@@ -14,7 +14,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle2, ClipboardCheck, History, Loader2, Smartphone, Sparkles } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardCheck,
+  FileCode2,
+  History,
+  Loader2,
+  Smartphone,
+  Sparkles,
+} from "lucide-react";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import SkillDiffDialog from "@/app/skills/components/SkillDiffDialog";
@@ -180,7 +188,17 @@ export default function ReviewsPage() {
                   <TableBody>
                     {pending.skills.map((skill: PendingReviewSkill) => (
                       <TableRow key={skill.id}>
-                        <TableCell className="font-mono text-sm">{skill.name}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          <span className="inline-flex items-center gap-2">
+                            {skill.name}
+                            {skill.executable && (
+                              <Badge variant="outline" className="font-sans font-normal gap-1">
+                                <FileCode2 className="h-3 w-3" />
+                                {t("executableAssets", { count: skill.asset_count ?? 0 })}
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell>{skill.display_name || "-"}</TableCell>
                         <TableCell>{skill.submitter || "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">

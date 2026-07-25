@@ -38,5 +38,6 @@
   "noReviewLog": "No review records yet",
   "noComment": "(no reason provided)",
   "reviewLogLoadFailed": "Failed to load review records",
-  "selfReviewHint": "Content you submitted must be reviewed by another admin"
+  "selfReviewHint": "Content you submitted must be reviewed by another admin",
+  "executableAssets": "{count} executable assets"
 }
