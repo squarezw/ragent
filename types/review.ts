@@ -8,6 +8,8 @@ export interface PendingReviewSkill {
   name: string;
   display_name?: string;
   submitter?: string;
+  /** 提交人（作者/owner）用户ID，自审判定用 */
+  user_id?: number | null;
   submitted_at?: string;
 }
 
@@ -16,6 +18,8 @@ export interface PendingReviewApp {
   id: number;
   name: string;
   submitter?: string;
+  /** 提交人（作者/owner）用户ID，自审判定用 */
+  user_id?: number | null;
   submitted_at?: string;
 }
 
@@ -36,6 +40,22 @@ export interface SkillDiff {
 export interface ReviewPayload {
   approve: boolean;
   comment?: string;
+}
+
+/** GET /api/v1/reviews/log 的 target_type 参数 */
+export type ReviewTargetType = "skill" | "app";
+
+/** GET /api/v1/reviews/log → items[] 条目（created_at 倒序 ≤50 条） */
+export interface ReviewLogItem {
+  id: number;
+  /** submit | approve | reject | self_publish；未知值 UI 原样展示 */
+  action: string;
+  /** 审核意见；驳回理由在此 */
+  comment: string | null;
+  actor_id: number | null;
+  /** 执行人显示名；查无此人为 null（UI 退「审核员」） */
+  actor_name: string | null;
+  created_at: string | null;
 }
 
 export type { ReviewStatus };

@@ -2,16 +2,9 @@ import useSWR from "swr";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
-import type { PendingReviews, ReviewPayload } from "@/types/review";
-
-/** 后端响应容错解包（后端并行开发中，字段可能缺失） */
-function unwrapPendingReviews(data: unknown): PendingReviews {
-  const obj = (data ?? {}) as Partial<PendingReviews>;
-  const skills = Array.isArray(obj.skills) ? obj.skills : [];
-  const apps = Array.isArray(obj.apps) ? obj.apps : [];
-  const total = typeof obj.total === "number" ? obj.total : skills.length + apps.length;
-  return { skills, apps, total };
-}
+import { unwrapReviewLog } from "@/lib/reviewLog";
+import { unwrapPendingReviews } from "@/lib/reviewQueue";
+import type { ReviewPayload, ReviewTargetType } from "@/types/review";
 
 const fetcher = async (url: string) => {
   const response = await axios.get(url, { suppressErrorToast: true } as any);
@@ -59,6 +52,33 @@ export const usePendingReviews = (enabled: boolean) => {
     error,
     review,
     refresh: mutate,
+  };
+};
+
+/**
+ * 单个 skill/app 的审核日志（GET /api/v1/reviews/log，倒序 ≤50 条）。
+ * 惰性：targetId=null 或 enabled=false 时不发请求（弹窗打开才拉取）。
+ */
+export const useReviewLog = (
+  targetType: ReviewTargetType,
+  targetId: number | null,
+  enabled: boolean
+) => {
+  const { data, error, isLoading } = useSWR(
+    enabled && targetId != null
+      ? `/api/v1/reviews/log?target_type=${targetType}&target_id=${targetId}`
+      : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
+  );
+
+  return {
+    items: unwrapReviewLog(data),
+    loading: isLoading,
+    error,
   };
 };
 
