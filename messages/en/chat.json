@@ -19,6 +19,8 @@
   "send": "Send",
   "sending": "Sending...",
   "thinking": "AI assistant is thinking...",
+  "toolRunning": "Running {name}…",
+  "toolFailed": "{name} failed",
   "uploadFile": "Upload File",
   "uploadAttachment": "Upload attachments (multiple selection supported)",
   "clearHistory": "Clear History",

@@ -55,6 +55,9 @@ export default function ChatPage() {
   const [enableWebSearch] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
+  // In-flight tool indicator driven by `event: tool_status` SSE frames.
+  // `label` prefers the skill name over the raw tool name.
+  const [toolStatus, setToolStatus] = useState<{ label: string; failed: boolean } | null>(null);
 
   const [referencesDialogOpen, setReferencesDialogOpen] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState<number>(-1);
@@ -171,6 +174,7 @@ export default function ChatPage() {
     setAttachments([]);
     setStreamingMessage("");
     setIsStreaming(false);
+    setToolStatus(null);
     setChatId(0);
   }, [setChatId, setAttachments]);
 
@@ -192,6 +196,7 @@ export default function ChatPage() {
     setLoading(true);
     setStreamingMessage("");
     setIsStreaming(true);
+    setToolStatus(null);
     abortControllerRef.current = null;
 
     try {
@@ -226,6 +231,18 @@ export default function ChatPage() {
         onWorkflowRunStarted: (runId, kind) => {
           attachRun(runId, kind);
         },
+        onToolStatus: (status) => {
+          const label = status.skill || status.name;
+          if (status.phase === "started") {
+            setToolStatus({ label, failed: false });
+          } else if (status.ok === false) {
+            // Keep a lightweight failure hint until the model's follow-up
+            // tokens explain it (cleared on complete/error/new send).
+            setToolStatus({ label, failed: true });
+          } else {
+            setToolStatus(null);
+          }
+        },
         onComplete: (result: any) => {
           const { answer, detail_id, reference, segment_ids } = result;
           setMessages((msgs) => [
@@ -240,6 +257,7 @@ export default function ChatPage() {
           ]);
           setIsStreaming(false);
           setStreamingMessage("");
+          setToolStatus(null);
           setLoading(false);
           abortControllerRef.current = null;
         },
@@ -256,6 +274,7 @@ export default function ChatPage() {
           ]);
           setIsStreaming(false);
           setStreamingMessage("");
+          setToolStatus(null);
           setLoading(false);
           abortControllerRef.current = null;
         },
@@ -277,6 +296,7 @@ export default function ChatPage() {
       ]);
       setIsStreaming(false);
       setStreamingMessage("");
+      setToolStatus(null);
       setLoading(false);
       abortControllerRef.current = null;
     }
@@ -310,6 +330,7 @@ export default function ChatPage() {
 
       setIsStreaming(false);
       setStreamingMessage("");
+      setToolStatus(null);
       setLoading(false);
     }
   };
@@ -433,6 +454,7 @@ export default function ChatPage() {
               messages={messages}
               streamingMessage={streamingMessage}
               isStreaming={isStreaming}
+              toolStatus={toolStatus}
               segments={segments}
               segmentsLoading={segmentsLoading}
               onOpenReferences={openReferencesDialog}
