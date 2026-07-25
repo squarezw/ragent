@@ -1,4 +1,10 @@
 import axios from "@/lib/axios";
+import {
+  extractSseErrorMessage,
+  isSseCommentLine,
+  parseToolStatusPayload,
+  type ToolStatusEvent,
+} from "@/lib/chatSse";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // 复用 axios 认证逻辑的辅助函数
@@ -191,6 +197,13 @@ export function useChatSession() {
           kind: string,
           params?: Record<string, unknown>
         ) => void;
+        /**
+         * Fires on each named SSE frame `event: tool_status` whose data is
+         * `{name, skill?, phase: "started"|"finished", ok?}` — emitted by
+         * ragent-service around every tool execution so the UI can show an
+         * in-flight indicator between token bursts.
+         */
+        onToolStatus?: (status: ToolStatusEvent) => void;
       }
     ) => {
       // 创建 AbortController 用于取消请求
@@ -326,6 +339,9 @@ export function useChatSession() {
                 const trimmedLine = line.trim();
                 if (!trimmedLine) continue;
 
+                // SSE 注释行（心跳 `: ping`）直接跳过
+                if (isSseCommentLine(trimmedLine)) continue;
+
                 // 处理 event: 行
                 if (trimmedLine.startsWith("event: ")) {
                   currentEvent = trimmedLine.slice(7).trim();
@@ -373,6 +389,33 @@ export function useChatSession() {
                       // (no `event:` prefix per SSE spec) doesn't inherit this
                       // event type.
                       currentEvent = null;
+                    }
+                    // Named SSE event: tool_status — backend emits one frame
+                    // when a tool starts and one when it finishes, so the UI
+                    // can show an in-flight indicator between token bursts.
+                    else if (currentEvent === "tool_status") {
+                      if (!isAborted) {
+                        const toolStatus = parseToolStatusPayload(parsed);
+                        if (toolStatus) {
+                          try {
+                            callbacks?.onToolStatus?.(toolStatus);
+                          } catch (cbErr) {
+                            console.warn("[Stream Hook] onToolStatus callback error", cbErr);
+                          }
+                        } else {
+                          console.warn("[Stream Hook] tool_status malformed payload", parsed);
+                        }
+                      }
+                      currentEvent = null;
+                    }
+                    // Named SSE event: error — surface through the existing
+                    // onError path and stop consuming the stream.
+                    else if (currentEvent === "error") {
+                      currentEvent = null;
+                      if (!isAborted) {
+                        callbacks?.onError(new Error(extractSseErrorMessage(parsed)));
+                      }
+                      return;
                     }
                     // 如果 data 包含 "v" 字段，说明是消息内容（无论 event 是什么）
                     else if (parsed.v !== undefined && !isAborted) {
@@ -444,6 +487,14 @@ export function useChatSession() {
                       }
                     }
                   } catch (parseError) {
+                    // error 帧的 data 可能不是 JSON（裸字符串），同样要走 onError
+                    if (currentEvent === "error") {
+                      currentEvent = null;
+                      if (!isAborted) {
+                        callbacks?.onError(new Error(data));
+                      }
+                      return;
+                    }
                     console.warn("[Stream Hook] Failed to parse chunk:", data, parseError);
                   }
                 }
