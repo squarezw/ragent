@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import SkillEditor from "../components/SkillEditor";
 import SkillDiffDialog from "../components/SkillDiffDialog";
+import SkillAssetsPanel from "../components/SkillAssetsPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
@@ -20,7 +21,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const skillId = Number(id);
 
   const { user, loading: userLoading } = useCurrentUser();
-  const { skill, loading, saveDraft, publish, submitReview, exportMarkdown } = useSkill(
+  const { skill, loading, saveDraft, publish, submitReview, exportMarkdown, refresh } = useSkill(
     Number.isFinite(skillId) ? skillId : null
   );
   const [saving, setSaving] = useState(false);
@@ -29,6 +30,8 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
 
   // P5：具备审核权者直接发布（自审即过），普通用户走提交审核
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
+  // P8：资产/exec 配置编辑权 = 作者本人 + 管理员，与后端 _can_edit_skill 同口径
+  const canEditAssets = canReview || (skill?.user_id != null && skill.user_id === user?.id);
 
   const handleSaveDraft = async (payload: SkillPayload) => {
     setSaving(true);
@@ -105,6 +108,9 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         onShowDiff={() => setDiffSkillId(skill.id)}
         onCancel={() => router.push("/skills")}
       />
+
+      {/* P8：可执行资产与运行配置（仅编辑权可见） */}
+      <SkillAssetsPanel skill={skill} canEdit={canEditAssets} onSkillChanged={() => refresh()} />
 
       {/* 草稿 vs 已发布对照 */}
       <SkillDiffDialog

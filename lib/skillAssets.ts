@@ -229,6 +229,17 @@ export function validateAssetPath(path: string): AssetPathError | null {
   return null;
 }
 
+/** 路径错误码 → skills 命名空间的 i18n key（next-intl 的 key 是字面量联合，不能拼字符串） */
+export const PATH_ERROR_MESSAGE_KEY = {
+  empty: "pathErrorEmpty",
+  tooLong: "pathErrorTooLong",
+  backslash: "pathErrorBackslash",
+  absolute: "pathErrorAbsolute",
+  emptySegment: "pathErrorEmptySegment",
+  dotSegment: "pathErrorDotSegment",
+  hiddenSegment: "pathErrorHiddenSegment",
+} as const satisfies Record<AssetPathError, string>;
+
 /** writable_subdirs 校验：相对路径、无 `..`，但允许隐藏段（持久状态目录惯例） */
 export function validateWritableSubdir(input: string): AssetPathError | null {
   const value = normalizeAssetPath(input);
