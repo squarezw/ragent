@@ -19,6 +19,11 @@ export interface SkillsProxyOptions {
   passQuery?: string[];
   /** 期望纯文本响应（如 export 的 SKILL.md / Agent.md） */
   text?: boolean;
+  /**
+   * 放开 axios 的 body 体积上限（资产上传单文件 20MB，base64 后约 27MB）。
+   * 路由侧还要各自配 `api.bodyParser.sizeLimit`，Next 默认 1mb 会先一步 413。
+   */
+  largeBody?: boolean;
 }
 
 export async function proxySkillsApi(
@@ -66,6 +71,8 @@ export async function proxySkillsApi(
       responseType: options.text ? "text" : "json",
       // text 模式下禁用 axios 的 JSON 自动解析
       transformResponse: options.text ? [(data) => data] : undefined,
+      maxBodyLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
+      maxContentLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
     });
 
     if (options.text) {
