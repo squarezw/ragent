@@ -67,6 +67,10 @@ export interface SkillExecConfigSummary {
   writable_subdirs: string[];
   needs_llm: boolean;
   warm_pool: boolean;
+  /** P8b per-run 网关调用上限覆盖；null = 全局默认 */
+  llm_max_calls?: number | null;
+  llm_max_total_tokens?: number | null;
+  updated_at?: string | null;
 }
 
 /** GET /api/v1/skills/{id}/diff 响应 */

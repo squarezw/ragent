@@ -26,8 +26,77 @@ export interface Skill {
   /** 审核生命周期状态；后端并行开发中可能缺失，用 resolveReviewStatus 容错归一化 */
   status?: SkillStatus;
   is_active: boolean;
+  /** 作者用户 ID，编辑权判定用 */
+  user_id?: number | null;
   created_at: string;
   updated_at: string;
+}
+
+/** P8 资产 kind（后端 VALID_ASSET_KINDS） */
+export type SkillAssetKind = "script" | "reference" | "asset" | "data";
+
+/** GET /api/v1/skills/{id}/assets → items[] 条目（不含内容字节） */
+export interface SkillAssetItem {
+  /** skill 目录内相对路径，可含中文与空格 */
+  path: string;
+  kind: string;
+  size_bytes: number;
+  sha256: string;
+  source_repo: string | null;
+  source_commit: string | null;
+  created_by_agent: boolean;
+  updated_at: string | null;
+}
+
+/** GET /api/v1/skills/{id}/assets 响应 */
+export interface SkillAssetList {
+  stage: string;
+  items: SkillAssetItem[];
+  total: number;
+  total_bytes: number;
+}
+
+/** GET|PUT /api/v1/skills/{id}/exec-config 响应 */
+export interface SkillExecConfig {
+  stage: string;
+  entrypoint: string;
+  /** name:tag（digest 锁版本时为 name@digest） */
+  image: string;
+  image_enabled: boolean;
+  timeout_sec: number;
+  writable_subdirs: string[];
+  needs_llm: boolean;
+  warm_pool: boolean;
+  llm_max_calls: number | null;
+  llm_max_total_tokens: number | null;
+  updated_at: string | null;
+}
+
+/** PUT /api/v1/skills/{id}/exec-config 请求体（SkillExecConfigPayload） */
+export interface SkillExecConfigPayload {
+  entrypoint: string;
+  image: string;
+  timeout_sec: number;
+  writable_subdirs: string[];
+  needs_llm: boolean;
+  warm_pool: boolean;
+  llm_max_calls?: number | null;
+  llm_max_total_tokens?: number | null;
+}
+
+/** GET /api/v1/sandbox-images → items[] 条目（取不到时前端降级为手工输入镜像名） */
+export interface SandboxImage {
+  id: number;
+  name: string;
+  tag: string;
+  digest: string | null;
+  is_enabled: boolean;
+  description: string | null;
+  /**
+   * 展示用引用串：digest 非空为 `name@digest`，否则 `name:tag`。
+   * 写 exec-config 时不能用它——见 sandboxImageValue。
+   */
+  ref: string;
 }
 
 /** 应用-Skill 绑定行（GET /api/v1/apps/{appId}/skills，含 skill 摘要） */
