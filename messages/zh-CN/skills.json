@@ -24,7 +24,6 @@
   "availableVariables": "可用变量",
   "requiresTools": "依赖工具",
   "requiresWorkflows": "依赖工作流",
-  "requiresPlaceholder": "逗号分隔的名称",
   "requiresHelp": "名称缺失只在保存时提示 warning，不会阻断",
   "visibility": "可见性",
   "visibility_private": "私有",

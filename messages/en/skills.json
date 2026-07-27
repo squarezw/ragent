@@ -24,7 +24,6 @@
   "availableVariables": "Available variables",
   "requiresTools": "Required tools",
   "requiresWorkflows": "Required workflows",
-  "requiresPlaceholder": "Comma-separated names",
   "requiresHelp": "Missing names only produce warnings on save; they never block",
   "visibility": "Visibility",
   "visibility_private": "Private",
