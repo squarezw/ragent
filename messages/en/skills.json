@@ -123,6 +123,7 @@
   "execAssetsSection": "Executable assets",
   "execAssetsDesc": "Scripts, data and runtime configuration for an executable skill. Changes go back through review before they take effect at runtime.",
   "execMakeExecutable": "Make executable",
+  "assetManifestSection": "Asset manifest",
   "assetsQuota": "{count} files · {size} / {limit} limit",
   "assetsEmpty": "No assets yet",
   "assetsRootGroup": "Root",

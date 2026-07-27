@@ -123,6 +123,7 @@
   "execAssetsSection": "可执行资产",
   "execAssetsDesc": "可执行 skill 的脚本、数据与运行配置。上传后需重新提交审核，通过后才对运行时生效。",
   "execMakeExecutable": "转为可执行 skill",
+  "assetManifestSection": "资产清单",
   "assetsQuota": "{count} 个文件 · {size} / 上限 {limit}",
   "assetsEmpty": "暂无资产",
   "assetsRootGroup": "根目录",

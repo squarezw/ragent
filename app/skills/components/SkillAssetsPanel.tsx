@@ -254,7 +254,7 @@ export default function SkillAssetsPanel({
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <p className="text-sm font-medium flex items-center gap-2">
                 <FileCode2 className="h-4 w-4" />
-                {t("assetsSection")}
+                {t("assetManifestSection")}
               </p>
               <p className="text-xs text-muted-foreground">
                 {t("assetsQuota", {
@@ -277,43 +277,43 @@ export default function SkillAssetsPanel({
               <div className="rounded-md border divide-y">
                 {groups.map((group) => (
                   <div key={group.dir || "__root__"}>
-                    <div className="flex items-center justify-between bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
-                      <span className="font-mono">
+                    <div className="flex items-center justify-between gap-2 bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
+                      <span className="font-mono break-all min-w-0">
                         {group.dir ? `${group.dir}/` : t("assetsRootGroup")}
                       </span>
-                      <span>
+                      <span className="whitespace-nowrap">
                         {group.items.length} · {formatBytes(group.totalBytes)}
                       </span>
                     </div>
-                    <table className="w-full text-xs">
-                      <tbody>
-                        {group.items.map((item) => (
-                          <tr key={item.path} className="border-t">
-                            <td className="font-mono px-3 py-1.5 break-all">{item.path}</td>
-                            <td className="px-3 py-1.5 whitespace-nowrap">
-                              <Badge variant="outline">{assetKindLabel(t, item.kind)}</Badge>
-                            </td>
-                            <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
+                    {/* 行布局而非 table：窄屏下 table-layout:auto 会把路径列压成每字一行并撑出横向滚动 */}
+                    <ul className="text-xs">
+                      {group.items.map((item) => (
+                        <li
+                          key={item.path}
+                          className="border-t px-3 py-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+                        >
+                          <span className="font-mono break-all min-w-0 sm:flex-1">{item.path}</span>
+                          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
+                            <Badge variant="outline">{assetKindLabel(t, item.kind)}</Badge>
+                            <span className="whitespace-nowrap text-muted-foreground">
                               {formatBytes(item.size_bytes)}
-                            </td>
-                            <td className="px-3 py-1.5 whitespace-nowrap font-mono text-muted-foreground">
+                            </span>
+                            <span className="whitespace-nowrap font-mono text-muted-foreground">
                               {shortSha(item.sha256)}
-                            </td>
-                            <td className="px-3 py-1.5 text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                onClick={() => setDeleteTarget(item.path)}
-                                aria-label={t("assetDelete")}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeleteTarget(item.path)}
+                              aria-label={t("assetDelete")}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ))}
               </div>
@@ -392,77 +392,76 @@ export default function SkillAssetsPanel({
                     </Button>
                   </div>
                 </div>
-                <table className="w-full text-xs">
-                  <tbody>
-                    {staged.map((item, index) => {
-                      const entry = plan.entries[index];
-                      return (
-                        <tr key={item.id} className="border-t align-top">
-                          <td className="px-3 py-1.5 w-1/2">
-                            <Input
-                              value={item.path}
-                              onChange={(e) =>
-                                setStaged((prev) =>
-                                  prev.map((s) =>
-                                    s.id === item.id ? { ...s, path: e.target.value } : s
-                                  )
+                <ul className="text-xs">
+                  {staged.map((item, index) => {
+                    const entry = plan.entries[index];
+                    return (
+                      <li
+                        key={item.id}
+                        className="border-t px-3 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3"
+                      >
+                        <div className="min-w-0 sm:flex-1">
+                          <Input
+                            value={item.path}
+                            onChange={(e) =>
+                              setStaged((prev) =>
+                                prev.map((s) =>
+                                  s.id === item.id ? { ...s, path: e.target.value } : s
                                 )
-                              }
-                              className={`h-7 text-xs font-mono ${
-                                entry?.error ? "border-destructive" : ""
-                              }`}
-                              aria-label={t("uploadTargetPath")}
-                            />
-                            {entry?.error && (
-                              <p className="text-destructive mt-1">
-                                {uploadErrorMessage(t, entry.error)}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 whitespace-nowrap">
-                            <Select
-                              value={entry?.kind ?? "reference"}
-                              onValueChange={(value) =>
-                                setStaged((prev) =>
-                                  prev.map((s) =>
-                                    s.id === item.id ? { ...s, kind: value as SkillAssetKind } : s
-                                  )
+                              )
+                            }
+                            className={`h-7 text-xs font-mono ${
+                              entry?.error ? "border-destructive" : ""
+                            }`}
+                            aria-label={t("uploadTargetPath")}
+                          />
+                          {entry?.error && (
+                            <p className="text-destructive mt-1 break-words">
+                              {uploadErrorMessage(t, entry.error)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
+                          <Select
+                            value={entry?.kind ?? "reference"}
+                            onValueChange={(value) =>
+                              setStaged((prev) =>
+                                prev.map((s) =>
+                                  s.id === item.id ? { ...s, kind: value as SkillAssetKind } : s
                                 )
-                              }
-                            >
-                              <SelectTrigger className="h-7 w-28 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ASSET_KINDS.map((kind) => (
-                                  <SelectItem key={kind} value={kind}>
-                                    {assetKindLabel(t, kind)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </td>
-                          <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-28 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ASSET_KINDS.map((kind) => (
+                                <SelectItem key={kind} value={kind}>
+                                  {assetKindLabel(t, kind)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <span className="whitespace-nowrap text-muted-foreground">
                             {formatBytes(item.file.size)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() =>
-                                setStaged((prev) => prev.filter((s) => s.id !== item.id))
-                              }
-                              aria-label={t("uploadRemove")}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 ml-auto"
+                            onClick={() =>
+                              setStaged((prev) => prev.filter((s) => s.id !== item.id))
+                            }
+                            aria-label={t("uploadRemove")}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </div>
