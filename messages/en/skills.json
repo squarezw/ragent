@@ -44,7 +44,7 @@
   "submitReviewSuccess": "Submitted for review",
   "rejectedHint": "The last review was rejected. Revise and resubmit.",
   "diffCompare": "Compare",
-  "diffTitle": "Draft vs Published",
+  "diffTitle": "Published vs Draft",
   "diffDraft": "Draft",
   "diffPublished": "Published",
   "diffNotPublished": "(never published)",

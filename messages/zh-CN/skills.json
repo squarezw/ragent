@@ -44,7 +44,7 @@
   "submitReviewSuccess": "已提交审核",
   "rejectedHint": "最近一次审核被驳回，请修改后重新提交审核。",
   "diffCompare": "对照",
-  "diffTitle": "草稿 vs 已发布",
+  "diffTitle": "已发布 vs 草稿",
   "diffDraft": "草稿",
   "diffPublished": "已发布",
   "diffNotPublished": "（从未发布）",
