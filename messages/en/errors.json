@@ -17,10 +17,10 @@
   "wechatAuthFailed": "Failed to get WeChat Work authorization",
   "qrGenerationFailed": "Failed to generate QR code",
   "unbindFailed": "Unbind failed",
-  "cannotLoadApps": "Unable to load apps",
+  "cannotLoadApps": "Unable to load digital employees",
   "loadDatasetsFailed": "Failed to load datasets",
   "loadPromptsFailed": "Failed to load prompts",
   "loadWechatAppsFailed": "Failed to load WeChat apps",
-  "enterAppName": "Please enter app name",
-  "cannotDeleteApp": "Unable to delete app"
+  "enterAppName": "Please enter digital employee name",
+  "cannotDeleteApp": "Unable to delete digital employee"
 }

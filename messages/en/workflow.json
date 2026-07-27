@@ -53,7 +53,7 @@
   "apiEndpoint": "API Endpoint",
   "requestMethod": "Request Method",
   "workflowConfig": "Workflow Configuration",
-  "appType": "App Type",
+  "appType": "Type",
   "viewMode": "Workflow display mode (save not supported)",
   "workflowEditor": "Workflow Editor",
   "editorDesc": "Drag nodes, connect handles, configure properties",

@@ -31,7 +31,7 @@
   "superAdminMode": "超级管理员模式：可以查看所有提示词（包括停用的），可以停用、启用、编辑所有提示词，只能删除已停用的提示词",
   "noDefaultPrompt": "当前没有默认提示词，系统将使用内置的默认提示词",
   "cannotDisable": "无法停用提示词",
-  "promptInUse": "提示词「{name}」正在被以下 {count} 个应用使用，无法停用。请先解除这些应用与该提示词的关联。",
+  "promptInUse": "提示词「{name}」正在被以下 {count} 个数字员工使用，无法停用。请先解除这些数字员工与该提示词的关联。",
   "iKnow": "我知道了",
   "noPermission": "没有权限访问提示词管理",
   "pleaseLogin": "请先登录",

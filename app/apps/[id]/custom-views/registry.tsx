@@ -18,7 +18,7 @@ export function CustomViewRenderer({ viewKey }: { viewKey?: string }) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>该自定义应用尚未配置视图（settings.view_key 为空）。</span>
+        <span>该自定义数字员工尚未配置视图（settings.view_key 为空）。</span>
       </div>
     );
   }
