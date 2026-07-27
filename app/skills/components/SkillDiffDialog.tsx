@@ -10,10 +10,12 @@ import {
   diffExecConfig,
   formatBytes,
   parseSkillDiff,
+  shortSha,
   summarizeAssetDiff,
   type ExecConfigField,
 } from "@/lib/skillAssets";
 import type { SkillAssetDiffItem, SkillDiff, SkillExecConfigSummary } from "@/types/review";
+import TextDiffView from "./TextDiffView";
 
 interface SkillDiffDialogProps {
   /** null = 关闭 */
@@ -44,6 +46,74 @@ function AssetSizeCell({ item }: { item: SkillAssetDiffItem }) {
     );
   }
   return <span>{formatBytes(item.draft_size)}</span>;
+}
+
+/** 文本型资产（后端给了 draft_text/published_text）可展开逐行对照；二进制只给指纹与大小 */
+function AssetDiffRow({
+  item,
+  kindLabel,
+  changeLabel,
+}: {
+  item: SkillAssetDiffItem;
+  kindLabel: string;
+  changeLabel: string;
+}) {
+  const t = useTranslations("skills");
+  const [open, setOpen] = useState(false);
+  const hasText = item.draft_text !== null || item.published_text !== null;
+  const diffable = hasText && item.change !== "unchanged";
+  const fingerprintChanged =
+    item.change === "modified" && item.draft_sha256 !== item.published_sha256;
+
+  return (
+    <>
+      <tr className="border-b last:border-0">
+        <td className="font-mono px-3 py-1.5 break-all">
+          {item.path}
+          {!hasText && fingerprintChanged && (
+            <span className="block font-sans text-[11px] text-muted-foreground">
+              {t("diffAssetBinary")} ·{" "}
+              {t("diffAssetFingerprint", {
+                from: shortSha(item.published_sha256),
+                to: shortSha(item.draft_sha256),
+              })}
+            </span>
+          )}
+          {diffable && (
+            <button
+              type="button"
+              onClick={() => setOpen((prev) => !prev)}
+              className="block font-sans text-[11px] text-primary hover:underline"
+            >
+              {open ? t("diffAssetTextHide") : t("diffAssetTextShow")}
+            </button>
+          )}
+        </td>
+        <td className="px-3 py-1.5">{kindLabel}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">
+          <AssetSizeCell item={item} />
+        </td>
+        <td className="px-3 py-1.5 text-right">
+          <Badge variant="outline" className={CHANGE_BADGE_CLASS[item.change] ?? ""}>
+            {changeLabel}
+          </Badge>
+        </td>
+      </tr>
+      {diffable && open && (
+        <tr className="border-b last:border-0">
+          <td colSpan={4} className="px-3 py-2 bg-muted/30">
+            <TextDiffView
+              left={item.published_text ?? ""}
+              right={item.draft_text ?? ""}
+              leftLabel={t("diffPublished")}
+              rightLabel={t("diffDraft")}
+              maxHeightClass="max-h-[30vh]"
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
 }
 
 /** 单侧（draft 或 published）exec 配置摘要；changedFields 标注与另一侧的差异 */
@@ -120,7 +190,8 @@ function ExecConfigColumn({
 
 /**
  * 草稿 vs 已发布两栏对照（GET /api/v1/skills/{id}/diff）。
- * 简单左右 pre 对照，不引 diff 库。
+ * 行级 + 字符级 diff 由自研的 lib/textDiff 计算（无第三方 diff 依赖），渲染见 TextDiffView。
+ * 左栏固定为旧版（已发布）、右栏为新版（草稿），与通用 diff 工具的红左绿右方位一致。
  * P8a：可执行 skill 追加资产清单对照（新增/删除/变更标注）+ exec 配置摘要。
  */
 export default function SkillDiffDialog({
@@ -211,20 +282,16 @@ export default function SkillDiffDialog({
           <p className="text-sm text-muted-foreground py-8 text-center">{t("diffLoadFailed")}</p>
         ) : diff ? (
           <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2 min-w-0">
-                <p className="text-sm font-medium">{t("diffDraft")}</p>
-                <pre className="text-xs bg-muted rounded-md p-3 max-h-[45vh] overflow-auto whitespace-pre-wrap">
-                  {diff.draft || t("diffEmpty")}
-                </pre>
-              </div>
-              <div className="space-y-2 min-w-0">
-                <p className="text-sm font-medium">{t("diffPublished")}</p>
-                <pre className="text-xs bg-muted rounded-md p-3 max-h-[45vh] overflow-auto whitespace-pre-wrap">
-                  {diff.published ?? t("diffNotPublished")}
-                </pre>
-              </div>
-            </div>
+            <TextDiffView
+              left={diff.published ?? ""}
+              right={diff.draft}
+              leftLabel={
+                diff.published === null
+                  ? `${t("diffPublished")} ${t("diffNotPublished")}`
+                  : t("diffPublished")
+              }
+              rightLabel={t("diffDraft")}
+            />
 
             {/* P8a：可执行资产清单（draft vs published 变更标注） */}
             {diff.assets.length > 0 && summary && (
@@ -251,21 +318,12 @@ export default function SkillDiffDialog({
                     </thead>
                     <tbody>
                       {diff.assets.map((item) => (
-                        <tr key={`${item.change}-${item.path}`} className="border-b last:border-0">
-                          <td className="font-mono px-3 py-1.5 break-all">{item.path}</td>
-                          <td className="px-3 py-1.5">{assetKindLabel(item.kind)}</td>
-                          <td className="px-3 py-1.5 whitespace-nowrap">
-                            <AssetSizeCell item={item} />
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <Badge
-                              variant="outline"
-                              className={CHANGE_BADGE_CLASS[item.change] ?? ""}
-                            >
-                              {changeLabel(item.change)}
-                            </Badge>
-                          </td>
-                        </tr>
+                        <AssetDiffRow
+                          key={`${item.change}-${item.path}`}
+                          item={item}
+                          kindLabel={assetKindLabel(item.kind)}
+                          changeLabel={changeLabel(item.change)}
+                        />
                       ))}
                     </tbody>
                   </table>
