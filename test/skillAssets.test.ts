@@ -7,6 +7,7 @@ import {
   diffExecConfig,
   encodeAssetPath,
   formatBytes,
+  formatLlmQuota,
   groupAssetsByDir,
   inferAssetKind,
   joinEncodedSegments,
@@ -15,6 +16,7 @@ import {
   normalizeExecConfig,
   parseAssetList,
   parseExecConfig,
+  parseLlmQuota,
   parseSandboxImages,
   parseSkillDiff,
   planUploads,
@@ -527,4 +529,33 @@ test("arrayBufferToBase64 与 Buffer 编码一致（含大于分块阈值的输�
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) % 256;
   assert.equal(arrayBufferToBase64(bytes.buffer), Buffer.from(bytes).toString("base64"));
   assert.equal(arrayBufferToBase64(new Uint8Array([]).buffer), "");
+});
+
+test("parseLlmQuota 空串视为显式清空（提交 null = 不限）", () => {
+  assert.deepEqual(parseLlmQuota(""), { value: null, valid: true });
+  assert.deepEqual(parseLlmQuota("   "), { value: null, valid: true });
+});
+
+test("parseLlmQuota 接受 ≥1 的整数", () => {
+  assert.deepEqual(parseLlmQuota("1"), { value: 1, valid: true });
+  assert.deepEqual(parseLlmQuota(" 64000 "), { value: 64000, valid: true });
+});
+
+test("parseLlmQuota 拒绝 0 / 负数 / 小数 / 非数字（后端 ge=1 会 422）", () => {
+  for (const raw of ["0", "-1", "1.5", "1e3", "abc", "12x", "+3"]) {
+    assert.deepEqual(parseLlmQuota(raw), { value: null, valid: false }, raw);
+  }
+});
+
+test("formatLlmQuota 把 null 渲染成空串以配合占位符提示", () => {
+  assert.equal(formatLlmQuota(null), "");
+  assert.equal(formatLlmQuota(undefined), "");
+  assert.equal(formatLlmQuota(0), "0");
+  assert.equal(formatLlmQuota(20), "20");
+});
+
+test("formatLlmQuota → parseLlmQuota 往返保值", () => {
+  for (const value of [null, 1, 12, 500000]) {
+    assert.equal(parseLlmQuota(formatLlmQuota(value)).value, value);
+  }
 });

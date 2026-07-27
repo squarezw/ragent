@@ -515,6 +515,30 @@ export function willRevertToDraft(status: string | null | undefined): boolean {
   return status === "published" || status === "rejected";
 }
 
+export interface LlmQuotaInput {
+  /** 提交给后端的值；null = 不限（后端回落到全局默认） */
+  value: number | null;
+  valid: boolean;
+}
+
+/**
+ * LLM 每次运行配额输入解析。空串 = 显式清空为不限（后端 PUT 是整字段覆盖，null 即清空）。
+ * 下限取 1 而非 0：后端 SkillExecConfigPayload 对两个字段都是 ge=1，填 0 会被 422 挡回来。
+ */
+export function parseLlmQuota(raw: string): LlmQuotaInput {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { value: null, valid: true };
+  if (!/^\d+$/.test(trimmed)) return { value: null, valid: false };
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return { value: null, valid: false };
+  return { value: parsed, valid: true };
+}
+
+/** 后端配额值 → 输入框显示值（null/缺失 = 空串，占位符提示"不限"） */
+export function formatLlmQuota(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
 /** ArrayBuffer → base64（分块避免 String.fromCharCode 参数过多爆栈） */
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

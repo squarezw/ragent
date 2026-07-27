@@ -16,6 +16,8 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, X } from "lucide-react";
 import {
   PATH_ERROR_MESSAGE_KEY,
+  formatLlmQuota,
+  parseLlmQuota,
   resolveImageSelection,
   sandboxImageValue,
   validateAssetPath,
@@ -50,6 +52,8 @@ export default function SkillExecConfigForm({
   const [needsLlm, setNeedsLlm] = useState(config?.needs_llm ?? false);
   const [warmPool, setWarmPool] = useState(config?.warm_pool ?? false);
   const [newSubdir, setNewSubdir] = useState("");
+  const [maxCalls, setMaxCalls] = useState(formatLlmQuota(config?.llm_max_calls));
+  const [maxTokens, setMaxTokens] = useState(formatLlmQuota(config?.llm_max_total_tokens));
 
   const selection = useMemo(
     () => resolveImageSelection(config?.image, images),
@@ -63,6 +67,8 @@ export default function SkillExecConfigForm({
     setSubdirs(config?.writable_subdirs ?? []);
     setNeedsLlm(config?.needs_llm ?? false);
     setWarmPool(config?.warm_pool ?? false);
+    setMaxCalls(formatLlmQuota(config?.llm_max_calls));
+    setMaxTokens(formatLlmQuota(config?.llm_max_total_tokens));
   }, [config]);
 
   useEffect(() => {
@@ -74,12 +80,16 @@ export default function SkillExecConfigForm({
   const timeoutInvalid = !Number.isInteger(timeoutValue) || timeoutValue < 1 || timeoutValue > 3600;
   const imageMissing = image.trim().length === 0;
   const newSubdirError = newSubdir.trim() ? validateWritableSubdir(newSubdir) : null;
+  const maxCallsQuota = parseLlmQuota(maxCalls);
+  const maxTokensQuota = parseLlmQuota(maxTokens);
+  // 配额字段在 needs_llm 关闭时隐藏，此时不该用不可见的输入框卡住保存按钮
+  const quotaInvalid = needsLlm && (!maxCallsQuota.valid || !maxTokensQuota.valid);
 
   const useSelect = !imagesUnavailable && images.length > 0;
   // 已下架或已从白名单移除的镜像：下拉框里没有这一项，补一条避免 Select 显示空白
   const orphanImage = useSelect && image && !images.some((i) => sandboxImageValue(i) === image);
 
-  const canSave = !saving && !entrypointError && !timeoutInvalid && !imageMissing;
+  const canSave = !saving && !entrypointError && !timeoutInvalid && !imageMissing && !quotaInvalid;
 
   const addSubdir = () => {
     const value = newSubdir.trim();
@@ -232,6 +242,29 @@ export default function SkillExecConfigForm({
         />
       </div>
 
+      {needsLlm && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <QuotaField
+            id="exec-llm-max-calls"
+            label={t("execLlmMaxCalls")}
+            placeholder={t("execLlmQuotaUnlimited")}
+            value={maxCalls}
+            invalid={!maxCallsQuota.valid}
+            hint={maxCallsQuota.valid ? t("execLlmMaxCallsHint") : t("execLlmQuotaInvalid")}
+            onChange={setMaxCalls}
+          />
+          <QuotaField
+            id="exec-llm-max-tokens"
+            label={t("execLlmMaxTotalTokens")}
+            placeholder={t("execLlmQuotaUnlimited")}
+            value={maxTokens}
+            invalid={!maxTokensQuota.valid}
+            hint={maxTokensQuota.valid ? t("execLlmMaxTotalTokensHint") : t("execLlmQuotaInvalid")}
+            onChange={setMaxTokens}
+          />
+        </div>
+      )}
+
       <div className="flex justify-end">
         <Button
           disabled={!canSave}
@@ -243,8 +276,8 @@ export default function SkillExecConfigForm({
               writable_subdirs: subdirs,
               needs_llm: needsLlm,
               warm_pool: warmPool,
-              llm_max_calls: config?.llm_max_calls ?? null,
-              llm_max_total_tokens: config?.llm_max_total_tokens ?? null,
+              llm_max_calls: maxCallsQuota.value,
+              llm_max_total_tokens: maxTokensQuota.value,
             })
           }
         >
@@ -252,6 +285,42 @@ export default function SkillExecConfigForm({
           {t("execConfigSave")}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function QuotaField({
+  id,
+  label,
+  placeholder,
+  value,
+  invalid,
+  hint,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  invalid: boolean;
+  hint: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="number"
+        min={1}
+        step={1}
+        inputMode="numeric"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={invalid ? "border-destructive" : ""}
+      />
+      <p className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}>{hint}</p>
     </div>
   );
 }
