@@ -221,6 +221,11 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
   // 审核人不能审自己提交的对象（超管除外，后端违者 403）
   const selfReview = isSelfReview(user?.id, appInfo.user_id, checkSuperAdmin(user));
+  // 状态徽标并入基本信息首行；动作/提示另起一行，且只在真有内容时渲染
+  const reviewFooterVisible =
+    status === "draft" ||
+    status === "rejected" ||
+    (status === "pending_review" && canReview);
 
   return (
     <div
@@ -262,10 +267,10 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           <CardHeader>
             <CardTitle>{t("basicInfo")}</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
               <div className="text-sm text-muted-foreground mb-1">{t("appType")}</div>
-              <Badge>{appInfo.app_type}</Badge>
+              <Badge variant="outline">{appInfo.app_type}</Badge>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">{t("platform")}</div>
@@ -280,12 +285,17 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
               <div className="text-sm">{formatDate(appInfo.created_at)}</div>
             </div>
             {statusBadge && (
-              <div className="col-span-2 md:col-span-4 pt-2 border-t">
+              <div>
                 <div className="text-sm text-muted-foreground mb-1">{tc("status")}</div>
+                <Badge variant={statusBadge.variant} className={statusBadge.className}>
+                  {ts(statusBadge.labelKey)}
+                </Badge>
+              </div>
+            )}
+            {/* 审核动作与状态提示：仅在确有内容时才占一行，已发布应用不留空带 */}
+            {statusBadge && reviewFooterVisible && (
+              <div className="col-span-2 md:col-span-5 pt-2 border-t">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant={statusBadge.variant} className={statusBadge.className}>
-                    {ts(statusBadge.labelKey)}
-                  </Badge>
                   {(status === "draft" || status === "rejected") && (
                     <Button
                       size="sm"
