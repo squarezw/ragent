@@ -2,6 +2,7 @@ import useSWR from "swr";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
+import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
 import type { Skill, SkillRequires, SkillVisibility } from "@/types/skill";
 import type { SkillDiff } from "@/types/review";
 
@@ -30,6 +31,7 @@ const fetcher = async (url: string) => {
 // Skill 全局 CRUD（形状照 useAppTools）
 export const useSkills = (query?: string) => {
   const t = useTranslations("skills");
+  const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
   const url = `/api/v1/skills${query ? `?q=${encodeURIComponent(query)}` : ""}`;
 
   const { data, error, isLoading, mutate } = useSWR(url, fetcher, {
@@ -61,6 +63,8 @@ export const useSkills = (query?: string) => {
       } as any);
       toast.success(t("deleteSuccess"));
       mutate();
+      // force 删除会连带解绑应用，被引用应用的诊断随之变化
+      invalidateDiagnostics();
       return { ok: true };
     } catch (error: any) {
       if (error.response?.status === 409) {
@@ -87,6 +91,7 @@ export const useSkills = (query?: string) => {
 // 单个 Skill 详情 + 草稿保存 / 发布
 export const useSkill = (skillId: number | null) => {
   const t = useTranslations("skills");
+  const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
   const url = skillId ? `/api/v1/skills/${skillId}` : null;
 
   const { data, error, isLoading, mutate } = useSWR<Skill>(url, fetcher, {
@@ -99,6 +104,8 @@ export const useSkill = (skillId: number | null) => {
       const res = await axios.put(`/api/v1/skills/${skillId}`, payload);
       toast.success(t("draftSaved"));
       mutate();
+      // requires 是不分草稿/发布的单列，存下去立刻改变所有绑定应用的生效判定
+      invalidateDiagnostics();
       return res.data;
     } catch (error: any) {
       console.error("Save skill draft error:", error);
@@ -112,6 +119,8 @@ export const useSkill = (skillId: number | null) => {
       await axios.post(`/api/v1/skills/${skillId}/publish`);
       toast.success(t("publishSuccess"));
       mutate();
+      // 首次发布让该 skill 进入诊断覆盖集（后端只统计有 published_content 的绑定）
+      invalidateDiagnostics();
       return true;
     } catch (error: any) {
       console.error("Publish skill error:", error);

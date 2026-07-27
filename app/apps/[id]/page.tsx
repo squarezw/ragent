@@ -44,8 +44,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useSWRConfig } from "swr";
 import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
+import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
 import AppSkillsSection from "../components/AppSkillsSection";
 import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
 import AgentMdEditor from "../components/AgentMdEditor";
@@ -104,7 +104,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   } = useAppTools(appId);
   const { statistics } = useAppToolsStatistics(appId);
   const { user } = useCurrentUser();
-  const { mutate } = useSWRConfig();
+  const invalidateSkillDiagnostics = useInvalidateAppSkillDiagnostics();
 
   useEffect(() => {
     loadAppInfo();
@@ -130,7 +130,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       toast.success(t("bindToolsSuccess", { count: toolIds.length }));
       refreshAppTools();
       // 新绑的工具可能正好补上某个 skill 的缺口
-      mutate(`/api/v1/apps/${appId}/skills/diagnostics`);
+      invalidateSkillDiagnostics(appId);
       setBindDialogOpen(false);
     } catch (error: any) {
       console.error("Bind tools error:", error);
@@ -143,6 +143,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
     const success = await unbindTool(selectedAppToolId);
     if (success) {
+      // 解绑的工具可能正是某个 skill 的依赖，缺口会立刻长出来
+      invalidateSkillDiagnostics(appId);
       setUnbindDialogOpen(false);
       setSelectedAppToolId(null);
     }

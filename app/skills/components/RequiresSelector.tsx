@@ -60,6 +60,7 @@ function RequiresPicker({
   const [query, setQuery] = useState("");
 
   const groups = useMemo(() => buildGroups(query), [buildGroups, query]);
+  const unknownCount = entries.filter((entry) => !entry.known).length;
   const trimmed = query.trim();
   const alreadyAnOption = groups.some((group) =>
     group.options.some((option) => option.value === trimmed)
@@ -101,6 +102,10 @@ function RequiresPicker({
                 {entry.displayName && entry.displayName !== entry.name && (
                   <span className="text-muted-foreground">· {entry.displayName}</span>
                 )}
+                {/* title 在触屏和键盘下不可达，"未找到"必须是可见文本 */}
+                {!entry.known && (
+                  <span className="text-xs font-medium">· {t("requiresUnknownTag")}</span>
+                )}
                 <button
                   type="button"
                   className="ml-0.5 rounded-sm hover:bg-muted"
@@ -113,6 +118,12 @@ function RequiresPicker({
             </li>
           ))}
         </ul>
+      )}
+
+      {unknownCount > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          {t("requiresUnknownHint", { count: unknownCount })}
+        </p>
       )}
 
       <div className="relative">

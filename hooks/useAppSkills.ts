@@ -2,6 +2,7 @@ import useSWR from "swr";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
+import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
 import type { AppSkill, Skill } from "@/types/skill";
 
 /** 兼容后端列表包裹形状：数组或 {items}/{skills} */
@@ -44,6 +45,7 @@ const fetcher = async (url: string) => {
 // 应用-Skill 绑定（形状照抄 useAppTools）
 export const useAppSkills = (appId: number | null) => {
   const t = useTranslations("skills");
+  const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
   const url = appId ? `/api/v1/apps/${appId}/skills` : null;
 
   const { data, error, isLoading, mutate } = useSWR(url, fetcher, {
@@ -62,6 +64,7 @@ export const useAppSkills = (appId: number | null) => {
       });
       toast.success(t("bindSuccess"));
       mutate();
+      invalidateDiagnostics(appId);
       return res.data;
     } catch (error: any) {
       console.error("Bind skill error:", error);
@@ -76,6 +79,7 @@ export const useAppSkills = (appId: number | null) => {
       await axios.put(`/api/v1/apps/${appId}/skills/${skillId}`, { priority });
       toast.success(t("prioritySaved"));
       mutate();
+      invalidateDiagnostics(appId);
       return true;
     } catch (error: any) {
       console.error("Update skill priority error:", error);
@@ -90,6 +94,7 @@ export const useAppSkills = (appId: number | null) => {
       await axios.delete(`/api/v1/apps/${appId}/skills/${skillId}`);
       toast.success(t("unbindSuccess"));
       mutate();
+      invalidateDiagnostics(appId);
       return true;
     } catch (error: any) {
       console.error("Unbind skill error:", error);

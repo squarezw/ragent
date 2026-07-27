@@ -199,6 +199,8 @@
   "requiresNoMatch": "没有匹配的选项",
   "requiresNoneSelected": "尚未选择任何依赖",
   "requiresUnknownName": "未在系统中找到",
+  "requiresUnknownTag": "未找到",
+  "requiresUnknownHint": "有 {count} 个依赖当前不在系统中（名称可能拼错）。依赖就绪前该 Skill 不会被注入。",
   "requiresDisabledBadge": "已停用",
   "requiresDisabledHint": "已被全局停用，选了会导致该 Skill 不被注入",
   "requiresAddCustom": "添加自定义名称「{name}」",

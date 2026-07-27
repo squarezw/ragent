@@ -199,6 +199,8 @@
   "requiresNoMatch": "No matching options",
   "requiresNoneSelected": "No dependency selected",
   "requiresUnknownName": "Not found in the system",
+  "requiresUnknownTag": "not found",
+  "requiresUnknownHint": "{count, plural, one {# dependency is} other {# dependencies are}} not in the system yet (the name may be misspelled). The skill stays out of the system prompt until it exists.",
   "requiresDisabledBadge": "Disabled",
   "requiresDisabledHint": "Switched off globally — selecting it stops the skill from being injected",
   "requiresAddCustom": "Add \"{name}\" as a custom name",
