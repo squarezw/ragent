@@ -44,19 +44,17 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useSWRConfig } from "swr";
 import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
 import AppSkillsSection from "../components/AppSkillsSection";
+import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
 import AgentMdEditor from "../components/AgentMdEditor";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import { isSelfReview } from "@/lib/reviewQueue";
-import {
-  REVIEW_STATUSES,
-  reviewStatusBadge,
-  type ReviewStatus,
-} from "@/lib/reviewStatus";
+import { REVIEW_STATUSES, reviewStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
@@ -106,6 +104,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   } = useAppTools(appId);
   const { statistics } = useAppToolsStatistics(appId);
   const { user } = useCurrentUser();
+  const { mutate } = useSWRConfig();
 
   useEffect(() => {
     loadAppInfo();
@@ -130,6 +129,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       });
       toast.success(t("bindToolsSuccess", { count: toolIds.length }));
       refreshAppTools();
+      // 新绑的工具可能正好补上某个 skill 的缺口
+      mutate(`/api/v1/apps/${appId}/skills/diagnostics`);
       setBindDialogOpen(false);
     } catch (error: any) {
       console.error("Bind tools error:", error);
@@ -358,165 +359,167 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       />
 
       {/* Custom 应用：渲染自定义视图（settings.view_key → 注册表组件）；缺 view_key 时由组件给出明确提示，不留白 */}
-      {appInfo.app_type === "Custom" && (
-        <CustomViewRenderer viewKey={appInfo.settings?.view_key} />
-      )}
+      {appInfo.app_type === "Custom" && <CustomViewRenderer viewKey={appInfo.settings?.view_key} />}
 
       {/* 以下工具统计 / 绑定列表仅非 Custom 应用展示 */}
       {appInfo.app_type !== "Custom" && (
         <>
           {/* 工具统计 */}
           {statistics && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t("boundToolsCount")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Wrench className="h-5 w-5 text-blue-500" />
-                <div className="text-2xl font-bold">{appTools.length}</div>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {t("boundToolsCount")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-blue-500" />
+                    <div className="text-2xl font-bold">{appTools.length}</div>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t("totalCalls")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-green-500" />
-                <div className="text-2xl font-bold">{statistics.summary?.total_calls || 0}</div>
-              </div>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {t("totalCalls")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-green-500" />
+                    <div className="text-2xl font-bold">{statistics.summary?.total_calls || 0}</div>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t("avgSuccessRate")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-orange-500" />
-                <div className="text-2xl font-bold">
-                  {statistics.summary?.success_rate
-                    ? `${(statistics.summary.success_rate * 100).toFixed(1)}%`
-                    : "0%"}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* 已绑定工具列表 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {appToolsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {t("avgSuccessRate")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-orange-500" />
+                    <div className="text-2xl font-bold">
+                      {statistics.summary?.success_rate
+                        ? `${(statistics.summary.success_rate * 100).toFixed(1)}%`
+                        : "0%"}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          ) : appTools.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">{t("noToolsBound")}</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("toolName")}</TableHead>
-                  <TableHead>{t("type")}</TableHead>
-                  <TableHead>{t("category")}</TableHead>
-                  <TableHead>{tc("status")}</TableHead>
-                  <TableHead>{t("priority")}</TableHead>
-                  <TableHead>{t("statistics")}</TableHead>
-                  <TableHead className="text-right">{tc("actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {appTools.map((tool) => (
-                  <TableRow key={tool.id}>
-                    <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
-                    <TableCell>
-                      <Badge
-                        className={
-                          tool.tool_type === "native"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-purple-100 text-purple-800"
-                        }
-                      >
-                        {tool.tool_type === "native" ? t("nativeTool") : t("mcpTool")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{tool.category}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={tool.is_enabled ? "default" : "secondary"}>
-                        {tool.is_enabled ? t("enabled") : t("disabled")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{tool.priority}</TableCell>
-                    <TableCell>
-                      {tool.statistics ? (
-                        <div className="text-sm">
-                          <div>
-                            {t("calls")}: {tool.statistics.total_calls}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {t("successRate")}: {(tool.statistics.success_rate * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {checkSuperAdmin(user) && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/tools/${tool.tool_id}`)}
-                            >
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedAppToolId(tool.id);
-                                setUnbindDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Skills 绑定区 */}
-      <AppSkillsSection appId={appId} />
+          {/* 已绑定工具列表 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appToolsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : appTools.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">{t("noToolsBound")}</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("toolName")}</TableHead>
+                      <TableHead>{t("type")}</TableHead>
+                      <TableHead>{t("category")}</TableHead>
+                      <TableHead>{tc("status")}</TableHead>
+                      <TableHead>{t("priority")}</TableHead>
+                      <TableHead>{t("statistics")}</TableHead>
+                      <TableHead className="text-right">{tc("actions")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {appTools.map((tool) => (
+                      <TableRow key={tool.id}>
+                        <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              tool.tool_type === "native"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-purple-100 text-purple-800"
+                            }
+                          >
+                            {tool.tool_type === "native" ? t("nativeTool") : t("mcpTool")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{tool.category}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={tool.is_enabled ? "default" : "secondary"}>
+                            {tool.is_enabled ? t("enabled") : t("disabled")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{tool.priority}</TableCell>
+                        <TableCell>
+                          {tool.statistics ? (
+                            <div className="text-sm">
+                              <div>
+                                {t("calls")}: {tool.statistics.total_calls}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {t("successRate")}:{" "}
+                                {(tool.statistics.success_rate * 100).toFixed(1)}%
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {checkSuperAdmin(user) && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => router.push(`/tools/${tool.tool_id}`)}
+                                >
+                                  <Settings className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedAppToolId(tool.id);
+                                    setUnbindDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Agent.md 编辑区块 */}
-      <AgentMdEditor appId={appId} platform={appInfo.platform} onChanged={loadAppInfo} />
+          {/* Skills 绑定区 */}
+          <AppSkillsSection appId={appId} />
+
+          {/* Skill 生效诊断（requires 门控去静默） */}
+          <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
+
+          {/* Agent.md 编辑区块 */}
+          <AgentMdEditor appId={appId} platform={appInfo.platform} onChanged={loadAppInfo} />
         </>
       )}
 

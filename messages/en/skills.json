@@ -210,5 +210,21 @@
   "groupOtherTools": "Other tools",
   "groupWorkflows": "Workflows",
   "saveWarningsTitle": "Saved, with {count, plural, one {# dependency warning} other {# dependency warnings}}",
-  "saveWarningsHint": "These warnings never block saving, but a dependency that stays unresolved keeps this skill out of the system prompt at runtime."
+  "saveWarningsHint": "These warnings never block saving, but a dependency that stays unresolved keeps this skill out of the system prompt at runtime.",
+  "diagnosticsTitle": "Skill effectiveness",
+  "diagnosticsAllEffective": "{count, plural, one {# skill is in effect} other {All # skills are in effect}}",
+  "diagnosticsSummary": "{effective} in effect / {blocked} not in effect",
+  "diagnosticsBlockedHint": "A skill that is not in effect is never injected into this app's system prompt. Resolve the gaps below to activate it.",
+  "diagnosticsNotEffective": "Not in effect",
+  "diagnosticsReasonTools": "Blocked first by its tool dependencies.",
+  "diagnosticsReasonWorkflows": "Blocked first by its workflow dependencies.",
+  "diagnosticsMissingTools": "Missing tools",
+  "diagnosticsMissingWorkflows": "Missing workflows",
+  "gapToolNotFound": "No such tool exists in the system — the name is probably misspelled. Correct the dependency in the skill editor.",
+  "gapToolGloballyDisabled": "The tool exists but is disabled system-wide, so the name is fine. Ask a super admin to enable it.",
+  "gapToolNotBound": "The tool is available and enabled; this app just has not bound it yet. Bind it and the skill takes effect.",
+  "gapWorkflowNotRegistered": "No workflow is registered under this kind — the name is probably misspelled. Correct the dependency in the skill editor.",
+  "gapWorkflowDisabled": "The workflow kind is registered but switched off system-wide. Ask a super admin to enable it.",
+  "gapActionEditSkill": "Open the skill editor",
+  "gapActionManageTools": "Go to tool management"
 }

@@ -210,5 +210,21 @@
   "groupOtherTools": "其他工具",
   "groupWorkflows": "工作流",
   "saveWarningsTitle": "已保存，但有 {count} 条依赖提示",
-  "saveWarningsHint": "这些提示不会阻断保存，但依赖一直缺失时该 Skill 在运行时不会被注入系统提示词。"
+  "saveWarningsHint": "这些提示不会阻断保存，但依赖一直缺失时该 Skill 在运行时不会被注入系统提示词。",
+  "diagnosticsTitle": "Skill 生效状态",
+  "diagnosticsAllEffective": "{count} 个 Skill 全部生效",
+  "diagnosticsSummary": "{effective} 个生效 / {blocked} 个未生效",
+  "diagnosticsBlockedHint": "未生效的 Skill 不会注入这个应用的系统提示词。补齐下面的缺口后即可生效。",
+  "diagnosticsNotEffective": "未生效",
+  "diagnosticsReasonTools": "先卡在工具依赖上。",
+  "diagnosticsReasonWorkflows": "先卡在工作流依赖上。",
+  "diagnosticsMissingTools": "缺少的工具",
+  "diagnosticsMissingWorkflows": "缺少的工作流",
+  "gapToolNotFound": "系统中找不到此工具，名称可能有误。请到 Skill 编辑页更正依赖。",
+  "gapToolGloballyDisabled": "此工具已存在但被全局停用，名称没写错。请联系超级管理员启用。",
+  "gapToolNotBound": "工具可用且已启用，只是此应用尚未绑定。绑定后该 Skill 即可生效。",
+  "gapWorkflowNotRegistered": "系统中没有注册此工作流 kind，名称可能有误。请到 Skill 编辑页更正依赖。",
+  "gapWorkflowDisabled": "此工作流 kind 已注册但被全局关闭。请联系超级管理员启用。",
+  "gapActionEditSkill": "去 Skill 编辑页",
+  "gapActionManageTools": "去工具管理"
 }

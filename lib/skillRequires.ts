@@ -186,11 +186,18 @@ export type RequiresGapCategory = "unknown-name" | "globally-disabled" | "not-bo
 /** 修复入口：none = 只给文案（当前用户无权处理） */
 export type RequiresGapAction = "none" | "edit-skill" | "bind-tools" | "manage-tools";
 
+/** skills 命名空间下的 i18n 键（字面量联合，next-intl 的键校验要求可静态判定） */
+export type RequiresGapMessageKey =
+  | "gapToolNotFound"
+  | "gapToolGloballyDisabled"
+  | "gapToolNotBound"
+  | "gapWorkflowNotRegistered"
+  | "gapWorkflowDisabled";
+
 export interface RequiresGapGuidance {
   category: RequiresGapCategory;
   kind: RequiresKind;
-  /** skills 命名空间下的 i18n 键 */
-  messageKey: string;
+  messageKey: RequiresGapMessageKey;
   action: RequiresGapAction;
 }
 
