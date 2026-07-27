@@ -192,7 +192,7 @@
   "execConfigSaved": "Runtime config saved",
   "execConfigSaveFailed": "Failed to save runtime config",
   "requiresToolsHelp": "Pick from the tool pool a super admin has enabled globally. You can also type a name that is not online yet — it will be flagged until it exists.",
-  "requiresWorkflowsHelp": "Pick a registered workflow kind. Kinds that are switched off can still be selected, but they stop the skill from being injected.",
+  "requiresWorkflowsHelp": "Only pick a kind when this skill needs a built-in long-running task — the platform then tells the model how to start it. If the skill merely describes steps the model carries out itself, pick nothing here. Kinds that are switched off can still be selected, but they stop the skill from being injected.",
   "requiresSearchPlaceholder": "Search by name or description",
   "requiresNoMatch": "No matching options",
   "requiresNoneSelected": "No dependency selected",

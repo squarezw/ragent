@@ -192,7 +192,7 @@
   "execConfigSaved": "运行配置已保存",
   "execConfigSaveFailed": "保存运行配置失败",
   "requiresToolsHelp": "从超级管理员已全局启用的工具池中勾选。也可以手工输入尚未上线的名称，系统会先标记为未找到。",
-  "requiresWorkflowsHelp": "勾选已注册的工作流 kind。已停用的 kind 仍可选择，但选了会导致该 Skill 不被注入。",
+  "requiresWorkflowsHelp": "仅当本 Skill 需要平台内置的长任务能力时才勾选——勾选后系统会自动告诉模型如何启动它。若本 Skill 只是描述一套由模型自行执行的操作步骤，这里不用勾。已停用的 kind 仍可选择，但选了会导致该 Skill 不被注入。",
   "requiresSearchPlaceholder": "搜索名称或说明",
   "requiresNoMatch": "没有匹配的选项",
   "requiresNoneSelected": "尚未选择任何依赖",
