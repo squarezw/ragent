@@ -109,8 +109,6 @@
   "bindSuccess": "Skill bound",
   "noSkillsBound": "No skills bound yet",
   "noBindableSkills": "No bindable skills",
-  "priority": "Priority",
-  "prioritySaved": "Priority updated",
   "unbind": "Unbind",
   "unbindSuccess": "Skill unbound",
   "confirmUnbind": "Unbind this skill?",

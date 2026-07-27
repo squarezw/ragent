@@ -42,7 +42,8 @@ import type { AppSkill } from "@/types/skill";
 
 /**
  * 应用详情页的 Skills 绑定区（照工具绑定区模式）：
- * 已绑列表（发布状态 / priority 调整 / 解绑）+ 添加绑定（可见 skills 搜索多选）。
+ * 已绑列表（发布状态 / 解绑）+ 添加绑定（可见 skills 搜索多选）。
+ * 列表顺序沿用后端返回的绑定顺序，前端不再排序。
  */
 export default function AppSkillsSection({ appId }: { appId: number }) {
   const router = useRouter();
@@ -51,34 +52,9 @@ export default function AppSkillsSection({ appId }: { appId: number }) {
   const { user } = useCurrentUser();
   const canManage = checkSuperAdmin(user) || checkTenantAdmin(user);
 
-  const { appSkills, loading, bindSkill, updatePriority, unbindSkill } = useAppSkills(appId);
+  const { appSkills, loading, bindSkill, unbindSkill } = useAppSkills(appId);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [unbindTarget, setUnbindTarget] = useState<AppSkill | null>(null);
-  // priority 本地编辑值（skill_id → 输入框内容）
-  const [priorityDrafts, setPriorityDrafts] = useState<Record<number, string>>({});
-
-  const handlePriorityCommit = async (row: AppSkill) => {
-    const { skillId } = normalizeAppSkill(row);
-    const draft = priorityDrafts[skillId];
-    if (draft === undefined) return;
-    const value = Number.parseInt(draft, 10);
-    if (!Number.isFinite(value) || value === row.priority) {
-      setPriorityDrafts((prev) => {
-        const next = { ...prev };
-        delete next[skillId];
-        return next;
-      });
-      return;
-    }
-    const ok = await updatePriority(skillId, value);
-    if (ok) {
-      setPriorityDrafts((prev) => {
-        const next = { ...prev };
-        delete next[skillId];
-        return next;
-      });
-    }
-  };
 
   const handleUnbind = async () => {
     if (!unbindTarget) return;
@@ -122,7 +98,6 @@ export default function AppSkillsSection({ appId }: { appId: number }) {
                 <TableHead>{t("name")}</TableHead>
                 <TableHead>{t("description")}</TableHead>
                 <TableHead>{tc("status")}</TableHead>
-                <TableHead className="w-28">{t("priority")}</TableHead>
                 {canManage && <TableHead className="text-right">{tc("actions")}</TableHead>}
               </TableRow>
             </TableHeader>
@@ -151,27 +126,6 @@ export default function AppSkillsSection({ appId }: { appId: number }) {
                         <Badge>{t("statusPublished")}</Badge>
                       ) : (
                         <Badge variant="secondary">{t("statusDraftOnly")}</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {canManage ? (
-                        <Input
-                          type="number"
-                          className="h-8 w-20"
-                          value={priorityDrafts[info.skillId] ?? String(row.priority)}
-                          onChange={(e) =>
-                            setPriorityDrafts((prev) => ({
-                              ...prev,
-                              [info.skillId]: e.target.value,
-                            }))
-                          }
-                          onBlur={() => handlePriorityCommit(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                        />
-                      ) : (
-                        row.priority
                       )}
                     </TableCell>
                     {canManage && (

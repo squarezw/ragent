@@ -109,8 +109,6 @@
   "bindSuccess": "Skill 绑定成功",
   "noSkillsBound": "尚未绑定任何 Skill",
   "noBindableSkills": "没有可绑定的 Skill",
-  "priority": "优先级",
-  "prioritySaved": "优先级已更新",
   "unbind": "解绑",
   "unbindSuccess": "Skill 解绑成功",
   "confirmUnbind": "确定解绑该 Skill？",

@@ -54,13 +54,12 @@ export const useAppSkills = (appId: number | null) => {
     dedupingInterval: 3000,
   });
 
-  // 绑定 skill（POST 体 {skill_id, priority?}；响应可能带注入 token 估算）
-  const bindSkill = async (skillId: number, priority?: number) => {
+  // 绑定 skill（POST 体 {skill_id}；响应可能带注入 token 估算）
+  const bindSkill = async (skillId: number) => {
     if (!appId) return null;
     try {
       const res = await axios.post(`/api/v1/apps/${appId}/skills`, {
         skill_id: skillId,
-        ...(priority !== undefined ? { priority } : {}),
       });
       toast.success(t("bindSuccess"));
       mutate();
@@ -69,21 +68,6 @@ export const useAppSkills = (appId: number | null) => {
     } catch (error: any) {
       console.error("Bind skill error:", error);
       return null;
-    }
-  };
-
-  // 调整绑定优先级
-  const updatePriority = async (skillId: number, priority: number) => {
-    if (!appId) return false;
-    try {
-      await axios.put(`/api/v1/apps/${appId}/skills/${skillId}`, { priority });
-      toast.success(t("prioritySaved"));
-      mutate();
-      invalidateDiagnostics(appId);
-      return true;
-    } catch (error: any) {
-      console.error("Update skill priority error:", error);
-      return false;
     }
   };
 
@@ -107,7 +91,6 @@ export const useAppSkills = (appId: number | null) => {
     loading: isLoading,
     error,
     bindSkill,
-    updatePriority,
     unbindSkill,
     refresh: mutate,
   };

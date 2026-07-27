@@ -163,7 +163,6 @@ export interface AppSkill {
   id: number;
   app_id: number;
   skill_id: number;
-  priority: number;
   created_at?: string;
   updated_at?: string;
   // skill 摘要（后端可能平铺或嵌套，两种形状都兼容）
