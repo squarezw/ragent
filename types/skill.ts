@@ -99,6 +99,65 @@ export interface SandboxImage {
   ref: string;
 }
 
+/** requires.tools 的候选项（GET /api/v1/skills/requires-options → tools[]） */
+export interface RequiresToolOption {
+  /** 写进 requires.tools 的值 */
+  name: string;
+  display_name: string;
+  /** native | mcp（后端只返这两类；未知值按 other 分区展示） */
+  tool_type: string;
+  category: string | null;
+  description: string | null;
+}
+
+/** requires.workflows 的候选项（registry 注册的全部 kind，含停用） */
+export interface RequiresWorkflowOption {
+  /** 写进 requires.workflows 的值 */
+  kind: string;
+  display_name: string | null;
+  description: string | null;
+  /** false = 选了会导致 skill 不注入 */
+  is_enabled: boolean;
+}
+
+/** GET /api/v1/skills/requires-options 响应 */
+export interface RequiresOptions {
+  tools: RequiresToolOption[];
+  workflows: RequiresWorkflowOption[];
+}
+
+export type RequiresKind = "tool" | "workflow";
+
+/** 一条依赖缺口；available / globally_enabled 两个 bool 决定修复动作 */
+export interface SkillRequiresGap {
+  name: string;
+  kind: RequiresKind;
+  available: boolean;
+  tool_type: string | null;
+  globally_enabled: boolean;
+}
+
+/** 单个已发布 skill 在该应用下的生效状态 */
+export interface AppSkillDiagnosticItem {
+  skill_id: number;
+  skill_name: string;
+  display_name: string | null;
+  effective: boolean;
+  /** null | missing_tools | missing_workflows（运行时先命中的那道门） */
+  reason: string | null;
+  /** 全部缺口（工具 + workflow 混在一起，靠 kind 分） */
+  missing: SkillRequiresGap[];
+}
+
+/** GET /api/v1/apps/{appId}/skills/diagnostics 响应 */
+export interface AppSkillDiagnostics {
+  app_id: number;
+  items: AppSkillDiagnosticItem[];
+  total: number;
+  effective_count: number;
+  blocked_count: number;
+}
+
 /** 应用-Skill 绑定行（GET /api/v1/apps/{appId}/skills，含 skill 摘要） */
 export interface AppSkill {
   id: number;
