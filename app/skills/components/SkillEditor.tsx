@@ -9,17 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, X } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import VisibilitySelect from "@/components/VisibilitySelect";
 import axios from "@/lib/axios";
-import {
-  SKILL_DESCRIPTION_MAX_LENGTH,
-  formatNameList,
-  isValidSkillName,
-  parseNameList,
-} from "@/lib/skillValidation";
+import { SKILL_DESCRIPTION_MAX_LENGTH, isValidSkillName } from "@/lib/skillValidation";
+import { normalizeRequiresList } from "@/lib/skillRequires";
+import { useRequiresOptions } from "@/hooks/useRequiresOptions";
+import { RequiresToolsSelector, RequiresWorkflowsSelector } from "./RequiresSelector";
 import {
   hasUnpublishedChanges as computeUnpublishedChanges,
   resolveReviewStatus,
@@ -41,6 +39,9 @@ interface SkillEditorProps {
   /** 「对照」入口（草稿 vs 已发布）；从未发布时不显示 */
   onShowDiff?: () => void;
   onCancel: () => void;
+  /** 上次保存返回的 requires warnings（不阻断保存，但要留在页面上直到用户主动关闭） */
+  warnings?: string[];
+  onDismissWarnings?: () => void;
 }
 
 export default function SkillEditor({
@@ -52,6 +53,8 @@ export default function SkillEditor({
   onSubmitReview,
   onShowDiff,
   onCancel,
+  warnings = [],
+  onDismissWarnings,
 }: SkillEditorProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
@@ -62,12 +65,15 @@ export default function SkillEditor({
   const [displayName, setDisplayName] = useState(skill?.display_name || "");
   const [description, setDescription] = useState(skill?.description || "");
   const [content, setContent] = useState(skill?.content || "");
-  const [requiresTools, setRequiresTools] = useState(formatNameList(skill?.requires?.tools));
-  const [requiresWorkflows, setRequiresWorkflows] = useState(
-    formatNameList(skill?.requires?.workflows)
+  const [requiresTools, setRequiresTools] = useState<string[]>(
+    normalizeRequiresList(skill?.requires?.tools)
+  );
+  const [requiresWorkflows, setRequiresWorkflows] = useState<string[]>(
+    normalizeRequiresList(skill?.requires?.workflows)
   );
   const [visibility, setVisibility] = useState<SkillVisibility>(skill?.visibility || "tenant");
   const [variables, setVariables] = useState<string[]>([]);
+  const { options: requiresOptions } = useRequiresOptions();
 
   // skill 异步加载完成后回填表单
   useEffect(() => {
@@ -76,8 +82,8 @@ export default function SkillEditor({
       setDisplayName(skill.display_name);
       setDescription(skill.description);
       setContent(skill.content);
-      setRequiresTools(formatNameList(skill.requires?.tools));
-      setRequiresWorkflows(formatNameList(skill.requires?.workflows));
+      setRequiresTools(normalizeRequiresList(skill.requires?.tools));
+      setRequiresWorkflows(normalizeRequiresList(skill.requires?.workflows));
       setVisibility(skill.visibility);
     }
   }, [skill]);
@@ -122,8 +128,8 @@ export default function SkillEditor({
       description: description.trim(),
       content,
       requires: {
-        tools: parseNameList(requiresTools),
-        workflows: parseNameList(requiresWorkflows),
+        tools: requiresTools,
+        workflows: requiresWorkflows,
       },
       visibility,
     }),
@@ -198,6 +204,50 @@ export default function SkillEditor({
         />
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* 保存成功但依赖有缺口：留在页面上直到用户主动关闭，不做一闪而过的 toast */}
+        {warnings.length > 0 && (
+          <section
+            aria-live="polite"
+            className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle
+                className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                  {t("saveWarningsTitle", { count: warnings.length })}
+                </p>
+                <ul className="mt-1.5 space-y-1 list-disc pl-4">
+                  {warnings.map((warning) => (
+                    <li
+                      key={warning}
+                      className="text-sm text-amber-900 break-words dark:text-amber-200"
+                    >
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
+                  {t("saveWarningsHint")}
+                </p>
+              </div>
+              {onDismissWarnings && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 shrink-0"
+                  aria-label={tc("close")}
+                  onClick={onDismissWarnings}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </section>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="skill-name">{t("name")} *</Label>
@@ -275,26 +325,18 @@ export default function SkillEditor({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <Label htmlFor="skill-requires-tools">{t("requiresTools")}</Label>
-            <Input
-              id="skill-requires-tools"
-              value={requiresTools}
-              onChange={(e) => setRequiresTools(e.target.value)}
-              placeholder={t("requiresPlaceholder")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="skill-requires-workflows">{t("requiresWorkflows")}</Label>
-            <Input
-              id="skill-requires-workflows"
-              value={requiresWorkflows}
-              onChange={(e) => setRequiresWorkflows(e.target.value)}
-              placeholder={t("requiresPlaceholder")}
-            />
-          </div>
+          <RequiresToolsSelector
+            options={requiresOptions.tools}
+            selected={requiresTools}
+            onChange={setRequiresTools}
+          />
+          <RequiresWorkflowsSelector
+            options={requiresOptions.workflows}
+            selected={requiresWorkflows}
+            onChange={setRequiresWorkflows}
+          />
         </div>
-        <p className="text-xs text-muted-foreground -mt-4">{t("requiresHelp")}</p>
+        <p className="text-xs text-muted-foreground -mt-2">{t("requiresHelp")}</p>
 
         <VisibilitySelect
           value={visibility}

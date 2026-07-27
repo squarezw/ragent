@@ -193,5 +193,22 @@
   "execWarmPoolHint": "Keeps the container alive in the warm pool after a run to speed up the next start",
   "execConfigSave": "Save runtime config",
   "execConfigSaved": "Runtime config saved",
-  "execConfigSaveFailed": "Failed to save runtime config"
+  "execConfigSaveFailed": "Failed to save runtime config",
+  "requiresToolsHelp": "Pick from the tool pool a super admin has enabled globally. You can also type a name that is not online yet — it will be flagged until it exists.",
+  "requiresWorkflowsHelp": "Pick a registered workflow kind. Kinds that are switched off can still be selected, but they stop the skill from being injected.",
+  "requiresSearchPlaceholder": "Search by name or description",
+  "requiresNoMatch": "No matching options",
+  "requiresNoneSelected": "No dependency selected",
+  "requiresUnknownName": "Not found in the system",
+  "requiresDisabledBadge": "Disabled",
+  "requiresDisabledHint": "Switched off globally — selecting it stops the skill from being injected",
+  "requiresAddCustom": "Add \"{name}\" as a custom name",
+  "requiresOptionsUnavailable": "The option list is unavailable right now; type dependency names manually.",
+  "requiresRemove": "Remove",
+  "groupMcpTools": "MCP tools",
+  "groupNativeTools": "Native tools",
+  "groupOtherTools": "Other tools",
+  "groupWorkflows": "Workflows",
+  "saveWarningsTitle": "Saved, with {count, plural, one {# dependency warning} other {# dependency warnings}}",
+  "saveWarningsHint": "These warnings never block saving, but a dependency that stays unresolved keeps this skill out of the system prompt at runtime."
 }

@@ -149,6 +149,36 @@ export function parseSaveWarnings(data: unknown): string[] {
     .filter((w) => w.length > 0);
 }
 
+const SAVE_WARNINGS_KEY = "ragent:skill-save-warnings";
+
+/**
+ * 新建页 POST 完就跳转到详情页，warnings 会随卸载丢掉——跨这一跳把它们带过去。
+ * sessionStorage 在无痕/禁用存储下会抛，静默吞掉即可（大不了少一次提示）。
+ */
+export function stashSaveWarnings(skillId: number, warnings: string[]): void {
+  if (typeof sessionStorage === "undefined" || warnings.length === 0) return;
+  try {
+    sessionStorage.setItem(SAVE_WARNINGS_KEY, JSON.stringify({ skillId, warnings }));
+  } catch {
+    /* 存不下就算了 */
+  }
+}
+
+/** 读取并清除；skillId 对不上说明是别的 skill 的残留，一并清掉 */
+export function takeSaveWarnings(skillId: number): string[] {
+  if (typeof sessionStorage === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(SAVE_WARNINGS_KEY);
+    if (!raw) return [];
+    sessionStorage.removeItem(SAVE_WARNINGS_KEY);
+    const parsed = asRecord(JSON.parse(raw));
+    if (!parsed || parsed.skillId !== skillId) return [];
+    return parseSaveWarnings(parsed);
+  } catch {
+    return [];
+  }
+}
+
 // ==================== 缺口分类 ====================
 
 export type RequiresGapCategory = "unknown-name" | "globally-disabled" | "not-bound-to-app";

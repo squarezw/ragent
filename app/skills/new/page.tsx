@@ -9,6 +9,7 @@ import SkillEditor from "../components/SkillEditor";
 import type { SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { parseSaveWarnings, stashSaveWarnings } from "@/lib/skillRequires";
 
 export default function NewSkillPage() {
   const router = useRouter();
@@ -17,8 +18,12 @@ export default function NewSkillPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const [saving, setSaving] = useState(false);
 
+  // 创建即跳转，requires warnings 交给详情页接着展示
   const createSkill = async (payload: SkillPayload) => {
     const res = await axios.post("/api/v1/skills", payload);
+    if (res.data?.id) {
+      stashSaveWarnings(res.data.id, parseSaveWarnings(res.data));
+    }
     return res.data;
   };
 

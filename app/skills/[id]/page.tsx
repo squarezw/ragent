@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import SkillAssetsPanel from "../components/SkillAssetsPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { parseSaveWarnings, takeSaveWarnings } from "@/lib/skillRequires";
 
 export default function SkillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -27,6 +28,15 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const [saving, setSaving] = useState(false);
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [diffSkillId, setDiffSkillId] = useState<number | null>(null);
+  const [saveWarnings, setSaveWarnings] = useState<string[]>([]);
+
+  // 新建页 POST 后跳转过来的 warnings
+  useEffect(() => {
+    if (Number.isFinite(skillId)) {
+      const stashed = takeSaveWarnings(skillId);
+      if (stashed.length > 0) setSaveWarnings(stashed);
+    }
+  }, [skillId]);
 
   // P5：具备审核权者直接发布（自审即过），普通用户走提交审核
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
@@ -35,13 +45,14 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
 
   const handleSaveDraft = async (payload: SkillPayload) => {
     setSaving(true);
-    await saveDraft(payload);
+    setSaveWarnings(parseSaveWarnings(await saveDraft(payload)));
     setSaving(false);
   };
 
   const handlePublish = async (payload: SkillPayload) => {
     setSaving(true);
     const saved = await saveDraft(payload);
+    setSaveWarnings(parseSaveWarnings(saved));
     if (saved) {
       await publish();
     }
@@ -51,6 +62,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const handleSubmitReview = async (payload: SkillPayload) => {
     setSaving(true);
     const saved = await saveDraft(payload);
+    setSaveWarnings(parseSaveWarnings(saved));
     if (saved) {
       await submitReview();
     }
@@ -107,6 +119,8 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         onSubmitReview={handleSubmitReview}
         onShowDiff={() => setDiffSkillId(skill.id)}
         onCancel={() => router.push("/skills")}
+        warnings={saveWarnings}
+        onDismissWarnings={() => setSaveWarnings([])}
       />
 
       {/* P8：可执行资产与运行配置（仅编辑权可见） */}
