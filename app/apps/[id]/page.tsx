@@ -54,7 +54,7 @@ import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import { isSelfReview } from "@/lib/reviewQueue";
-import { REVIEW_STATUSES, reviewStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
+import { REVIEW_STATUSES, appStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
@@ -217,7 +217,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
     appInfo.status && (REVIEW_STATUSES as string[]).includes(appInfo.status)
       ? appInfo.status
       : null;
-  const statusBadge = status ? reviewStatusBadge(status) : null;
+  // published 不出徽标（正常终态且无出口动作，规则见 lib/reviewStatus.ts）
+  const statusBadge = appStatusBadge(appInfo.status);
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
   // 审核人不能审自己提交的对象（超管除外，后端违者 403）
   const selfReview = isSelfReview(user?.id, appInfo.user_id, checkSuperAdmin(user));
@@ -293,7 +294,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
               </div>
             )}
             {/* 审核动作与状态提示：仅在确有内容时才占一行，已发布应用不留空带 */}
-            {statusBadge && reviewFooterVisible && (
+            {reviewFooterVisible && (
               <div className="col-span-2 md:col-span-5 pt-2 border-t">
                 <div className="flex items-center gap-2 flex-wrap">
                   {(status === "draft" || status === "rejected") && (

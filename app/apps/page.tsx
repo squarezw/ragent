@@ -48,11 +48,7 @@ import {
   Sparkles,
   LayoutGrid,
 } from "lucide-react";
-import {
-  REVIEW_STATUSES,
-  reviewStatusBadge,
-  type ReviewStatus,
-} from "@/lib/reviewStatus";
+import { appStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -93,11 +89,7 @@ interface App {
   owner_tenant_id?: number | null;
 }
 
-/** 只有后端明确返回合法 status 才渲染徽标（存量应用无 status 字段 → 不显示） */
-const appStatusBadge = (status?: string) =>
-  status && (REVIEW_STATUSES as string[]).includes(status)
-    ? reviewStatusBadge(status as ReviewStatus)
-    : null;
+// 徽标规则见 lib/reviewStatus.ts 的 appStatusBadge：published 与非法/缺失 status 均不出徽标
 
 /** draft / rejected 可（重新）提交审核 */
 const canSubmitAppReview = (app: App) => app.status === "draft" || app.status === "rejected";

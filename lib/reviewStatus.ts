@@ -56,3 +56,20 @@ const BADGE_MAP: Record<ReviewStatus, ReviewStatusBadge> = {
 export function reviewStatusBadge(status: ReviewStatus): ReviewStatusBadge {
   return BADGE_MAP[status];
 }
+
+/**
+ * 数字员工（App）专用：`published` 不出徽标。
+ *
+ * 与 Skill 的区别 —— Skill 有 content / published_content 双快照，"已发布"要和
+ * "有未发布修改"区分，徽标有信息量；App 的配置即线上态，`published` 是正常终态
+ * 且没有任何出口动作（后端无 unpublish 端点，编辑也不回退状态），显示它只是噪音。
+ * 其余三态是异常态：既有动作可做（提交审核 / 通过 / 驳回），又意味着"目前仅所有者
+ * 可对话"（后端 chat 门），必须让人看见。
+ *
+ * 传入非法或缺失 status（存量应用无该字段）同样不出徽标。
+ */
+export function appStatusBadge(status?: string): ReviewStatusBadge | null {
+  if (!status || !(REVIEW_STATUSES as readonly string[]).includes(status)) return null;
+  if (status === "published") return null;
+  return BADGE_MAP[status as ReviewStatus];
+}
