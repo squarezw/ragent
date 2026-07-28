@@ -24,14 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileCode2, Loader2, Package, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, FileCode2, Loader2, Package, Trash2, Upload, X } from "lucide-react";
 import {
   ASSET_KINDS,
   ASSET_MAX_FILE_BYTES,
   ASSET_MAX_TOTAL_BYTES,
   PATH_ERROR_MESSAGE_KEY,
+  assetKindWarning,
   formatBytes,
   groupAssetsByDir,
+  isModelReadableAsset,
   planUploads,
   shortSha,
   willRevertToDraft,
@@ -110,6 +112,7 @@ export default function SkillAssetsPanel({
 
   const {
     items,
+    readablePaths,
     totalBytes,
     assetsLoading,
     execConfig,
@@ -215,33 +218,19 @@ export default function SkillAssetsPanel({
   if (!canEdit) return null;
 
   const isExecutable = execConfig !== null;
-  const showBody = isExecutable || execFormOpen || items.length > 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              {t("execAssetsSection")}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">{t("execAssetsDesc")}</p>
-          </div>
-          {execConfigLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : (
-            !isExecutable &&
-            !execFormOpen && (
-              <Button variant="outline" onClick={() => setExecFormOpen(true)}>
-                {t("execMakeExecutable")}
-              </Button>
-            )
-          )}
-        </div>
-      </CardHeader>
+    <>
+      {/* 参考文档与资产文件：与「是否可执行」解耦，知识型 skill 也能只用这一块 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4" />
+            {t("assetFilesSection")}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">{t("assetFilesDesc")}</p>
+        </CardHeader>
 
-      {showBody && (
         <CardContent className="space-y-6">
           {willRevertToDraft(skill.status) && (
             <p className="text-xs rounded-md border border-amber-500/50 text-amber-600 dark:text-amber-400 px-3 py-2">
@@ -292,7 +281,29 @@ export default function SkillAssetsPanel({
                           key={item.path}
                           className="border-t px-3 py-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
                         >
-                          <span className="font-mono break-all min-w-0 sm:flex-1">{item.path}</span>
+                          <div className="min-w-0 sm:flex-1 flex flex-wrap items-center gap-2">
+                            <span className="font-mono break-all min-w-0">{item.path}</span>
+                            {/* 可读 = 已发布快照里的文本 reference（判据见 isModelReadableAsset） */}
+                            {readablePaths.has(item.path) ? (
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 font-normal"
+                                title={t("assetReadableHint")}
+                              >
+                                <BookOpen className="h-3 w-3" />
+                                {t("assetReadable")}
+                              </Badge>
+                            ) : (
+                              isModelReadableAsset(item) && (
+                                <span
+                                  className="text-muted-foreground"
+                                  title={t("assetReadableAfterPublishHint")}
+                                >
+                                  {t("assetReadableAfterPublish")}
+                                </span>
+                              )
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
                             <Badge variant="outline">{assetKindLabel(t, item.kind)}</Badge>
                             <span className="whitespace-nowrap text-muted-foreground">
@@ -392,9 +403,13 @@ export default function SkillAssetsPanel({
                     </Button>
                   </div>
                 </div>
+                <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                  {t("assetKindHint")}
+                </p>
                 <ul className="text-xs">
                   {staged.map((item, index) => {
                     const entry = plan.entries[index];
+                    const kindWarning = entry ? assetKindWarning(entry.path, entry.kind) : null;
                     return (
                       <li
                         key={item.id}
@@ -420,6 +435,12 @@ export default function SkillAssetsPanel({
                               {uploadErrorMessage(t, entry.error)}
                             </p>
                           )}
+                          {/* 二进制标成 reference 会进注入块 footer 却读不出来，只提示不拦 */}
+                          {kindWarning === "binaryAsReference" && (
+                            <p className="text-amber-600 dark:text-amber-400 mt-1 break-words">
+                              {t("assetKindWarnBinaryAsReference")}
+                            </p>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
                           <Select
@@ -432,7 +453,7 @@ export default function SkillAssetsPanel({
                               )
                             }
                           >
-                            <SelectTrigger className="h-7 w-28 text-xs">
+                            <SelectTrigger className="h-7 w-28 text-xs" aria-label={t("assetKind")}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -465,10 +486,41 @@ export default function SkillAssetsPanel({
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
 
-          {/* exec 运行配置 */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium">{t("execConfigSection")}</p>
+      {/* 可执行资产的运行配置：仅可执行 skill（或点了转换）才出现，知识型 skill 不必碰 */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                {t("execAssetsSection")}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {isExecutable || execFormOpen ? t("execAssetsDesc") : t("execAssetsIdleDesc")}
+              </p>
+            </div>
+            {execConfigLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : (
+              !isExecutable &&
+              !execFormOpen && (
+                <Button variant="outline" onClick={() => setExecFormOpen(true)}>
+                  {t("execMakeExecutable")}
+                </Button>
+              )
+            )}
+          </div>
+        </CardHeader>
+
+        {(isExecutable || execFormOpen) && (
+          <CardContent className="space-y-2">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <FileCode2 className="h-4 w-4" />
+              {t("execConfigSection")}
+            </p>
             <SkillExecConfigForm
               config={execConfig}
               images={images}
@@ -476,9 +528,9 @@ export default function SkillAssetsPanel({
               saving={savingConfig}
               onSave={(payload) => guard(() => runSaveConfig(payload))}
             />
-          </div>
-        </CardContent>
-      )}
+          </CardContent>
+        )}
+      </Card>
 
       {/* 删除确认：删的是草稿，published 快照不动 */}
       <AlertDialog
@@ -535,7 +587,7 @@ export default function SkillAssetsPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </>
   );
 }
 

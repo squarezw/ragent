@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import axios from "@/lib/axios";
 import {
@@ -9,6 +9,7 @@ import {
   parseAssetList,
   parseExecConfig,
   parseSandboxImages,
+  readableAssetPaths,
 } from "@/lib/skillAssets";
 import type {
   SandboxImage,
@@ -42,6 +43,15 @@ function detailOf(error: unknown): string {
 
 const listFetcher = async (url: string) => parseAssetList((await axios.get(url)).data);
 
+/** 已发布快照只用于打「模型可读」标；拿不到就不标，不该弹错误吐司 */
+const publishedListFetcher = async (url: string) => {
+  try {
+    return parseAssetList((await axios.get(url, { suppressErrorToast: true } as never)).data);
+  } catch {
+    return parseAssetList(null);
+  }
+};
+
 /** exec 配置不存在（非可执行 skill）是正常态：404 归一为 null，不当错误 */
 const execConfigFetcher = async (url: string): Promise<SkillExecConfig | null> => {
   try {
@@ -64,8 +74,9 @@ const imagesFetcher = async (url: string): Promise<SandboxImage[]> => {
 };
 
 /**
- * 可执行 skill 的 draft 资产 + exec 配置数据层。
- * 三条独立请求：资产清单 / exec 配置（404=非可执行）/ 镜像白名单（失败=降级手输）。
+ * Skill 资产（draft 清单 + published 快照）与 exec 配置数据层。
+ * 四条独立请求：draft 清单 / published 清单（算模型可读集）/ exec 配置（404=非可执行）/
+ * 镜像白名单（失败=降级手输）。
  */
 export function useSkillAssets(skillId: number | null, enabled: boolean) {
   const key = enabled && skillId ? skillId : null;
@@ -73,6 +84,12 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
   const assets = useSWR(key ? `/api/v1/skills/${key}/assets?stage=draft` : null, listFetcher, {
     revalidateOnFocus: false,
   });
+  // 可读性只由已发布快照决定（draft 未过审，skill_view 读不到），故单独取一份
+  const publishedAssets = useSWR(
+    key ? `/api/v1/skills/${key}/assets?stage=published` : null,
+    publishedListFetcher,
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
   const execConfig = useSWR(
     key ? `/api/v1/skills/${key}/exec-config?stage=draft` : null,
     execConfigFetcher,
@@ -150,8 +167,12 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
   );
 
   const items: SkillAssetItem[] = assets.data?.items ?? [];
+  const publishedItems = publishedAssets.data?.items;
+  const readablePaths = useMemo(() => readableAssetPaths(publishedItems ?? []), [publishedItems]);
   return {
     items,
+    /** 已发布快照里模型可读的路径（草稿行据此打标） */
+    readablePaths,
     totalBytes: assets.data?.total_bytes ?? 0,
     assetsLoading: assets.isLoading,
     assetsError: assets.error,

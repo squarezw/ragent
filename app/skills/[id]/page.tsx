@@ -123,7 +123,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         onDismissWarnings={() => setSaveWarnings([])}
       />
 
-      {/* P8：可执行资产与运行配置（仅编辑权可见） */}
+      {/* P8：参考文档/资产文件（任何 skill）+ 可执行运行配置（仅可执行 skill），仅编辑权可见 */}
       <SkillAssetsPanel skill={skill} canEdit={canEditAssets} onSkillChanged={() => refresh()} />
 
       {/* 草稿 vs 已发布对照 */}
