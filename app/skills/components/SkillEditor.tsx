@@ -16,6 +16,7 @@ import VisibilitySelect from "@/components/VisibilitySelect";
 import axios from "@/lib/axios";
 import { SKILL_DESCRIPTION_MAX_LENGTH, isValidSkillName } from "@/lib/skillValidation";
 import { normalizeRequiresList } from "@/lib/skillRequires";
+import { SKILL_BODY_SCAFFOLD } from "@/lib/skillScaffold";
 import { useRequiresOptions } from "@/hooks/useRequiresOptions";
 import { RequiresToolsSelector, RequiresWorkflowsSelector } from "./RequiresSelector";
 import {
@@ -64,7 +65,8 @@ export default function SkillEditor({
   const [reviewLogOpen, setReviewLogOpen] = useState(false);
   const [displayName, setDisplayName] = useState(skill?.display_name || "");
   const [description, setDescription] = useState(skill?.description || "");
-  const [content, setContent] = useState(skill?.content || "");
+  // 新建时用脚手架起头（编辑既有 skill 绝不注入，避免污染已有正文）
+  const [content, setContent] = useState(skill ? skill.content || "" : SKILL_BODY_SCAFFOLD);
   const [requiresTools, setRequiresTools] = useState<string[]>(
     normalizeRequiresList(skill?.requires?.tools)
   );
@@ -306,6 +308,10 @@ export default function SkillEditor({
                 rows={16}
                 className="font-mono text-sm"
               />
+              {/* 各小节写法说明放这里而不是脚手架正文——正文会逐字注入 system prompt */}
+              <p className="text-xs text-muted-foreground mt-2 whitespace-pre-line">
+                {t("contentScaffoldHelp")}
+              </p>
             </TabsContent>
             <TabsContent value="preview">
               <div className="border rounded-md p-4 min-h-[200px] max-h-[480px] overflow-y-auto">
