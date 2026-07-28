@@ -176,12 +176,15 @@ export const ASSET_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 /** 后端 MAX_ASSET_PATH_LENGTH */
 export const ASSET_MAX_PATH_LENGTH = 500;
 
-/** 顶层目录 → kind 推断表（后端不推断，由前端定默认值，用户可改） */
+/**
+ * 顶层目录 → kind 推断表。与后端 scripts/import_skill_assets.py 的 KIND_BY_TOP_DIR
+ * 逐条对齐：**不含 references**——`references/` 下混着 .docx/.pdf 的真实数据表明
+ * 目录名不足以定 kind，落到扩展名分流（见 inferAssetKind）。
+ */
 const TOP_DIR_KIND: Readonly<Record<string, SkillAssetKind>> = {
   scripts: "script",
   data: "data",
   assets: "asset",
-  references: "reference",
 };
 
 /** 分组展示顺序：约定目录在前，其余目录字典序，根文件最后 */
@@ -252,12 +255,119 @@ export function validateWritableSubdir(input: string): AssetPathError | null {
   return null;
 }
 
-/** 按顶层目录推断 kind，未知目录与根文件归 reference */
+/**
+ * 后端 skill_view.BINARY_EXTENSIONS 的镜像。**两处必须同值**：后端据此
+ * 决定资产能否被 skill_view 解码、以及注入块 references footer 列不列它，
+ * 前端据此标注可读性并提示 kind 选错——漂移会让界面说"可读"而实际读不到。
+ */
+export const BINARY_ASSET_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".webp",
+  ".ico",
+  ".tif",
+  ".tiff",
+  ".zip",
+  ".gz",
+  ".tgz",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
+  ".tar",
+  ".whl",
+  ".so",
+  ".dylib",
+  ".dll",
+  ".exe",
+  ".bin",
+  ".pyc",
+  ".pyd",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  ".mp3",
+  ".mp4",
+  ".wav",
+  ".avi",
+  ".mov",
+  ".mkv",
+  ".flac",
+  ".parquet",
+  ".db",
+  ".sqlite",
+  ".npy",
+  ".npz",
+  ".pkl",
+  ".jar",
+  ".class",
+]);
+
+/** 后端 is_viewable_path 的镜像：扩展名不像二进制 = 模型有可能读得动 */
+export function isViewableAssetPath(path: string): boolean {
+  const normalized = normalizeAssetPath(path);
+  const dot = normalized.lastIndexOf(".");
+  const slash = normalized.lastIndexOf("/");
+  if (dot <= 0 || dot < slash + 1) return true;
+  return !BINARY_ASSET_EXTENSIONS.has(normalized.slice(dot).toLowerCase());
+}
+
+/**
+ * 按顶层目录推断 kind；references/、根文件与未知目录按扩展名分流
+ * （文本 → reference，二进制 → asset），与后端 classify_kind 同口径。
+ */
 export function inferAssetKind(path: string): SkillAssetKind {
   const normalized = normalizeAssetPath(path);
   const slash = normalized.indexOf("/");
-  if (slash <= 0) return "reference";
-  return TOP_DIR_KIND[normalized.slice(0, slash).toLowerCase()] ?? "reference";
+  const mapped = slash > 0 ? TOP_DIR_KIND[normalized.slice(0, slash).toLowerCase()] : undefined;
+  if (mapped) return mapped;
+  return isViewableAssetPath(normalized) ? "reference" : "asset";
+}
+
+/**
+ * 模型可否经 skill_view 按需读取该资产（**忽略 stage**，调用方负责只对
+ * published 行下结论）。三条判据逐条对齐后端 query_reference_assets：
+ * kind='reference' + 扩展名非二进制 + 不是根目录 SKILL.md（正文本体已全量注入）。
+ */
+export function isModelReadableAsset(asset: { kind: string; path: string }): boolean {
+  if (asset.kind !== "reference") return false;
+  const path = normalizeAssetPath(asset.path);
+  if (path === "SKILL.md") return false;
+  return isViewableAssetPath(path);
+}
+
+/** 已发布资产清单 → 模型可读路径集合（草稿清单据此打标） */
+export function readableAssetPaths(published: readonly SkillAssetItem[]): Set<string> {
+  const paths = new Set<string>();
+  for (const item of published) {
+    if (isModelReadableAsset(item)) paths.add(item.path);
+  }
+  return paths;
+}
+
+/** kind 选择的轻提示码；null = 没什么好提醒的 */
+export type AssetKindWarning = "binaryAsReference";
+
+/**
+ * 按扩展名提醒 kind 选错：二进制标成 reference 会被列进注入块 footer，却
+ * 必然读失败（真实库里 .docx/.pdf 被标 reference 的错分类就是这么来的）。
+ * 只提示不拦——后端接受任意 kind，判断权留给作者。
+ */
+export function assetKindWarning(path: string, kind: SkillAssetKind): AssetKindWarning | null {
+  if (kind === "reference" && !isViewableAssetPath(path)) return "binaryAsReference";
+  return null;
 }
 
 /**

@@ -4,12 +4,15 @@ import {
   ASSET_MAX_FILE_BYTES,
   ASSET_MAX_TOTAL_BYTES,
   arrayBufferToBase64,
+  assetKindWarning,
   diffExecConfig,
   encodeAssetPath,
   formatBytes,
   formatLlmQuota,
   groupAssetsByDir,
   inferAssetKind,
+  isModelReadableAsset,
+  isViewableAssetPath,
   joinEncodedSegments,
   normalizeAssetDiff,
   normalizeAssetPath,
@@ -20,6 +23,7 @@ import {
   parseSandboxImages,
   parseSkillDiff,
   planUploads,
+  readableAssetPaths,
   resolveImageSelection,
   sandboxImageValue,
   shortSha,
@@ -284,6 +288,67 @@ test("inferAssetKind 按顶层目录推断，其余归 reference", () => {
   assert.equal(inferAssetKind("SKILL.md"), "reference");
   assert.equal(inferAssetKind("misc/notes.txt"), "reference");
   assert.equal(inferAssetKind("./scripts/nested/run.py"), "script");
+});
+
+test("inferAssetKind 兜底走扩展名：二进制不再默认 reference（对齐后端 classify_kind）", () => {
+  assert.equal(inferAssetKind("references/模板.docx"), "asset");
+  assert.equal(inferAssetKind("字段计算规则.pdf"), "asset");
+  assert.equal(inferAssetKind("report_manual/样例.xlsx"), "asset");
+  assert.equal(inferAssetKind("logo.PNG"), "asset");
+  // 顶层目录命中优先于扩展名，与后端 KIND_BY_TOP_DIR 一致
+  assert.equal(inferAssetKind("scripts/手册.docx"), "script");
+  assert.equal(inferAssetKind("data/表.xlsx"), "data");
+});
+
+test("isViewableAssetPath 镜像后端 is_viewable_path", () => {
+  for (const path of ["references/guide.md", "AGENTS.md", "requirements.txt", "scripts/run.py"]) {
+    assert.equal(isViewableAssetPath(path), true, path);
+  }
+  for (const path of ["a.docx", "a.pdf", "a.xlsx", "a.png", "a.zip", "a.PDF", "a.Docx"]) {
+    assert.equal(isViewableAssetPath(path), false, path);
+  }
+  // 无扩展名 / 目录名带点 / 隐藏文件按 splitext 语义都算可读
+  assert.equal(isViewableAssetPath("README"), true);
+  assert.equal(isViewableAssetPath("v1.2/notes"), true);
+  assert.equal(isViewableAssetPath(".gitignore"), true);
+});
+
+test("isModelReadableAsset 三条判据：kind=reference + 非二进制 + 非根 SKILL.md", () => {
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "references/guide.md" }), true);
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "AGENTS.md" }), true);
+  // 根 SKILL.md 是全量注入的正文本体，后端 footer 也剔掉它
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "SKILL.md" }), false);
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "./SKILL.md" }), false);
+  // 只剔根目录那一份；子目录同名文件仍可读
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "sub/SKILL.md" }), true);
+  assert.equal(isModelReadableAsset({ kind: "reference", path: "references/表.docx" }), false);
+  for (const kind of ["script", "asset", "data"]) {
+    assert.equal(isModelReadableAsset({ kind, path: "references/guide.md" }), false, kind);
+  }
+});
+
+test("readableAssetPaths 只收已发布快照里模型读得到的路径", () => {
+  const published = [
+    asset("references/guide.md", 100, "reference"),
+    asset("references/表.docx", 200, "reference"),
+    asset("SKILL.md", 300, "reference"),
+    asset("scripts/run.py", 400, "script"),
+    asset("data/holdings.csv", 500, "data"),
+  ];
+  assert.deepEqual([...readableAssetPaths(published)], ["references/guide.md"]);
+  assert.equal(readableAssetPaths([]).size, 0);
+});
+
+test("assetKindWarning 只在二进制被标成 reference 时提示", () => {
+  assert.equal(assetKindWarning("references/表.docx", "reference"), "binaryAsReference");
+  assert.equal(assetKindWarning("字段规则.pdf", "reference"), "binaryAsReference");
+  assert.equal(assetKindWarning("references/guide.md", "reference"), null);
+  // 二进制标成 asset/data/script 是正解，不提示
+  assert.equal(assetKindWarning("references/表.docx", "asset"), null);
+  assert.equal(assetKindWarning("data/表.xlsx", "data"), null);
+  // 文本标成 asset/data 只是放弃可读性，不提示（data/*.csv 这类是常态）
+  assert.equal(assetKindWarning("data/holdings.csv", "data"), null);
+  assert.equal(assetKindWarning("scripts/run.py", "script"), null);
 });
 
 test("encodeAssetPath 编码中文与空格但保留分隔符", () => {
