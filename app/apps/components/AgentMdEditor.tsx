@@ -6,7 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +23,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertCircle, Eye, FileText, Loader2, Sparkles, Undo2 } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Eye,
+  FileText,
+  Loader2,
+  Sparkles,
+  Undo2,
+  X,
+} from "lucide-react";
 import { useAgentMd, type AgentMdValidationError } from "@/hooks/useAgentMd";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
@@ -47,6 +62,7 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [validationErrors, setValidationErrors] = useState<AgentMdValidationError[]>([]);
+  const [saveWarnings, setSaveWarnings] = useState<string[]>([]);
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [revertDialogOpen, setRevertDialogOpen] = useState(false);
@@ -67,6 +83,11 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
     const result = await save(content);
     if (result.ok) {
       setDirty(false);
+      // 后端会剥掉 frontmatter 的 model，回填归一化全文才不会与库里的内容分叉
+      if (typeof result.normalizedContent === "string") {
+        setContent(result.normalizedContent);
+      }
+      setSaveWarnings(result.warnings || []);
     } else if (result.errors) {
       setValidationErrors(result.errors);
     }
@@ -79,6 +100,7 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
     setGenerating(false);
     if (ok) {
       setDirty(false);
+      setSaveWarnings([]);
       onChanged?.();
     }
   };
@@ -90,6 +112,7 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
       setDirty(false);
       setContent("");
       setValidationErrors([]);
+      setSaveWarnings([]);
       onChanged?.();
     }
   };
@@ -206,6 +229,47 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
                 </ul>
               </div>
             )}
+            {/* 保存成功但内容被归一化（如剥掉 frontmatter model）：留在页面上直到用户主动关闭 */}
+            {saveWarnings.length > 0 && (
+              <section
+                aria-live="polite"
+                className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle
+                    className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                      {t("agentMdSaveWarningsTitle", { count: saveWarnings.length })}
+                    </p>
+                    <ul className="mt-1.5 space-y-1 list-disc pl-4">
+                      {saveWarnings.map((warning) => (
+                        <li
+                          key={warning}
+                          className="text-sm text-amber-900 break-words dark:text-amber-200"
+                        >
+                          {warning}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
+                      {t("agentMdSaveWarningsHint")}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 shrink-0"
+                    aria-label={tc("close")}
+                    onClick={() => setSaveWarnings([])}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </section>
+            )}
             <Textarea
               value={content}
               onChange={(e) => {
@@ -230,6 +294,7 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t("exportView")}</DialogTitle>
+            <DialogDescription>{t("exportViewNote")}</DialogDescription>
           </DialogHeader>
           <pre className="text-xs bg-muted rounded-md p-4 max-h-[60vh] overflow-auto whitespace-pre-wrap">
             {exportContent}

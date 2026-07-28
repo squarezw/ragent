@@ -2,12 +2,22 @@ import useSWR from "swr";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
+import { parseAgentMdSaveResult } from "@/lib/agentMd";
 import type { AgentMdResponse } from "@/types/skill";
 
 /** PUT 422 的行级错误（后端 detail 含行号信息，形状宽松兼容） */
 export interface AgentMdValidationError {
   line?: number;
   message: string;
+}
+
+export interface AgentMdSaveOutcome {
+  ok: boolean;
+  errors?: AgentMdValidationError[];
+  /** 保存成功但有非阻断提示（如 frontmatter model 被剥离） */
+  warnings?: string[];
+  /** 入库后的归一化全文；null = 后端没回传，保留编辑器现有内容 */
+  normalizedContent?: string | null;
 }
 
 function parseValidationErrors(detail: unknown): AgentMdValidationError[] {
@@ -47,17 +57,18 @@ export const useAgentMd = (appId: number | null) => {
   });
 
   // 保存全文；校验失败返回行级错误列表（不弹全局 toast）
-  const save = async (
-    content: string
-  ): Promise<{ ok: boolean; errors?: AgentMdValidationError[] }> => {
+  // 成功时响应的 content 是归一化后的全文（后端会剥掉 frontmatter 的 model），
+  // 直接把它写进 SWR 缓存，编辑器回填的就是库里真正存的内容
+  const save = async (content: string): Promise<AgentMdSaveOutcome> => {
     if (!appId) return { ok: false };
     try {
-      await axios.put(`/api/v1/apps/${appId}/agent-md`, { content }, {
+      const response = await axios.put(`/api/v1/apps/${appId}/agent-md`, { content }, {
         suppressErrorToast: true,
       } as any);
+      const saved = parseAgentMdSaveResult(response.data);
       toast.success(t("agentMdSaved"));
-      mutate();
-      return { ok: true };
+      mutate(response.data as AgentMdResponse, { revalidate: false });
+      return { ok: true, warnings: saved.warnings, normalizedContent: saved.normalizedContent };
     } catch (error: any) {
       if (error.response?.status === 422) {
         return { ok: false, errors: parseValidationErrors(error.response.data?.detail) };

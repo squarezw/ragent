@@ -175,11 +175,15 @@ export interface AppSkill {
   skill?: Partial<Skill>;
 }
 
-/** GET /api/v1/apps/{appId}/agent-md 响应 */
+/** GET|PUT /api/v1/apps/{appId}/agent-md 响应 */
 export interface AgentMdResponse {
+  /** PUT 时为入库后的归一化全文（可能与提交内容不同，须据此回填编辑器） */
   content: string | null;
+  /** 解析后的 frontmatter（不含 model：模型真源在应用设置，写入即被剥离） */
   frontmatter: Record<string, unknown> | null;
   is_legacy: boolean;
+  /** 非阻断提示（如 frontmatter model 已被剥离）；GET 恒为 null */
+  warnings?: string[] | null;
 }
 
 /** GET /api/v1/prompt-variables 条目（形状宽松，后端并行开发中） */
