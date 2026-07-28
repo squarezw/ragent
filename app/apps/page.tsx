@@ -1506,9 +1506,6 @@ export default function AppsPage() {
                       <SelectItem value="openai">OpenAI</SelectItem>
                     </SelectContent>
                   </Select>
-                  {editingApp?.agent_md != null && (
-                    <p className="text-xs text-muted-foreground">{ts("modelOverriddenByAgentMd")}</p>
-                  )}
                 </div>
 
                 {editingApp?.agent_md != null ? (
