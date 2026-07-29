@@ -5,6 +5,7 @@ import {
   ASSET_MAX_TOTAL_BYTES,
   arrayBufferToBase64,
   assetKindWarning,
+  buildExecConfigPayload,
   diffExecConfig,
   encodeAssetPath,
   formatBytes,
@@ -432,6 +433,52 @@ test("parseExecConfig 带 llm 限额字段；缺 image 视为无配置", () => {
   assert.equal(cfg?.updated_at, "2026-07-27T00:00:00Z");
   assert.equal(parseExecConfig({ stage: "draft", timeout_sec: 300 }), null);
   assert.equal(parseExecConfig(null), null);
+});
+
+const execEdits = {
+  image: "ragent-skill-fund:latest",
+  timeout_sec: 300,
+  needs_llm: true,
+  warm_pool: false,
+  llm_max_calls: 5,
+  llm_max_total_tokens: 100000,
+};
+
+// 回归防线：可写目录已从表单下架，但后端 PUT 是全量覆盖（缺省 → []）。
+// 这条断言失败就意味着保存一次运行配置会清掉 fund 的 .report_state 持久状态。
+test("buildExecConfigPayload 按 GET 现值透传 writable_subdirs（表单不再编辑）", () => {
+  const loaded = parseExecConfig({
+    stage: "draft",
+    image: "ragent-skill-fund:latest",
+    timeout_sec: 300,
+    writable_subdirs: [".report_state"],
+    needs_llm: true,
+  });
+  const payload = buildExecConfigPayload(execEdits, loaded);
+  assert.deepEqual(payload.writable_subdirs, [".report_state"]);
+  assert.equal(payload.image, "ragent-skill-fund:latest");
+  assert.equal(payload.timeout_sec, 300);
+  assert.equal(payload.needs_llm, true);
+  assert.equal(payload.llm_max_calls, 5);
+  assert.equal(payload.llm_max_total_tokens, 100000);
+});
+
+test("buildExecConfigPayload 编辑其它字段不影响透传的 writable_subdirs", () => {
+  const loaded = parseExecConfig({
+    image: "old:1",
+    writable_subdirs: [".report_state", "out/cache"],
+  });
+  const payload = buildExecConfigPayload(
+    { ...execEdits, image: "new:2", timeout_sec: 60, needs_llm: false, llm_max_calls: null },
+    loaded
+  );
+  assert.deepEqual(payload.writable_subdirs, [".report_state", "out/cache"]);
+  assert.equal(payload.image, "new:2");
+  assert.equal(payload.llm_max_calls, null);
+});
+
+test("buildExecConfigPayload 首次配置（无现值）为空清单", () => {
+  assert.deepEqual(buildExecConfigPayload(execEdits, null).writable_subdirs, []);
 });
 
 test("parseSandboxImages 归一化并回算 ref", () => {

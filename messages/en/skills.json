@@ -188,8 +188,6 @@
   "execImageDigestNote": "Current image is digest-pinned: {ref}",
   "execImageManual": "Image allowlist unavailable — enter name:tag manually",
   "execTimeoutHint": "Per-run timeout in seconds, 1-3600",
-  "execWritableSubdirsHint": "Writable persistent state directories such as .report_state; preserved across versions",
-  "execRemoveSubdir": "Remove {dir}",
   "execNeedsLlmHint": "Lets the container call the model through the platform gateway without seeing real credentials",
   "execLlmMaxCalls": "Max gateway calls",
   "execLlmMaxCallsHint": "Cap on model gateway calls within a single run; the gateway returns 429 once it is exceeded. Leave empty for no skill-level limit.",
