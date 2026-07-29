@@ -59,7 +59,6 @@ export interface SkillAssetDiffItem {
 /** GET /api/v1/skills/{id}/diff → exec_config_draft / exec_config_published */
 export interface SkillExecConfigSummary {
   stage: string;
-  entrypoint: string;
   /** name:tag（digest 锁版本时为 name@digest） */
   image: string;
   image_enabled: boolean;

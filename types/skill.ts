@@ -59,7 +59,6 @@ export interface SkillAssetList {
 /** GET|PUT /api/v1/skills/{id}/exec-config 响应 */
 export interface SkillExecConfig {
   stage: string;
-  entrypoint: string;
   /** name:tag（digest 锁版本时为 name@digest） */
   image: string;
   image_enabled: boolean;
@@ -74,7 +73,6 @@ export interface SkillExecConfig {
 
 /** PUT /api/v1/skills/{id}/exec-config 请求体（SkillExecConfigPayload） */
 export interface SkillExecConfigPayload {
-  entrypoint: string;
   image: string;
   timeout_sec: number;
   writable_subdirs: string[];

@@ -58,16 +58,14 @@ export function normalizeAssetDiff(value: unknown): SkillAssetDiffItem[] {
   return value.map(toAssetDiffItem).filter((item): item is SkillAssetDiffItem => item !== null);
 }
 
-/** exec 配置容错归一化：entrypoint/image 任一缺失视为无配置 */
+/** exec 配置容错归一化：image 缺失视为无配置（沙箱镜像是可执行 skill 的唯一必填项） */
 export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | null {
   if (typeof value !== "object" || value === null) return null;
   const obj = value as Record<string, unknown>;
-  const entrypoint = asString(obj.entrypoint);
   const image = asString(obj.image);
-  if (!entrypoint || !image) return null;
+  if (!image) return null;
   return {
     stage: asString(obj.stage) ?? "draft",
-    entrypoint,
     image,
     image_enabled: obj.image_enabled !== false,
     timeout_sec: asSize(obj.timeout_sec) ?? 120,
@@ -137,7 +135,6 @@ export function summarizeAssetDiff(items: SkillAssetDiffItem[]): AssetDiffSummar
 
 /** exec 配置 diff 视图要标注的字段 */
 export type ExecConfigField =
-  | "entrypoint"
   | "image"
   | "timeout_sec"
   | "writable_subdirs"
@@ -154,7 +151,6 @@ export function diffExecConfig(
 ): ExecConfigField[] {
   if (!draft || !published) return [];
   const changed: ExecConfigField[] = [];
-  if (draft.entrypoint !== published.entrypoint) changed.push("entrypoint");
   if (draft.image !== published.image) changed.push("image");
   if (draft.timeout_sec !== published.timeout_sec) changed.push("timeout_sec");
   if (draft.writable_subdirs.join("\n") !== published.writable_subdirs.join("\n")) {
@@ -432,13 +428,12 @@ export function parseAssetList(data: unknown): SkillAssetList {
   };
 }
 
-/** GET|PUT /api/v1/skills/{id}/exec-config 响应容错解包；entrypoint/image 缺失视为无配置 */
+/** GET|PUT /api/v1/skills/{id}/exec-config 响应容错解包；image 缺失视为无配置 */
 export function parseExecConfig(data: unknown): SkillExecConfig | null {
   const summary = normalizeExecConfig(data);
   if (!summary) return null;
   return {
     stage: summary.stage,
-    entrypoint: summary.entrypoint,
     image: summary.image,
     image_enabled: summary.image_enabled,
     timeout_sec: summary.timeout_sec,

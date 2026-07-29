@@ -20,7 +20,6 @@ import {
   parseLlmQuota,
   resolveImageSelection,
   sandboxImageValue,
-  validateAssetPath,
   validateWritableSubdir,
 } from "@/lib/skillAssets";
 import type { SandboxImage, SkillExecConfig, SkillExecConfigPayload } from "@/types/skill";
@@ -45,7 +44,6 @@ export default function SkillExecConfigForm({
 }: SkillExecConfigFormProps) {
   const t = useTranslations("skills");
 
-  const [entrypoint, setEntrypoint] = useState(config?.entrypoint ?? "");
   const [image, setImage] = useState("");
   const [timeout, setTimeoutSec] = useState(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
   const [subdirs, setSubdirs] = useState<string[]>(config?.writable_subdirs ?? []);
@@ -62,7 +60,6 @@ export default function SkillExecConfigForm({
 
   // 配置或镜像清单异步到达后回填（digest 形态的 image 在此映射回可提交的 name:tag）
   useEffect(() => {
-    setEntrypoint(config?.entrypoint ?? "");
     setTimeoutSec(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
     setSubdirs(config?.writable_subdirs ?? []);
     setNeedsLlm(config?.needs_llm ?? false);
@@ -75,7 +72,6 @@ export default function SkillExecConfigForm({
     setImage(selection.value);
   }, [selection.value]);
 
-  const entrypointError = entrypoint.trim() ? validateAssetPath(entrypoint.trim()) : "empty";
   const timeoutValue = Number(timeout);
   const timeoutInvalid = !Number.isInteger(timeoutValue) || timeoutValue < 1 || timeoutValue > 3600;
   const imageMissing = image.trim().length === 0;
@@ -89,7 +85,7 @@ export default function SkillExecConfigForm({
   // 已下架或已从白名单移除的镜像：下拉框里没有这一项，补一条避免 Select 显示空白
   const orphanImage = useSelect && image && !images.some((i) => sandboxImageValue(i) === image);
 
-  const canSave = !saving && !entrypointError && !timeoutInvalid && !imageMissing && !quotaInvalid;
+  const canSave = !saving && !timeoutInvalid && !imageMissing && !quotaInvalid;
 
   const addSubdir = () => {
     const value = newSubdir.trim();
@@ -101,26 +97,6 @@ export default function SkillExecConfigForm({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="exec-entrypoint">{t("execEntrypoint")} *</Label>
-          <Input
-            id="exec-entrypoint"
-            value={entrypoint}
-            onChange={(e) => setEntrypoint(e.target.value)}
-            placeholder="scripts/run.py"
-            className={entrypoint && entrypointError ? "border-destructive" : ""}
-          />
-          <p
-            className={`text-xs ${
-              entrypoint && entrypointError ? "text-destructive" : "text-muted-foreground"
-            }`}
-          >
-            {entrypoint && entrypointError
-              ? t(PATH_ERROR_MESSAGE_KEY[entrypointError])
-              : t("execEntrypointHint")}
-          </p>
-        </div>
-
         <div className="space-y-1.5">
           <Label htmlFor="exec-image">{t("execImage")} *</Label>
           {useSelect ? (
@@ -270,7 +246,6 @@ export default function SkillExecConfigForm({
           disabled={!canSave}
           onClick={() =>
             onSave({
-              entrypoint: entrypoint.trim(),
               image: image.trim(),
               timeout_sec: timeoutValue,
               writable_subdirs: subdirs,

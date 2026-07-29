@@ -90,7 +90,6 @@ const backendDiff = {
   exec_config_draft: {
     skill_id: 7,
     stage: "draft",
-    entrypoint: "scripts/run.py",
     image: "ragent/python-sandbox:3.12",
     image_enabled: true,
     timeout_sec: 300,
@@ -148,15 +147,29 @@ test("normalizeAssetDiff 剔除坏行、未知 change 按 modified 保守标注"
   assert.deepEqual(normalizeAssetDiff({}), []);
 });
 
-test("normalizeExecConfig 缺 entrypoint/image 视为无配置", () => {
+test("normalizeExecConfig 缺 image 视为无配置", () => {
   assert.equal(normalizeExecConfig(null), null);
-  assert.equal(normalizeExecConfig({ entrypoint: "run.py" }), null);
-  assert.equal(normalizeExecConfig({ image: "img:1" }), null);
-  const cfg = normalizeExecConfig({ entrypoint: "run.py", image: "img:1" });
+  assert.equal(normalizeExecConfig({}), null);
+  assert.equal(normalizeExecConfig({ stage: "draft", timeout_sec: 300 }), null);
+  const cfg = normalizeExecConfig({ image: "img:1" });
   assert.equal(cfg?.timeout_sec, 120);
   assert.equal(cfg?.image_enabled, true);
   assert.deepEqual(cfg?.writable_subdirs, []);
   assert.equal(cfg?.needs_llm, false);
+});
+
+// 后端已删 entrypoint 列（迁移 039）：只有 image 的响应必须判为有效 exec 配置
+test("normalizeExecConfig 有 image 无 entrypoint 仍是有效配置", () => {
+  const cfg = normalizeExecConfig({
+    stage: "draft",
+    image: "ragent-skill-fund:latest",
+    timeout_sec: 300,
+    needs_llm: true,
+  });
+  assert.notEqual(cfg, null);
+  assert.equal(cfg?.image, "ragent-skill-fund:latest");
+  assert.equal(cfg?.timeout_sec, 300);
+  assert.equal(cfg?.needs_llm, true);
 });
 
 test("summarizeAssetDiff 草稿清单规模 + 变更计数（removed 不计入草稿）", () => {
@@ -181,7 +194,6 @@ test("summarizeAssetDiff 全部 unchanged 时 hasChanges 为假", () => {
 
 const baseCfg: SkillExecConfigSummary = {
   stage: "published",
-  entrypoint: "run.py",
   image: "img:1",
   image_enabled: true,
   timeout_sec: 120,
@@ -401,11 +413,10 @@ test("parseAssetList 容错解包并回算合计", () => {
   assert.equal(empty.total_bytes, 0);
 });
 
-test("parseExecConfig 带 llm 限额字段；缺 entrypoint 视为无配置", () => {
+test("parseExecConfig 带 llm 限额字段；缺 image 视为无配置", () => {
   const cfg = parseExecConfig({
     skill_id: 3,
     stage: "draft",
-    entrypoint: "scripts/run.py",
     image: "ragent-skill-fund:latest",
     timeout_sec: 300,
     writable_subdirs: [".report_state"],
@@ -415,11 +426,11 @@ test("parseExecConfig 带 llm 限额字段；缺 entrypoint 视为无配置", ()
     llm_max_total_tokens: 100000,
     updated_at: "2026-07-27T00:00:00Z",
   });
-  assert.equal(cfg?.entrypoint, "scripts/run.py");
+  assert.equal(cfg?.image, "ragent-skill-fund:latest");
   assert.equal(cfg?.llm_max_calls, 5);
   assert.equal(cfg?.llm_max_total_tokens, 100000);
   assert.equal(cfg?.updated_at, "2026-07-27T00:00:00Z");
-  assert.equal(parseExecConfig({ image: "x:1" }), null);
+  assert.equal(parseExecConfig({ stage: "draft", timeout_sec: 300 }), null);
   assert.equal(parseExecConfig(null), null);
 });
 

@@ -145,7 +145,6 @@ function ExecConfigColumn({
         </span>
       ),
     },
-    { field: "entrypoint", label: t("execEntrypoint"), value: config.entrypoint },
     {
       field: "timeout_sec",
       label: t("execTimeout"),
@@ -331,7 +330,7 @@ export default function SkillDiffDialog({
               </div>
             )}
 
-            {/* P8a：exec 配置摘要（镜像 / 入口 / 超时等），字段差异标黄 */}
+            {/* P8a：exec 配置摘要（镜像 / 超时 / 可写目录等），字段差异标黄 */}
             {hasExecConfig && (
               <div className="space-y-2">
                 <p className="text-sm font-medium flex items-center gap-2">
