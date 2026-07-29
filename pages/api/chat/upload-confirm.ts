@@ -161,16 +161,30 @@ async function extractContentFromBuffer(
       );
   }
 
-  // OCR fallback for empty PDF
+  // 文字抽取为空 → 交给 OCR 兜底。
+  //
+  // 曾经只放 PDF 进这个分支，于是**整页截图粘进 Word 的 docx 直接失败**：mammoth
+  // 拿不到文字（实测某 16 页保险材料的 document.xml 去标签后 0 字符，内容全在
+  // word/media 的 16 张 PNG 里），用户看到的是 "No text content found in file"，
+  // 而后端 /api/v1/ocr 本来就能识别它——只是没人送过去。
+  //
+  // 后端对 docx 是**逐页**识别并保留 `## 第 N 页` 标记的，所以走这条路拿到的文本
+  // 带真实页码；这比 mammoth 那种整块无分页的文本更适合需要引用页码的下游。
+  const OCR_FALLBACK_MIMETYPES = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]);
   if (
     (!extractedContent || extractedContent.trim().length === 0) &&
-    mimetype === "application/pdf" &&
+    OCR_FALLBACK_MIMETYPES.has(mimetype) &&
     authToken
   ) {
     try {
       extractedContent = await callOCRAPI(buffer, filename, mimetype, authToken);
     } catch (ocrError: any) {
-      throw new Error(`PDF has no text content, OCR also failed: ${ocrError.message}`);
+      throw new Error(
+        `${fileType || "File"} has no extractable text, OCR also failed: ${ocrError.message}`
+      );
     }
   } else if (!extractedContent || extractedContent.trim().length === 0) {
     throw new Error("No text content found in file");
