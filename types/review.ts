@@ -64,11 +64,9 @@ export interface SkillExecConfigSummary {
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];
-  needs_llm: boolean;
+  /** 只管要不要出网；false = 容器完全禁网（--network none） */
+  needs_network: boolean;
   warm_pool: boolean;
-  /** P8b per-run 网关调用上限覆盖；null = 全局默认 */
-  llm_max_calls?: number | null;
-  llm_max_total_tokens?: number | null;
   updated_at?: string | null;
 }
 

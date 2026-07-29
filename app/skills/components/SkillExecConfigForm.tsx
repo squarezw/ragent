@@ -16,8 +16,6 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import {
   buildExecConfigPayload,
-  formatLlmQuota,
-  parseLlmQuota,
   resolveImageSelection,
   sandboxImageValue,
 } from "@/lib/skillAssets";
@@ -45,10 +43,8 @@ export default function SkillExecConfigForm({
 
   const [image, setImage] = useState("");
   const [timeout, setTimeoutSec] = useState(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
-  const [needsLlm, setNeedsLlm] = useState(config?.needs_llm ?? false);
+  const [needsNetwork, setNeedsNetwork] = useState(config?.needs_network ?? false);
   const [warmPool, setWarmPool] = useState(config?.warm_pool ?? false);
-  const [maxCalls, setMaxCalls] = useState(formatLlmQuota(config?.llm_max_calls));
-  const [maxTokens, setMaxTokens] = useState(formatLlmQuota(config?.llm_max_total_tokens));
 
   const selection = useMemo(
     () => resolveImageSelection(config?.image, images),
@@ -58,10 +54,8 @@ export default function SkillExecConfigForm({
   // 配置或镜像清单异步到达后回填（digest 形态的 image 在此映射回可提交的 name:tag）
   useEffect(() => {
     setTimeoutSec(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
-    setNeedsLlm(config?.needs_llm ?? false);
+    setNeedsNetwork(config?.needs_network ?? false);
     setWarmPool(config?.warm_pool ?? false);
-    setMaxCalls(formatLlmQuota(config?.llm_max_calls));
-    setMaxTokens(formatLlmQuota(config?.llm_max_total_tokens));
   }, [config]);
 
   useEffect(() => {
@@ -71,16 +65,12 @@ export default function SkillExecConfigForm({
   const timeoutValue = Number(timeout);
   const timeoutInvalid = !Number.isInteger(timeoutValue) || timeoutValue < 1 || timeoutValue > 3600;
   const imageMissing = image.trim().length === 0;
-  const maxCallsQuota = parseLlmQuota(maxCalls);
-  const maxTokensQuota = parseLlmQuota(maxTokens);
-  // 配额字段在 needs_llm 关闭时隐藏，此时不该用不可见的输入框卡住保存按钮
-  const quotaInvalid = needsLlm && (!maxCallsQuota.valid || !maxTokensQuota.valid);
 
   const useSelect = !imagesUnavailable && images.length > 0;
   // 已下架或已从白名单移除的镜像：下拉框里没有这一项，补一条避免 Select 显示空白
   const orphanImage = useSelect && image && !images.some((i) => sandboxImageValue(i) === image);
 
-  const canSave = !saving && !timeoutInvalid && !imageMissing && !quotaInvalid;
+  const canSave = !saving && !timeoutInvalid && !imageMissing;
 
   return (
     <div className="space-y-4">
@@ -138,11 +128,11 @@ export default function SkillExecConfigForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ToggleRow
-          id="exec-needs-llm"
-          label={t("execNeedsLlm")}
-          hint={t("execNeedsLlmHint")}
-          checked={needsLlm}
-          onChange={setNeedsLlm}
+          id="exec-needs-network"
+          label={t("execNeedsNetwork")}
+          hint={t("execNeedsNetworkHint")}
+          checked={needsNetwork}
+          onChange={setNeedsNetwork}
         />
         <ToggleRow
           id="exec-warm-pool"
@@ -153,29 +143,6 @@ export default function SkillExecConfigForm({
         />
       </div>
 
-      {needsLlm && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <QuotaField
-            id="exec-llm-max-calls"
-            label={t("execLlmMaxCalls")}
-            placeholder={t("execLlmQuotaUnlimited")}
-            value={maxCalls}
-            invalid={!maxCallsQuota.valid}
-            hint={maxCallsQuota.valid ? t("execLlmMaxCallsHint") : t("execLlmQuotaInvalid")}
-            onChange={setMaxCalls}
-          />
-          <QuotaField
-            id="exec-llm-max-tokens"
-            label={t("execLlmMaxTotalTokens")}
-            placeholder={t("execLlmQuotaUnlimited")}
-            value={maxTokens}
-            invalid={!maxTokensQuota.valid}
-            hint={maxTokensQuota.valid ? t("execLlmMaxTotalTokensHint") : t("execLlmQuotaInvalid")}
-            onChange={setMaxTokens}
-          />
-        </div>
-      )}
-
       <div className="flex justify-end">
         <Button
           disabled={!canSave}
@@ -185,10 +152,8 @@ export default function SkillExecConfigForm({
                 {
                   image: image.trim(),
                   timeout_sec: timeoutValue,
-                  needs_llm: needsLlm,
+                  needs_network: needsNetwork,
                   warm_pool: warmPool,
-                  llm_max_calls: maxCallsQuota.value,
-                  llm_max_total_tokens: maxTokensQuota.value,
                 },
                 // 可写目录不在表单里编辑，但要按 GET 现值透传回去——后端全量覆盖，
                 // 漏传等于把 fund 的 .report_state 持久状态目录配置清空。
@@ -201,42 +166,6 @@ export default function SkillExecConfigForm({
           {t("execConfigSave")}
         </Button>
       </div>
-    </div>
-  );
-}
-
-function QuotaField({
-  id,
-  label,
-  placeholder,
-  value,
-  invalid,
-  hint,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  placeholder: string;
-  value: string;
-  invalid: boolean;
-  hint: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type="number"
-        min={1}
-        step={1}
-        inputMode="numeric"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className={invalid ? "border-destructive" : ""}
-      />
-      <p className={`text-xs ${invalid ? "text-destructive" : "text-muted-foreground"}`}>{hint}</p>
     </div>
   );
 }

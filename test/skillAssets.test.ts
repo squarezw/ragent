@@ -9,7 +9,6 @@ import {
   diffExecConfig,
   encodeAssetPath,
   formatBytes,
-  formatLlmQuota,
   groupAssetsByDir,
   inferAssetKind,
   isModelReadableAsset,
@@ -20,7 +19,6 @@ import {
   normalizeExecConfig,
   parseAssetList,
   parseExecConfig,
-  parseLlmQuota,
   parseSandboxImages,
   parseSkillDiff,
   planUploads,
@@ -95,7 +93,7 @@ const backendDiff = {
     image_enabled: true,
     timeout_sec: 300,
     writable_subdirs: [".report_state"],
-    needs_llm: true,
+    needs_network: true,
     warm_pool: false,
     updated_at: "2026-07-25T01:00:00Z",
   },
@@ -112,7 +110,7 @@ test("parseSkillDiff 后端 P8a 完整形状", () => {
   assert.equal(diff.assets[0].draft_text, "print('v2')");
   assert.equal(diff.exec_config_draft?.image, "ragent/python-sandbox:3.12");
   assert.equal(diff.exec_config_draft?.timeout_sec, 300);
-  assert.equal(diff.exec_config_draft?.needs_llm, true);
+  assert.equal(diff.exec_config_draft?.needs_network, true);
   assert.deepEqual(diff.exec_config_draft?.writable_subdirs, [".report_state"]);
   assert.equal(diff.exec_config_published, null);
 });
@@ -156,7 +154,7 @@ test("normalizeExecConfig 缺 image 视为无配置", () => {
   assert.equal(cfg?.timeout_sec, 120);
   assert.equal(cfg?.image_enabled, true);
   assert.deepEqual(cfg?.writable_subdirs, []);
-  assert.equal(cfg?.needs_llm, false);
+  assert.equal(cfg?.needs_network, false);
 });
 
 // 后端已删 entrypoint 列（迁移 039）：只有 image 的响应必须判为有效 exec 配置
@@ -165,12 +163,26 @@ test("normalizeExecConfig 有 image 无 entrypoint 仍是有效配置", () => {
     stage: "draft",
     image: "ragent-skill-fund:latest",
     timeout_sec: 300,
-    needs_llm: true,
+    needs_network: true,
   });
   assert.notEqual(cfg, null);
   assert.equal(cfg?.image, "ragent-skill-fund:latest");
   assert.equal(cfg?.timeout_sec, 300);
-  assert.equal(cfg?.needs_llm, true);
+  assert.equal(cfg?.needs_network, true);
+});
+
+// 后端已删 needs_llm / llm_max_* 三列（迁移 040）：旧键出现在响应里也不该被读进来
+test("normalizeExecConfig 忽略后端已删的 LLM 字段（不再有 needs_llm 语义）", () => {
+  const cfg = normalizeExecConfig({
+    image: "img:1",
+    needs_llm: true,
+    llm_max_calls: 5,
+    llm_max_total_tokens: 100000,
+  }) as unknown as Record<string, unknown>;
+  assert.equal(cfg.needs_network, false);
+  assert.equal("needs_llm" in cfg, false);
+  assert.equal("llm_max_calls" in cfg, false);
+  assert.equal("llm_max_total_tokens" in cfg, false);
 });
 
 test("summarizeAssetDiff 草稿清单规模 + 变更计数（removed 不计入草稿）", () => {
@@ -199,7 +211,7 @@ const baseCfg: SkillExecConfigSummary = {
   image_enabled: true,
   timeout_sec: 120,
   writable_subdirs: ["state"],
-  needs_llm: false,
+  needs_network: false,
   warm_pool: false,
 };
 
@@ -215,13 +227,13 @@ test("diffExecConfig 逐字段标注差异", () => {
     image: "img:2",
     timeout_sec: 600,
     writable_subdirs: ["state", "out"],
-    needs_llm: true,
+    needs_network: true,
   };
   assert.deepEqual(diffExecConfig(draft, baseCfg), [
     "image",
     "timeout_sec",
     "writable_subdirs",
-    "needs_llm",
+    "needs_network",
   ]);
 });
 
@@ -414,22 +426,19 @@ test("parseAssetList 容错解包并回算合计", () => {
   assert.equal(empty.total_bytes, 0);
 });
 
-test("parseExecConfig 带 llm 限额字段；缺 image 视为无配置", () => {
+test("parseExecConfig 读出 needs_network；缺 image 视为无配置", () => {
   const cfg = parseExecConfig({
     skill_id: 3,
     stage: "draft",
     image: "ragent-skill-fund:latest",
     timeout_sec: 300,
     writable_subdirs: [".report_state"],
-    needs_llm: true,
+    needs_network: true,
     warm_pool: false,
-    llm_max_calls: 5,
-    llm_max_total_tokens: 100000,
     updated_at: "2026-07-27T00:00:00Z",
   });
   assert.equal(cfg?.image, "ragent-skill-fund:latest");
-  assert.equal(cfg?.llm_max_calls, 5);
-  assert.equal(cfg?.llm_max_total_tokens, 100000);
+  assert.equal(cfg?.needs_network, true);
   assert.equal(cfg?.updated_at, "2026-07-27T00:00:00Z");
   assert.equal(parseExecConfig({ stage: "draft", timeout_sec: 300 }), null);
   assert.equal(parseExecConfig(null), null);
@@ -438,10 +447,8 @@ test("parseExecConfig 带 llm 限额字段；缺 image 视为无配置", () => {
 const execEdits = {
   image: "ragent-skill-fund:latest",
   timeout_sec: 300,
-  needs_llm: true,
+  needs_network: true,
   warm_pool: false,
-  llm_max_calls: 5,
-  llm_max_total_tokens: 100000,
 };
 
 // 回归防线：可写目录已从表单下架，但后端 PUT 是全量覆盖（缺省 → []）。
@@ -452,15 +459,13 @@ test("buildExecConfigPayload 按 GET 现值透传 writable_subdirs（表单不�
     image: "ragent-skill-fund:latest",
     timeout_sec: 300,
     writable_subdirs: [".report_state"],
-    needs_llm: true,
+    needs_network: true,
   });
   const payload = buildExecConfigPayload(execEdits, loaded);
   assert.deepEqual(payload.writable_subdirs, [".report_state"]);
   assert.equal(payload.image, "ragent-skill-fund:latest");
   assert.equal(payload.timeout_sec, 300);
-  assert.equal(payload.needs_llm, true);
-  assert.equal(payload.llm_max_calls, 5);
-  assert.equal(payload.llm_max_total_tokens, 100000);
+  assert.equal(payload.needs_network, true);
 });
 
 test("buildExecConfigPayload 编辑其它字段不影响透传的 writable_subdirs", () => {
@@ -469,12 +474,12 @@ test("buildExecConfigPayload 编辑其它字段不影响透传的 writable_subdi
     writable_subdirs: [".report_state", "out/cache"],
   });
   const payload = buildExecConfigPayload(
-    { ...execEdits, image: "new:2", timeout_sec: 60, needs_llm: false, llm_max_calls: null },
+    { ...execEdits, image: "new:2", timeout_sec: 60, needs_network: false },
     loaded
   );
   assert.deepEqual(payload.writable_subdirs, [".report_state", "out/cache"]);
   assert.equal(payload.image, "new:2");
-  assert.equal(payload.llm_max_calls, null);
+  assert.equal(payload.needs_network, false);
 });
 
 test("buildExecConfigPayload 首次配置（无现值）为空清单", () => {
@@ -652,33 +657,4 @@ test("arrayBufferToBase64 与 Buffer 编码一致（含大于分块阈值的输�
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) % 256;
   assert.equal(arrayBufferToBase64(bytes.buffer), Buffer.from(bytes).toString("base64"));
   assert.equal(arrayBufferToBase64(new Uint8Array([]).buffer), "");
-});
-
-test("parseLlmQuota 空串视为显式清空（提交 null = 不限）", () => {
-  assert.deepEqual(parseLlmQuota(""), { value: null, valid: true });
-  assert.deepEqual(parseLlmQuota("   "), { value: null, valid: true });
-});
-
-test("parseLlmQuota 接受 ≥1 的整数", () => {
-  assert.deepEqual(parseLlmQuota("1"), { value: 1, valid: true });
-  assert.deepEqual(parseLlmQuota(" 64000 "), { value: 64000, valid: true });
-});
-
-test("parseLlmQuota 拒绝 0 / 负数 / 小数 / 非数字（后端 ge=1 会 422）", () => {
-  for (const raw of ["0", "-1", "1.5", "1e3", "abc", "12x", "+3"]) {
-    assert.deepEqual(parseLlmQuota(raw), { value: null, valid: false }, raw);
-  }
-});
-
-test("formatLlmQuota 把 null 渲染成空串以配合占位符提示", () => {
-  assert.equal(formatLlmQuota(null), "");
-  assert.equal(formatLlmQuota(undefined), "");
-  assert.equal(formatLlmQuota(0), "0");
-  assert.equal(formatLlmQuota(20), "20");
-});
-
-test("formatLlmQuota → parseLlmQuota 往返保值", () => {
-  for (const value of [null, 1, 12, 500000]) {
-    assert.equal(parseLlmQuota(formatLlmQuota(value)).value, value);
-  }
 });

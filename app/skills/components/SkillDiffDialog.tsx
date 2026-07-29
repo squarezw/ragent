@@ -156,9 +156,9 @@ function ExecConfigColumn({
       value: config.writable_subdirs.length > 0 ? config.writable_subdirs.join(", ") : "-",
     },
     {
-      field: "needs_llm",
-      label: t("execNeedsLlm"),
-      value: config.needs_llm ? t("execEnabled") : t("execDisabled"),
+      field: "needs_network",
+      label: t("execNeedsNetwork"),
+      value: config.needs_network ? t("execEnabled") : t("execDisabled"),
     },
     {
       field: "warm_pool",

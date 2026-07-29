@@ -21,10 +21,6 @@ function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-function asPositiveInt(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
-}
-
 function asSize(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 }
@@ -73,10 +69,8 @@ export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | nu
     writable_subdirs: Array.isArray(obj.writable_subdirs)
       ? obj.writable_subdirs.filter((s): s is string => typeof s === "string")
       : [],
-    needs_llm: obj.needs_llm === true,
+    needs_network: obj.needs_network === true,
     warm_pool: obj.warm_pool === true,
-    llm_max_calls: asPositiveInt(obj.llm_max_calls),
-    llm_max_total_tokens: asPositiveInt(obj.llm_max_total_tokens),
     updated_at: asString(obj.updated_at),
   };
 }
@@ -139,7 +133,7 @@ export type ExecConfigField =
   | "image"
   | "timeout_sec"
   | "writable_subdirs"
-  | "needs_llm"
+  | "needs_network"
   | "warm_pool";
 
 /**
@@ -157,7 +151,7 @@ export function diffExecConfig(
   if (draft.writable_subdirs.join("\n") !== published.writable_subdirs.join("\n")) {
     changed.push("writable_subdirs");
   }
-  if (draft.needs_llm !== published.needs_llm) changed.push("needs_llm");
+  if (draft.needs_network !== published.needs_network) changed.push("needs_network");
   if (draft.warm_pool !== published.warm_pool) changed.push("warm_pool");
   return changed;
 }
@@ -439,10 +433,8 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
     image_enabled: summary.image_enabled,
     timeout_sec: summary.timeout_sec,
     writable_subdirs: summary.writable_subdirs,
-    needs_llm: summary.needs_llm,
+    needs_network: summary.needs_network,
     warm_pool: summary.warm_pool,
-    llm_max_calls: summary.llm_max_calls ?? null,
-    llm_max_total_tokens: summary.llm_max_total_tokens ?? null,
     updated_at: summary.updated_at ?? null,
   };
 }
@@ -451,10 +443,8 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
 export interface ExecConfigEdits {
   image: string;
   timeout_sec: number;
-  needs_llm: boolean;
+  needs_network: boolean;
   warm_pool: boolean;
-  llm_max_calls: number | null;
-  llm_max_total_tokens: number | null;
 }
 
 /**
@@ -476,10 +466,8 @@ export function buildExecConfigPayload(
     image: edits.image,
     timeout_sec: edits.timeout_sec,
     writable_subdirs: loaded?.writable_subdirs ?? [],
-    needs_llm: edits.needs_llm,
+    needs_network: edits.needs_network,
     warm_pool: edits.warm_pool,
-    llm_max_calls: edits.llm_max_calls,
-    llm_max_total_tokens: edits.llm_max_total_tokens,
   };
 }
 
@@ -655,30 +643,6 @@ export function planUploads(existing: SkillAssetItem[], candidates: UploadCandid
  */
 export function willRevertToDraft(status: string | null | undefined): boolean {
   return status === "published" || status === "rejected";
-}
-
-export interface LlmQuotaInput {
-  /** 提交给后端的值；null = 不限（后端回落到全局默认） */
-  value: number | null;
-  valid: boolean;
-}
-
-/**
- * LLM 每次运行配额输入解析。空串 = 显式清空为不限（后端 PUT 是整字段覆盖，null 即清空）。
- * 下限取 1 而非 0：后端 SkillExecConfigPayload 对两个字段都是 ge=1，填 0 会被 422 挡回来。
- */
-export function parseLlmQuota(raw: string): LlmQuotaInput {
-  const trimmed = raw.trim();
-  if (trimmed === "") return { value: null, valid: true };
-  if (!/^\d+$/.test(trimmed)) return { value: null, valid: false };
-  const parsed = Number(trimmed);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) return { value: null, valid: false };
-  return { value: parsed, valid: true };
-}
-
-/** 后端配额值 → 输入框显示值（null/缺失 = 空串，占位符提示"不限"） */
-export function formatLlmQuota(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 /** ArrayBuffer → base64（分块避免 String.fromCharCode 参数过多爆栈） */

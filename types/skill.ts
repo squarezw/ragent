@@ -64,10 +64,9 @@ export interface SkillExecConfig {
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];
-  needs_llm: boolean;
+  /** 只管要不要出网；false = 容器完全禁网（--network none） */
+  needs_network: boolean;
   warm_pool: boolean;
-  llm_max_calls: number | null;
-  llm_max_total_tokens: number | null;
   updated_at: string | null;
 }
 
@@ -76,10 +75,8 @@ export interface SkillExecConfigPayload {
   image: string;
   timeout_sec: number;
   writable_subdirs: string[];
-  needs_llm: boolean;
+  needs_network: boolean;
   warm_pool: boolean;
-  llm_max_calls?: number | null;
-  llm_max_total_tokens?: number | null;
 }
 
 /** GET /api/v1/sandbox-images → items[] 条目（取不到时前端降级为手工输入镜像名） */
