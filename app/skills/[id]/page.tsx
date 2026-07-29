@@ -9,6 +9,7 @@ import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import SkillEditor from "../components/SkillEditor";
 import SkillDiffDialog from "../components/SkillDiffDialog";
 import SkillAssetsPanel from "../components/SkillAssetsPanel";
+import SkillUserEnvPanel from "../components/SkillUserEnvPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
@@ -125,6 +126,13 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* P8：参考文档/资产文件（任何 skill）+ 可执行运行配置（仅可执行 skill），仅编辑权可见 */}
       <SkillAssetsPanel skill={skill} canEdit={canEditAssets} onSkillChanged={() => refresh()} />
+
+      {/*
+        个人环境变量：**不受 canEditAssets 约束**——配凭据的是 skill 的使用者，
+        他通常既不是作者也不是管理员；写的也只是自己那一行。
+        skill 没声明 env 模板时组件自己整块不渲染。
+      */}
+      <SkillUserEnvPanel skillId={skill.id} skillDisplayName={skill.display_name || skill.name} />
 
       {/* 草稿 vs 已发布对照 */}
       <SkillDiffDialog

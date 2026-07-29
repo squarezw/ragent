@@ -15,6 +15,13 @@ const EMPTY_META: SkillUserEnvMeta = {
 };
 
 const EMPTY_ENV: SkillUserEnv = { env: {}, declared_keys: [], updated_at: null };
+/**
+ * 未加载时的兜底必须是**模块级常量**，不能写 `?? {}` / `?? []`。
+ * 后者每次渲染都是新引用，会让消费方按 env / declaredKeys 建行的 useEffect
+ * 每渲染都触发一次 setState —— 死循环。
+ */
+const EMPTY_VALUES: Readonly<Record<string, string>> = {};
+const EMPTY_KEYS: readonly string[] = [];
 
 /** 该 skill 没声明 env 模板、或端点不可用 → 不可配置，面板整块不渲染 */
 const metaFetcher = async (url: string): Promise<SkillUserEnvMeta> => {
@@ -84,8 +91,8 @@ export function useSkillUserEnv(skillId: number | null, enabled: boolean) {
   return {
     meta: meta.data ?? EMPTY_META,
     metaLoading: meta.isLoading,
-    env: env.data?.env ?? {},
-    declaredKeys: env.data?.declared_keys ?? meta.data?.declared_keys ?? [],
+    env: env.data?.env ?? EMPTY_VALUES,
+    declaredKeys: env.data?.declared_keys ?? meta.data?.declared_keys ?? EMPTY_KEYS,
     updatedAt: env.data?.updated_at ?? null,
     envLoading: env.isLoading,
     saveEnv,
