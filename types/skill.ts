@@ -79,6 +79,35 @@ export interface SkillExecConfigPayload {
   warm_pool: boolean;
 }
 
+/**
+ * GET|PUT /api/v1/skills/{id}/user-env 响应（迁移 041）。
+ * **含值，只有属主本人拿得到**——超管也没有"读别人的值"这个接口形态。
+ */
+export interface SkillUserEnv {
+  /** {变量名: 值} 当前生效的这份配置 */
+  env: Record<string, string>;
+  /** 该 skill 的 .env.example / .env.template 声明的键名（表单据此渲染） */
+  declared_keys: string[];
+  updated_at: string | null;
+}
+
+/** GET /api/v1/skills/{id}/user-env/meta 响应（**永不含值**，可给非属主/超管） */
+export interface SkillUserEnvMeta {
+  /** 该 skill 是否声明了 env 模板资产；false = 不显示配置入口 */
+  configurable: boolean;
+  template_path: string | null;
+  /** 模板取自 published 还是 draft */
+  template_stage: string | null;
+  declared_keys: string[];
+  /** 该用户已配置的键名（只有名字，没有值） */
+  configured_keys: string[];
+}
+
+/** PUT /api/v1/skills/{id}/user-env 请求体：**全量替换**，缺的键即删除 */
+export interface SkillUserEnvPayload {
+  env: Record<string, string>;
+}
+
 /** GET /api/v1/sandbox-images → items[] 条目（取不到时前端降级为手工输入镜像名） */
 export interface SandboxImage {
   id: number;
