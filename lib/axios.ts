@@ -1,7 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { getApiErrorMessage } from "./apiError";
-import { clearChatSelectionCache } from "./authUtils";
+import { clearChatSelectionCache, clearSwrCache } from "./authUtils";
 
 const instance = axios.create();
 
@@ -43,6 +43,9 @@ instance.interceptors.response.use(
         localStorage.removeItem("ragent_logged_in");
         // 清除聊天页面的选择缓存
         clearChatSelectionCache();
+        // token 失效同样要作废 SWR 缓存：这条路径（token 过期）比手工登出常见得多，
+        // 而缓存里可能有别人的个人环境变量值。理由详见 clearSwrCache。
+        clearSwrCache();
 
         // 只有在非 token 验证请求时才显示提示
         if (!isTokenValidation) {
