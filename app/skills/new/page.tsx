@@ -85,7 +85,7 @@ export default function NewSkillPage() {
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
+    <div className="container mx-auto p-6">
       <SkillEditor
         skill={null}
         saving={saving}

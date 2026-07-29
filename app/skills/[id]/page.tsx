@@ -98,7 +98,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl space-y-4">
+    <div className="container mx-auto p-6 space-y-4">
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => router.push("/skills")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
