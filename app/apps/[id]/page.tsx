@@ -234,32 +234,25 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         isCustom ? "container mx-auto px-6 pt-0 pb-6 space-y-3" : "container mx-auto p-6 space-y-6"
       }
     >
-      {/* 顶部导航 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size={isCustom ? "sm" : "default"}
-            onClick={() => router.push("/apps")}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {t("back")}
-          </Button>
-          <div>
-            <h1 className={isCustom ? "text-xl font-bold leading-tight" : "text-3xl font-bold"}>
-              {appInfo.name}
-            </h1>
-            {(!isCustom || appInfo.description) && (
-              <p className="text-muted-foreground text-sm">{appInfo.description}</p>
-            )}
-          </div>
+      {/* 顶部导航。绑定工具的按钮已移到「已绑定工具」区的标题右侧，所以这里不再需要
+          justify-between 的两端布局。 */}
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size={isCustom ? "sm" : "default"}
+          onClick={() => router.push("/apps")}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          {t("back")}
+        </Button>
+        <div>
+          <h1 className={isCustom ? "text-xl font-bold leading-tight" : "text-3xl font-bold"}>
+            {appInfo.name}
+          </h1>
+          {(!isCustom || appInfo.description) && (
+            <p className="text-muted-foreground text-sm">{appInfo.description}</p>
+          )}
         </div>
-        {checkSuperAdmin(user) && appInfo.app_type !== "Custom" && (
-          <Button onClick={() => setBindDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t("bindTools")}
-          </Button>
-        )}
       </div>
 
       {/* 应用基本信息（Custom 应用直接进自定义视图，不展示这块元信息）*/}
@@ -428,10 +421,19 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             </div>
           )}
 
-          {/* 已绑定工具列表 */}
+          {/* 已绑定工具列表。绑定入口放在本区标题右侧（与 AppSkillsSection 一致）：
+              操作和它作用的对象在一起，比留在页头更好找。 */}
           <Card>
             <CardHeader>
-              <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
+                {checkSuperAdmin(user) && (
+                  <Button size="sm" onClick={() => setBindDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {t("bindTools")}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {appToolsLoading ? (
