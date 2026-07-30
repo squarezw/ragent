@@ -790,8 +790,10 @@ export default function AppsPage() {
                               </code>
                             </TableCell>
                             <TableCell>
+                              {/* 同卡片：0 表示"默认全库智能选"，不是没有。表格是固定列，
+                                  不能整格省掉，所以用 — 而不是 0。*/}
                               <span className="text-sm font-medium text-muted-foreground">
-                                {app.dataset_ids?.length || 0}
+                                {app.dataset_ids?.length ? app.dataset_ids.length : "—"}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -996,10 +998,17 @@ export default function AppsPage() {
                           </div>
                           <div className="text-sm">
                             <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">{t("datasets")}</span>
-                                <span className="font-medium">{app.dataset_ids?.length || 0}</span>
-                              </div>
+                              {/* 数据集为 0 不显示。
+                                  0 不是"没有知识库"——`dataset_ids` 为空时后端走
+                                  `kb_classifier_service.select_relevant_datasets(user_id=...)`，
+                                  在该用户有权限的**所有**知识库里智能选（auto_select_kb）。
+                                  所以 0 表示的是默认行为，把它显示成 0 会读成"这个员工没知识"。*/}
+                              {(app.dataset_ids?.length || 0) > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">{t("datasets")}</span>
+                                  <span className="font-medium">{app.dataset_ids.length}</span>
+                                </div>
+                              )}
                               <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">
                                   {t("tableHeaderTools")}
