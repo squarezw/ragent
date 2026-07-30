@@ -21,6 +21,7 @@ import { useFileAttachments } from "@/app/chat/hooks/useFileAttachments";
 import { useAppDatasets } from "@/app/chat/hooks/useAppDatasets";
 import { useMessageScroll } from "@/app/chat/hooks/useMessageScroll";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Attachment } from "./hooks/useFileAttachments";
 
 interface Message {
   role: "user" | "assistant";
@@ -31,7 +32,7 @@ interface Message {
     | { id?: number; originalname: string; path: string; mimetype?: string }[];
   segment_ids?: number[];
   detail_id?: number;
-  attachments?: { filename: string; type: string; content: string; url?: string }[];
+  attachments?: Attachment[];
 }
 
 export default function ChatPage() {

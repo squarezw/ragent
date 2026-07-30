@@ -71,6 +71,29 @@ export async function runQA(
       apiPayload.app_id = app_id;
     }
 
+    // 附件元信息作为**结构化字段**下发（不只是塞进 system 消息的文本）。
+    // 后端据此在 skill 沙箱起容器前把原始文件取回、写进容器的 inputs/ 下——
+    // skill 要处理的是文件本身（扫描件、Excel、图纸），`content` 只是抽取出的文本。
+    // object_key 仅在平台侧流转，不下发给模型：模型只能按文件名引用 inputs/ 里
+    // 已经放好的文件，否则就等于拿到了对象存储的任意读能力。
+    if (attachments && attachments.length > 0) {
+      type UploadedAttachment = {
+        objectKey?: string;
+        filename: string;
+        type?: string;
+        size?: number;
+      };
+      const withKey = (attachments as UploadedAttachment[]).filter((a) => a?.objectKey);
+      if (withKey.length > 0) {
+        apiPayload.attachments = withKey.map((a) => ({
+          object_key: a.objectKey,
+          filename: a.filename,
+          content_type: a.type,
+          size: a.size,
+        }));
+      }
+    }
+
     // 如果有 datasetId，添加到请求中（转换为数组格式）
     if (datasetId) {
       // 如果已经是数组，直接使用；否则转换为数组

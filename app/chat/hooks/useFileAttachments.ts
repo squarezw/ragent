@@ -8,6 +8,16 @@ export interface Attachment {
   type: string;
   content: string;
   url?: string;
+  /**
+   * 对象存储的 key。除了拼下载 URL，它还要作为结构化字段随聊天请求发给后端——
+   * skill 沙箱要的是**原始文件**（扫描件、Excel、图纸），而 `content` 只是抽取出的
+   * 文本。后端凭它取回字节、写进容器的 inputs/ 下。
+   *
+   * 原先只保留了派生的 `url`，objectKey 在上传后就被丢掉了。
+   */
+  objectKey?: string;
+  /** 字节数，随请求发给后端用于超限预判（避免白下载一遍大文件） */
+  size?: number;
 }
 
 export function useFileAttachments() {
@@ -46,6 +56,8 @@ export function useFileAttachments() {
         type: result.type,
         content: result.content,
         url: getFileUrl(result.objectKey),
+        objectKey: result.objectKey,
+        size: file.size,
       };
 
       setAttachments((prev) => [...prev, newAttachment]);
