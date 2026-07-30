@@ -112,5 +112,6 @@
   "builtinAuthorization": "Who can use it",
   "builtinWhy": "Rationale",
   "builtinDisabledByEnv": "Disabled by env",
-  "builtinEnvHint": "Deployment switch: environment variable {envVar}."
+  "builtinEnvHint": "Deployment switch: environment variable {envVar}.",
+  "workflowTool": "Long-task switch"
 }

@@ -46,7 +46,9 @@ export function ToolFormDialog({
     name: "",
     display_name: "",
     description: "",
-    tool_type: "native" as "native" | "mcp",
+    // 联合类型跟 Tool 一致（表里确实有 workflow 行），但**只有 mcp 能新建**：见下方
+    // Select。默认值随之改成 mcp——原来默认 native，而那种行现在建了等于没建。
+    tool_type: "mcp" as "native" | "mcp" | "workflow",
     category: "search",
     icon: "",
     default_config: "{}",
@@ -76,7 +78,7 @@ export function ToolFormDialog({
         name: "",
         display_name: "",
         description: "",
-        tool_type: "native",
+        tool_type: "mcp",
         category: "search",
         icon: "",
         default_config: "{}",
@@ -181,20 +183,27 @@ export function ToolFormDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="tool_type">{t("toolTypeLabel")}</Label>
-              <Select
-                value={formData.tool_type}
-                onValueChange={(value: "native" | "mcp") =>
-                  setFormData({ ...formData, tool_type: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="native">{t("nativeTool")}</SelectItem>
-                  <SelectItem value="mcp">{t("mcpTool")}</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* 只能选 MCP。
+                  · 原生工具**建不出来**：迁移 042 之后它们在 tools 表没有行，名册和
+                    授权判据都在后端代码里，加一个要改代码发版。留着这个选项只会让人
+                    建出一行什么都不做的记录。
+                  · workflow 行由 kind 自动发现产生，也不该在这里手工新建。
+                  编辑既有的非 MCP 行时，把它当前的类型以只读形式显示出来——不给一个
+                  会把它悄悄改成 MCP 的下拉。 */}
+              {formData.tool_type === "mcp" ? (
+                <Select value="mcp" disabled>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mcp">{t("mcpTool")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="h-10 flex items-center text-sm text-muted-foreground">
+                  {formData.tool_type === "native" ? t("nativeTool") : t("workflowTool")}
+                </div>
+              )}
             </div>
 
             <div>

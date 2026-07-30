@@ -243,7 +243,6 @@ export default function ToolsPage() {
                   <TableHead>{t("category")}</TableHead>
                   <TableHead>{t("description")}</TableHead>
                   <TableHead>{t("status")}</TableHead>
-                  <TableHead>{t("systemTool")}</TableHead>
                   <TableHead className="text-right">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -273,9 +272,6 @@ export default function ToolsPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      {tool.is_system && <Badge variant="outline">{t("system")}</Badge>}
-                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button
@@ -288,7 +284,12 @@ export default function ToolsPage() {
                         <Button variant="ghost" size="sm" onClick={() => handleEdit(tool)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        {!tool.is_system && (
+                        {/* 只有 workflow 行不可删：那一行是某个长任务 kind 的唯一
+                            开关，删掉后 refresh_enabled_from_db 会走"注册表里有、DB
+                            里没有"的分支，能力保持默认启用且界面上再也关不掉。
+                            MCP 行一律可删——它们之间没有系统/非系统之分，`qcc-*` 和
+                            `mcp-tally` 同一形态，删了只是少一个连接配置。 */}
+                        {tool.tool_type !== "workflow" && (
                           <Button
                             variant="ghost"
                             size="sm"

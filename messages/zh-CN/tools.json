@@ -112,5 +112,6 @@
   "builtinAuthorization": "谁能用",
   "builtinWhy": "依据",
   "builtinDisabledByEnv": "已由 env 禁用",
-  "builtinEnvHint": "部署级开关：环境变量 {envVar}。"
+  "builtinEnvHint": "部署级开关：环境变量 {envVar}。",
+  "workflowTool": "长任务开关"
 }
