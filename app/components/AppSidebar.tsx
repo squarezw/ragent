@@ -19,12 +19,10 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { usePendingReviewCount } from "@/hooks/useReviews";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import {
   Building2,
-  ClipboardCheck,
   GitGraph,
   Home,
   LibraryBig,
@@ -71,8 +69,6 @@ export default function AppSidebar() {
   const canManageStaff = user?.canManageStaff || false;
 
   // 待审数徽标（60s 轮询；仅超管/租户管理员可见审核队列）
-  const canReviewQueue = isSuperAdmin || isTenantAdmin;
-  const pendingReviewCount = usePendingReviewCount(canReviewQueue);
 
   type MenuItem = {
     title: string;
@@ -156,13 +152,6 @@ export default function AppSidebar() {
           title: t("skillsManagement"),
           icon: Sparkles,
           path: "/skills",
-        },
-        {
-          title: t("reviewQueue"),
-          icon: ClipboardCheck,
-          path: "/reviews",
-          visible: canReviewQueue,
-          badge: pendingReviewCount,
         },
         {
           title: t("systemMonitoring"),
