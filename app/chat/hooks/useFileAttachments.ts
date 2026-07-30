@@ -82,6 +82,16 @@ export function useFileAttachments() {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/plain",
     "application/postscript",
+    // 图片。长期传不上来不是因为不该支持，而是上传要求抽取必须成功——
+    // upload-confirm 的 default 分支对未知类型直接抛 "Unsupported file format"。
+    // 上传与抽取解耦（文字经 extract_document_text 按需取）之后这个限制就没有理由了。
+    // 平台侧 OCR 单张约 1.3s，且只在模型真需要读它时才发生。
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+    "image/webp",
   ];
 
   const validateAndUploadFiles = async (files: File[]) => {
@@ -148,6 +158,14 @@ export function useFileAttachments() {
       if (lowerFilename.endsWith(".xls")) return "application/vnd.ms-excel";
       if (lowerFilename.endsWith(".txt")) return "text/plain";
       if (lowerFilename.endsWith(".ai")) return "application/postscript";
+      // 图片也要走扩展名兜底：部分浏览器/系统对图片给不出 MIME，
+      // 落到 octet-stream 就会被判成不支持而传不上来。
+      if (lowerFilename.endsWith(".png")) return "image/png";
+      if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) return "image/jpeg";
+      if (lowerFilename.endsWith(".gif")) return "image/gif";
+      if (lowerFilename.endsWith(".bmp")) return "image/bmp";
+      if (lowerFilename.endsWith(".tif") || lowerFilename.endsWith(".tiff")) return "image/tiff";
+      if (lowerFilename.endsWith(".webp")) return "image/webp";
       return "application/octet-stream";
     };
 

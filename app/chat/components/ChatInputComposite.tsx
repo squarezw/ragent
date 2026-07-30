@@ -264,7 +264,7 @@ export default function ChatInputComposite({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.ai"
+          accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.ai,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp"
           multiple
           onChange={onFileSelect}
           className="hidden"
