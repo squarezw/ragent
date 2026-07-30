@@ -77,6 +77,7 @@ interface App {
   agent_md?: string | null;
   dataset_ids: string[];
   tool_count?: number;
+  skill_count?: number;
   email?: string;
   settings: Record<string, any>;
   created_at: string;
@@ -721,6 +722,7 @@ export default function AppsPage() {
                         <TableHead className="font-semibold">{t("tableHeaderAiModel")}</TableHead>
                         <TableHead className="font-semibold">{t("tableHeaderDatasets")}</TableHead>
                         <TableHead className="font-semibold">{t("tableHeaderTools")}</TableHead>
+                        <TableHead className="font-semibold">{t("tableHeaderSkills")}</TableHead>
                         <TableHead className="font-semibold">
                           {t("tableHeaderCreatedTime")}
                         </TableHead>
@@ -795,6 +797,11 @@ export default function AppsPage() {
                             <TableCell>
                               <span className="text-sm font-medium text-muted-foreground">
                                 {app.tool_count || 0}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm font-medium text-muted-foreground">
+                                {app.skill_count || 0}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -998,6 +1005,12 @@ export default function AppsPage() {
                                   {t("tableHeaderTools")}
                                 </span>
                                 <span className="font-medium">{app.tool_count || 0}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">
+                                  {t("tableHeaderSkills")}
+                                </span>
+                                <span className="font-medium">{app.skill_count || 0}</span>
                               </div>
                             </div>
                           </div>

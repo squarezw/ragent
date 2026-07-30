@@ -127,7 +127,6 @@
   "workflowDescLine3": "Email → AI Classification → QE Confirmation → QMS",
   "embedCodeComment1": "<!-- Smart Customer Service Bot Embed Code Example -->",
   "embedCodeComment2": "<!-- You can customize the style and mount location -->",
-
   "loadAppInfoFailed": "Failed to load digital employee info",
   "bindToolsSuccess": "Successfully bound {count} tools",
   "bindToolsFailed": "Failed to bind tools",
@@ -158,7 +157,6 @@
   "allToolsBound": "All available tools have been bound",
   "bind": "Bind",
   "bindCount": "Bind ({count})",
-
   "scheduleConfig": "Schedule Configuration",
   "enableSchedule": "Enable Scheduled Report",
   "enableScheduleDesc": "Automatically generate reports at the specified time",
@@ -167,5 +165,6 @@
   "dailyReport": "Daily Report",
   "weeklyReport": "Weekly Report",
   "timezone": "Timezone",
-  "autoSelectDatasets": "Auto-select knowledge bases"
+  "autoSelectDatasets": "Auto-select knowledge bases",
+  "tableHeaderSkills": "Skills"
 }
