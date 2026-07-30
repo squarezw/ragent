@@ -102,5 +102,15 @@
   "enableTool": "Enable Tool",
   "invalidJson": "Invalid JSON format",
   "save": "Save",
-  "create": "Create"
+  "create": "Create",
+  "managedTools": "Other Tools",
+  "builtinTools": "Native Tools",
+  "builtinList": "Native Tools ({count})",
+  "builtinKind": "Form",
+  "builtinKindRoster": "Roster",
+  "builtinKindGateway": "Gateway",
+  "builtinAuthorization": "Who can use it",
+  "builtinWhy": "Rationale",
+  "builtinDisabledByEnv": "Disabled by env",
+  "builtinEnvHint": "Deployment switch: environment variable {envVar}."
 }

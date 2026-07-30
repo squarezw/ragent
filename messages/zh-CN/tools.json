@@ -102,5 +102,15 @@
   "enableTool": "启用工具",
   "invalidJson": "JSON 格式无效",
   "save": "保存",
-  "create": "创建"
+  "create": "创建",
+  "managedTools": "其它工具",
+  "builtinTools": "原生工具",
+  "builtinList": "原生工具 ({count})",
+  "builtinKind": "形态",
+  "builtinKindRoster": "名册",
+  "builtinKindGateway": "网关",
+  "builtinAuthorization": "谁能用",
+  "builtinWhy": "依据",
+  "builtinDisabledByEnv": "已由 env 禁用",
+  "builtinEnvHint": "部署级开关：环境变量 {envVar}。"
 }

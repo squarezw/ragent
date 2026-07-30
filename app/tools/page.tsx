@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { useBuiltinTools } from "@/hooks/useBuiltinTools";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { BuiltinToolsTable } from "./components/BuiltinToolsTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,20 +75,44 @@ export default function ToolsPage() {
   const t = useTranslations("tools");
   const router = useRouter();
   const [page, setPage] = useState(1);
-  const [toolType, setToolType] = useState<"native" | "mcp" | undefined>();
+  // 页签而不是"全部类型"下拉。**默认 "managed"，即除原生工具之外的全部。**
+  //
+  // 这个页签**没有**叫"MCP 工具"：它同时装着 `tool_type='mcp'` 和 `'workflow'` 两种行
+  // （后者是长任务 kind 的启停开关，如 cad.check_line_width）。标成 MCP 就得按 mcp 过滤，
+  // 那些长任务开关会跟着消失——它们是这页现在唯一的管理入口。
+  //
+  // 内置工具（原生 + 网关）随代码发布、不在 `tools` 表里，授权判据也写死在代码里
+  // （`sql_query` 仅超级管理员……），界面上改不了。把它们混进同一张可编辑的表里会给出
+  // "这里能改"的错觉——所以单开一个只读页签，且只有超级管理员看得到：判据本身就是安全
+  // 信息（谁能跑 sql_query、execute_skill 的门是什么），给改不了它的人看没有用处。
+  const [tab, setTab] = useState<"managed" | "builtin">("managed");
   const [isEnabled, setIsEnabled] = useState<boolean | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
 
+  const { user } = useCurrentUser();
+  const isSuperAdmin = checkSuperAdmin(user);
+
   const { tools, total, loading, createTool, updateTool, deleteTool, toggleToolEnabled, refresh } =
     useTools({
-      tool_type: toolType,
       is_enabled: isEnabled,
       page,
       page_size: 20,
     });
+  const {
+    builtins,
+    meta: builtinMeta,
+    loading: builtinLoading,
+    error: builtinError,
+  } = useBuiltinTools(tab === "builtin");
+
+  // 权限被撤走时（角色变更 / 退出后换人登录）不能停留在只读页签上：SWR 缓存熬得过登出，
+  // 停在那里会让上一个人看到的清单留在屏幕上。
+  useEffect(() => {
+    if (tab === "builtin" && !isSuperAdmin) setTab("managed");
+  }, [tab, isSuperAdmin]);
 
   const handleDelete = async () => {
     if (!selectedTool) return;
@@ -136,54 +164,72 @@ export default function ToolsPage() {
           <h1 className="text-3xl font-bold">{t("pageTitle")}</h1>
           <p className="text-muted-foreground mt-1">{t("pageDescription")}</p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          {t("addTool")}
-        </Button>
+        {tab === "managed" && (
+          <Button onClick={handleCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            {t("addTool")}
+          </Button>
+        )}
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>{t("toolList", { count: total })}</CardTitle>
-            <div className="flex gap-2">
-              <Select
-                value={toolType || "all"}
-                onValueChange={(value) =>
-                  setToolType(value === "all" ? undefined : (value as "native" | "mcp"))
-                }
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder={t("toolType")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("allTypes")}</SelectItem>
-                  <SelectItem value="native">{t("nativeTool")}</SelectItem>
-                  <SelectItem value="mcp">{t("mcpTool")}</SelectItem>
-                </SelectContent>
-              </Select>
+            <CardTitle>
+              {tab === "builtin"
+                ? t("builtinList", { count: builtins.length })
+                : t("toolList", { count: total })}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                <Button
+                  variant={tab === "managed" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTab("managed")}
+                >
+                  {t("managedTools")}
+                </Button>
+                {isSuperAdmin && (
+                  <Button
+                    variant={tab === "builtin" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setTab("builtin")}
+                  >
+                    {t("builtinTools")}
+                  </Button>
+                )}
+              </div>
 
-              <Select
-                value={isEnabled === undefined ? "all" : isEnabled ? "enabled" : "disabled"}
-                onValueChange={(value) => {
-                  if (value === "all") setIsEnabled(undefined);
-                  else setIsEnabled(value === "enabled");
-                }}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder={t("enabledStatus")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("allStatus")}</SelectItem>
-                  <SelectItem value="enabled">{t("enabled")}</SelectItem>
-                  <SelectItem value="disabled">{t("disabled")}</SelectItem>
-                </SelectContent>
-              </Select>
+              {tab === "managed" && (
+                <Select
+                  value={isEnabled === undefined ? "all" : isEnabled ? "enabled" : "disabled"}
+                  onValueChange={(value) => {
+                    if (value === "all") setIsEnabled(undefined);
+                    else setIsEnabled(value === "enabled");
+                  }}
+                >
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder={t("enabledStatus")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("allStatus")}</SelectItem>
+                    <SelectItem value="enabled">{t("enabled")}</SelectItem>
+                    <SelectItem value="disabled">{t("disabled")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {tab === "builtin" ? (
+            <BuiltinToolsTable
+              builtins={builtins}
+              meta={builtinMeta}
+              loading={builtinLoading}
+              error={builtinError}
+            />
+          ) : loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
@@ -262,7 +308,7 @@ export default function ToolsPage() {
             </Table>
           )}
 
-          {total > 20 && (
+          {tab === "managed" && total > 20 && (
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-muted-foreground">
                 {t("pagination", { current: page, total: Math.ceil(total / 20) })}
