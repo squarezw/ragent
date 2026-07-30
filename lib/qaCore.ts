@@ -82,6 +82,7 @@ export async function runQA(
         filename: string;
         type?: string;
         size?: number;
+        content?: string;
       };
       const withKey = (attachments as UploadedAttachment[]).filter((a) => a?.objectKey);
       if (withKey.length > 0) {
@@ -90,6 +91,12 @@ export async function runQA(
           filename: a.filename,
           content_type: a.type,
           size: a.size,
+          // 抽好的文本也发过去，后端写成 inputs/<主名>.extracted.md 让 skill 直接读。
+          // 它在上面的 system 消息里也有一份，但那一份经 JSON.stringify 之后换行被
+          // 转义成字面 \n——模型照着转述进 stdin_data，整份材料就成了一行，分页标记
+          // 全部失配（实测：16 页的材料被当成 1 页，报告里页码全写"第1页"）。
+          // 材料是数据，不该穿过模型的输出。
+          extracted_text: a.content,
         }));
       }
     }
