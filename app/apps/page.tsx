@@ -955,20 +955,22 @@ export default function AppsPage() {
                         <CardHeader className="pb-3">
                           <div className="flex items-start justify-between">
                             <div className="space-y-2 flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <CardTitle className="text-lg font-bold truncate hover:text-primary transition-colors">
-                                    {app.name}
-                                  </CardTitle>
-                                  {app.is_default && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs bg-primary/10 text-primary border-primary/30 mt-1"
-                                    >
-                                      {t("default")}
-                                    </Badge>
-                                  )}
-                                </div>
+                              {/* 「默认」跟在名称后面，与表格视图一致（那边一直是内联的，
+                                  只有卡片单独占一行）。
+                                  badge 必须 shrink-0：名称带 truncate，不锁住的话长名字会
+                                  把「默认」压扁到看不见——挤掉的是标识而不是名字。*/}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <CardTitle className="text-lg font-bold truncate hover:text-primary transition-colors">
+                                  {app.name}
+                                </CardTitle>
+                                {app.is_default && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs bg-primary/10 text-primary border-primary/30 shrink-0"
+                                  >
+                                    {t("default")}
+                                  </Badge>
+                                )}
                               </div>
                               {app.description && (
                                 <p className="text-sm text-muted-foreground line-clamp-2">
