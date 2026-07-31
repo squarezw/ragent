@@ -40,16 +40,23 @@ import { checkSuperAdmin } from "@/lib/clientPermissions";
 interface AgentMdEditorProps {
   appId: number;
   platform: string;
+  /**
+   * 应用绑定的 legacy prompt。没有它就没有"升级"可言——文案要说「创建」，
+   * 否则用户看到「升级为 Agent.md」会以为有东西要迁移（2026-07-31 报的 bug 现场）。
+   */
+  promptId?: number | null;
   /** Agent.md 状态变化（升级 / 回退）后通知父组件刷新应用信息 */
   onChanged?: () => void;
 }
 
 /**
  * 应用详情页的 Agent.md 编辑区块：
- * - legacy（无 agent_md）：显示「升级为 Agent.md」（platform=Wechat 禁用并提示）
+ * - 无 agent_md：有 legacy prompt 就是「升级为 Agent.md」，没有则是「创建 Agent.md」
+ *   （platform=Wechat 禁用并提示）。新建的数字员工后端已直接带 agent_md，正常
+ *   走不到这一支；留着是为了存量应用。
  * - 已有 agent_md：全文编辑 + 保存（422 按行号展示）+ 导出视图 + 回退到提示词（二次确认）
  */
-export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEditorProps) {
+export default function AgentMdEditor({ appId, platform, promptId, onChanged }: AgentMdEditorProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
@@ -69,6 +76,8 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
 
   const isWechat = platform === "Wechat";
   const isLegacy = agentMd?.is_legacy !== false;
+  // 有旧提示词 = 真的在"升级"；没有 = 从零"创建"
+  const hasLegacyPrompt = promptId != null;
 
   // 后端内容加载/变化时回填（本地有未保存修改则不覆盖）
   useEffect(() => {
@@ -192,7 +201,9 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
       <CardContent className="space-y-3">
         {isLegacy ? (
           <div className="text-center py-6 space-y-3">
-            <p className="text-sm text-muted-foreground">{t("legacyDesc")}</p>
+            <p className="text-sm text-muted-foreground">
+              {hasLegacyPrompt ? t("legacyDesc") : t("noAgentMdDesc")}
+            </p>
             {canManage && (
               <>
                 <Button onClick={handleUpgrade} disabled={generating || isWechat}>
@@ -201,7 +212,7 @@ export default function AgentMdEditor({ appId, platform, onChanged }: AgentMdEdi
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  {t("upgradeToAgentMd")}
+                  {hasLegacyPrompt ? t("upgradeToAgentMd") : t("createAgentMd")}
                 </Button>
                 {isWechat && (
                   <p className="text-xs text-muted-foreground">{t("wechatUpgradeDisabled")}</p>

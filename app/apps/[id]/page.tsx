@@ -66,6 +66,8 @@ interface AppInfo {
   platform: string;
   ai_model: string;
   agent_md?: string | null;
+  /** legacy 提示词绑定；用来判断 Agent.md 区块该说「升级」还是「创建」 */
+  prompt_id?: number | null;
   created_at: string;
   updated_at: string;
   settings?: Record<string, any>;
@@ -534,7 +536,12 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
 
           {/* Agent.md 编辑区块 */}
-          <AgentMdEditor appId={appId} platform={appInfo.platform} onChanged={loadAppInfo} />
+          <AgentMdEditor
+            appId={appId}
+            platform={appInfo.platform}
+            promptId={appInfo.prompt_id}
+            onChanged={loadAppInfo}
+          />
         </>
       )}
 

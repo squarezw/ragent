@@ -119,6 +119,8 @@
   "editAgentMd": "编辑 Agent.md",
   "legacyDesc": "该数字员工使用旧提示词模式。升级为 Agent.md 后，系统提示词与 Skills 在一份文件中管理（模型仍在数字员工的「AI 模型」设置里配置）。",
   "upgradeToAgentMd": "升级为 Agent.md",
+  "noAgentMdDesc": "该数字员工还没有 Agent.md。创建后，系统提示词与 Skills 在一份文件中管理（模型仍在数字员工的「AI 模型」设置里配置）。",
+  "createAgentMd": "创建 Agent.md",
   "upgradeSuccess": "已升级为 Agent.md",
   "upgradeFailed": "升级 Agent.md 失败",
   "agentMdAlreadyExists": "Agent.md 已存在，已加载当前版本",

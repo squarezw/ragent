@@ -119,6 +119,8 @@
   "editAgentMd": "Edit Agent.md",
   "legacyDesc": "This digital employee uses the legacy prompt mode. Upgrade to Agent.md to manage the system prompt and skills in one file (the model stays in the digital employee's AI model setting).",
   "upgradeToAgentMd": "Upgrade to Agent.md",
+  "noAgentMdDesc": "This digital employee has no Agent.md yet. Create one to manage the system prompt and skills in a single file (the model stays in the digital employee's AI model setting).",
+  "createAgentMd": "Create Agent.md",
   "upgradeSuccess": "Upgraded to Agent.md",
   "upgradeFailed": "Failed to upgrade to Agent.md",
   "agentMdAlreadyExists": "Agent.md already exists, loaded the current version",
