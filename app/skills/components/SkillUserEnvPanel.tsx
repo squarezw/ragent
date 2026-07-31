@@ -37,6 +37,13 @@ interface SkillUserEnvPanelProps {
  *    保存失败只展示后端 detail（中文校验信息）。
  * 3. 「仅属主」是硬约束：这里只显示当前登录用户自己的那份，没有也不要加
  *    「查看别人的值」的入口——管理员想排查只能看 meta 的键名与计数。
+ * 4. **键名与输入框必须视觉上绑成一体**。2026-07-31 出过一次：用户把 BaseURL /
+ *    ApiKey / Deployment 三个值整体填低了一行，存进库的是隔壁键（提交的是
+ *    key→value 字典，链路上不可能平移，所以只能是填的时候看错行）。当时键名在
+ *    左边 w-56 列、输入框在很远的右边，而「尚未配置」提示挂在输入框下面、横插在
+ *    本行输入框与下一行键名之间——视觉上就读成"键名属于下面那个框"。
+ *    现在：label htmlFor 真绑定 + 提示移到键名下方 + focus-within 整行高亮。
+ *    这三条别退回去。
  */
 export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUserEnvPanelProps) {
   const t = useTranslations("skills");
@@ -140,12 +147,31 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
               const keyError = validation.keyErrors[row.id];
               const valueError = validation.valueErrors[row.id];
               return (
-                <li key={row.id} className="px-3 py-2 space-y-1">
+                <li
+                  key={row.id}
+                  // 点进输入框时整行（含键名）高亮——填错行这个 bug 就是靠它当场看见
+                  className="px-3 py-2 space-y-1 transition-colors focus-within:bg-muted/60"
+                >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                     <div className="min-w-0 sm:w-56 sm:shrink-0">
                       {row.declared ? (
-                        // 模板声明的键名不给改：改了就不再是这个 skill 会读的那个变量
-                        <p className="font-mono text-xs break-all py-1.5">{row.key}</p>
+                        // 模板声明的键名不给改：改了就不再是这个 skill 会读的那个变量。
+                        // htmlFor 真绑到本行输入框：点键名即聚焦对应框，读屏也念得对。
+                        <>
+                          <label
+                            htmlFor={`env-value-${row.id}`}
+                            className="block font-mono text-xs break-all py-1.5 cursor-pointer"
+                          >
+                            {row.key}
+                          </label>
+                          {row.value === "" && (
+                            // 提示跟着键名走。挂在输入框下面时它横在本行与下一行之间，
+                            // 把"键名—输入框"这对关系在视觉上拆散了。
+                            <p className="text-xs text-muted-foreground -mt-1">
+                              {t("envDeclaredUnset")}
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <Input
                           value={row.key}
@@ -160,6 +186,7 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
                     </div>
                     <div className="min-w-0 sm:flex-1 flex items-center gap-1">
                       <Input
+                        id={`env-value-${row.id}`}
                         // 值一律 password 型；点眼睛才临时明文（浏览器不该记住凭据）
                         type={revealed.has(row.id) ? "text" : "password"}
                         autoComplete="off"
@@ -204,9 +231,6 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
                     <p className="text-xs text-destructive break-words">
                       {t(ENV_VALUE_ERROR_MESSAGE_KEY[valueError])}
                     </p>
-                  )}
-                  {row.declared && row.value === "" && (
-                    <p className="text-xs text-muted-foreground">{t("envDeclaredUnset")}</p>
                   )}
                 </li>
               );
