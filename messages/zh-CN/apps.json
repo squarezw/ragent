@@ -147,6 +147,8 @@
   "statistics": "统计",
   "nativeTool": "原生",
   "mcpTool": "MCP",
+  "workflowTool": "长任务",
+  "workflowBindNotice": "绑定长任务后，这个数字员工将**只保留已绑定的**长任务能力；当前未绑定任何长任务，等于全部可用。要恢复全部，把所有长任务解绑即可。",
   "enabled": "启用",
   "disabled": "停用",
   "calls": "调用",
