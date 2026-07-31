@@ -16,7 +16,12 @@ export interface Tool {
   name: string;
   display_name: string;
   description: string;
-  tool_type: "native" | "mcp";
+  /**
+   * `tools` 表里实际存在三种值。**"native" 已经不会出现**——迁移 042 之后原生工具
+   * 不再有行（名册在后端代码里，见 native_registry）；保留在联合类型里只为兼容尚未
+   * 迁移的老数据。"workflow" 行不是工具，是长任务 kind 的启停开关。
+   */
+  tool_type: "native" | "mcp" | "workflow";
   category: string;
   icon?: string;
   default_config: Record<string, any>;
@@ -51,7 +56,7 @@ const fetcher = async (url: string) => {
 };
 
 export const useTools = (params?: {
-  tool_type?: "native" | "mcp";
+  tool_type?: "native" | "mcp" | "workflow";
   category?: string;
   is_enabled?: boolean;
   page?: number;

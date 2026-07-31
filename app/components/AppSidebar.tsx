@@ -38,6 +38,7 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   User,
   Wrench,
 } from "lucide-react";
@@ -67,11 +68,22 @@ export default function AppSidebar() {
   const canManageOrg = user?.canManageOrg || false;
   const canManageStaff = user?.canManageStaff || false;
 
+  // 待审数徽标（60s 轮询；仅超管/租户管理员可见审核队列）
+
   type MenuItem = {
     title: string;
     icon: React.ComponentType<{ className?: string }>;
     path: string;
     visible?: boolean;
+    /** 右侧数字徽标（0 不显示） */
+    badge?: number;
+    /**
+     * 已弃用：置灰 + 不可点 + hover 说明去哪。
+     *
+     * 只变淡不禁用是最坏的做法——看着像禁用、点进去还能改，用户于是在一个不再生效的
+     * 地方编辑内容。所以这里同时切断点击。
+     */
+    deprecated?: string;
   };
   type MenuGroup = { label: string; visible: boolean; items: MenuItem[] };
 
@@ -97,7 +109,12 @@ export default function AppSidebar() {
           visible: features.processManagement,
         },
         { title: t("sopManagement"), icon: ShieldCheck, path: "/sop", visible: canManageOperation },
-        { title: t("skuManagement"), icon: Package, path: "/products", visible: canManageOperation },
+        {
+          title: t("skuManagement"),
+          icon: Package,
+          path: "/products",
+          visible: canManageOperation,
+        },
         { title: t("knowledgeGraph"), icon: GitGraph, path: "/graph", visible: canManageOperation },
       ],
     },
@@ -105,7 +122,12 @@ export default function AppSidebar() {
       label: t("organization"),
       visible: canManageOrg || canManageStaff,
       items: [
-        { title: t("orgManagement"), icon: Building2, path: "/organization", visible: canManageOrg },
+        {
+          title: t("orgManagement"),
+          icon: Building2,
+          path: "/organization",
+          visible: canManageOrg,
+        },
         { title: t("userManagement"), icon: User, path: "/user", visible: canManageStaff },
       ],
     },
@@ -115,10 +137,21 @@ export default function AppSidebar() {
       items: [
         { title: t("chatSessions"), icon: MessageSquareMore, path: "/chat-sessions" },
         {
+          // 提示词管理即将下线：应用的提示词真源已迁到 Agent.md（apps.agent_md），
+          // chat 与企微两条链都优先读它（app/utils/app_prompt.resolve_app_prompt_body）。
+          // 入口先置灰而不是直接删——`prompt_id` 仍保留作回滚锚点，真删要等确认没有
+          // 应用还只靠它。
           title: t("promptManagement"),
           icon: MessageSquare,
           path: "/prompts",
           visible: isSuperAdmin || isTenantAdmin,
+          deprecated: t("promptManagementDeprecated"),
+        },
+        {
+          // P5 开放自建：普通用户也可创建自己的 Skill（草稿走提交审核）
+          title: t("skillsManagement"),
+          icon: Sparkles,
+          path: "/skills",
         },
         {
           title: t("systemMonitoring"),
@@ -204,14 +237,30 @@ export default function AppSidebar() {
                     .map((item) => (
                       <SidebarMenuItem key={item.path}>
                         <SidebarMenuButton
-                          onClick={() => router.push(item.path)}
+                          onClick={item.deprecated ? undefined : () => router.push(item.path)}
+                          // disabled 来自 React.ComponentProps<"button">，真会切断点击；
+                          // tooltip 是 SidebarMenuButton 自带的（侧边栏收起时也能显示，
+                          // 原生 title 在 disabled 按钮上各浏览器行为还不一致）
+                          disabled={!!item.deprecated}
+                          tooltip={item.deprecated}
+                          className={
+                            item.deprecated
+                              ? "opacity-50 cursor-not-allowed pointer-events-auto"
+                              : undefined
+                          }
                           isActive={
-                            pathname === item.path ||
-                            (item.path !== "/" && pathname.startsWith(item.path + "/"))
+                            !item.deprecated &&
+                            (pathname === item.path ||
+                              (item.path !== "/" && pathname.startsWith(item.path + "/")))
                           }
                         >
                           <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>
+                          {item.badge != null && item.badge > 0 && (
+                            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+                              {item.badge > 99 ? "99+" : item.badge}
+                            </span>
+                          )}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}

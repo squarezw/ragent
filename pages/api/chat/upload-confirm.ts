@@ -1,184 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { ossClient } from "@/lib/ossClient";
 import { logError } from "@/lib/logError";
-import pdfParse from "pdf-parse";
-import mammoth from "mammoth";
-import textract from "textract";
-import * as XLSX from "xlsx";
-import axios from "axios";
-import FormData from "form-data";
 
-function cleanText(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/\n\s*\n/g, "\n")
-    .trim();
-}
-
-async function callOCRAPI(
-  fileBuffer: Buffer,
-  filename: string,
-  mimetype: string,
-  authToken: string
-): Promise<string> {
-  const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
-
-  if (!authToken) {
-    throw new Error("Missing auth token for OCR API");
-  }
-
-  const formData = new FormData();
-  formData.append("file", fileBuffer, { filename, contentType: mimetype });
-
-  try {
-    const response = await axios.post(`${EXTERNAL_API_BASE_URL}/api/v1/ocr`, formData, {
-      headers: {
-        ...formData.getHeaders(),
-        Authorization: `Bearer ${authToken}`,
-      },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      timeout: 300000,
-    });
-
-    if (response.data.success && response.data.text) {
-      return cleanText(response.data.text);
-    }
-    throw new Error("OCR failed: no valid text returned");
-  } catch (error: any) {
-    if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {
-      throw new Error(`OCR service connection failed: ${error.message}`);
-    } else if (error.code === "ETIMEDOUT" || error.message?.includes("timeout")) {
-      throw new Error(`OCR service timeout: ${error.message}`);
-    } else if (error.response?.status) {
-      const errorMessage =
-        error.response?.data?.message || error.response?.data?.detail || error.message;
-      throw new Error(`OCR service error (${error.response.status}): ${errorMessage}`);
-    }
-    throw new Error(`OCR failed: ${error.message || "unknown error"}`);
-  }
-}
-
-async function extractContentFromBuffer(
-  buffer: Buffer,
-  filename: string,
-  mimetype: string,
-  authToken?: string
-): Promise<{ content: string; type: string; filename: string }> {
-  let extractedContent = "";
-  let fileType = "";
-
-  // .ai (Adobe Illustrator) 文件不做内容解析，直接返回
-  if (filename.toLowerCase().endsWith(".ai")) {
-    return { content: "", type: "AI", filename };
-  }
-
-  switch (mimetype) {
-    case "application/pdf":
-      try {
-        const pdfData = await pdfParse(buffer);
-        extractedContent = cleanText(pdfData.text);
-        fileType = "PDF";
-      } catch (e) {
-        if (authToken) {
-          try {
-            extractedContent = await callOCRAPI(buffer, filename, mimetype, authToken);
-            fileType = "PDF";
-          } catch (ocrError: any) {
-            throw new Error(`PDF parse failed, OCR also failed: ${ocrError.message}`);
-          }
-        } else {
-          throw new Error("PDF parse failed");
-        }
-      }
-      break;
-
-    case "application/msword":
-      try {
-        const text = await new Promise<string>((resolve, reject) => {
-          textract.fromBufferWithMime(
-            mimetype,
-            buffer,
-            (error: Error | null, extractedText: string | undefined) => {
-              if (error) reject(error);
-              else resolve(extractedText || "");
-            }
-          );
-        });
-        extractedContent = cleanText(text);
-        fileType = "Word";
-      } catch (e) {
-        throw new Error(".doc file parse failed");
-      }
-      break;
-
-    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-      try {
-        const result = await mammoth.extractRawText({ buffer });
-        extractedContent = cleanText(result.value);
-        fileType = "Word";
-      } catch (e) {
-        throw new Error("Word document parse failed");
-      }
-      break;
-
-    case "application/vnd.ms-excel":
-    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-      try {
-        const workbook = XLSX.read(buffer, { type: "buffer" });
-        let content = "";
-        workbook.SheetNames.forEach((sheetName) => {
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[];
-          content += `Sheet: ${sheetName}\n`;
-          jsonData.forEach((row) => {
-            const cells = Array.isArray(row) ? row : [];
-            content += `${cells.map((cell) => cell ?? "").join("\t")}\n`;
-          });
-          content += "\n";
-        });
-        extractedContent = cleanText(content);
-        fileType = "Excel";
-      } catch (e) {
-        throw new Error("Excel file parse failed");
-      }
-      break;
-
-    case "text/plain":
-      try {
-        extractedContent = cleanText(buffer.toString("utf-8"));
-        fileType = "Text";
-      } catch (e) {
-        throw new Error("Text file parse failed");
-      }
-      break;
-
-    default:
-      throw new Error(
-        "Unsupported file format. Supported: PDF, Word(.docx), Excel(.xlsx/.xls), Text"
-      );
-  }
-
-  // OCR fallback for empty PDF
-  if (
-    (!extractedContent || extractedContent.trim().length === 0) &&
-    mimetype === "application/pdf" &&
-    authToken
-  ) {
-    try {
-      extractedContent = await callOCRAPI(buffer, filename, mimetype, authToken);
-    } catch (ocrError: any) {
-      throw new Error(`PDF has no text content, OCR also failed: ${ocrError.message}`);
-    }
-  } else if (!extractedContent || extractedContent.trim().length === 0) {
-    throw new Error("No text content found in file");
-  }
-
-  return { content: extractedContent, type: fileType, filename };
-}
-
+/**
+ * POST /api/chat/upload-confirm —— 确认一次附件上传，返回元信息。
+ *
+ * **上传和抽取是两件事。** 这个端点只做前者：文件已由浏览器直传对象存储，这里确认并回
+ * 一份元信息。文字由后端的 `extract_document_text` 工具按需取（普通抽取还是 OCR 由它
+ * 内部判定）。
+ *
+ * 原先这里会把文件从 OSS 下载回来、按 MIME 分派 pdf-parse / mammoth / xlsx / textract，
+ * 抽不到文字还调 OCR 服务兜底。那样耦合有三个实际代价：
+ *
+ * 1. **抽取失败等于上传失败。** default 分支对未知类型直接抛 "Unsupported file format"，
+ *    抽不到文字抛 "No text content found in file"。图片因此长期无法作为聊天附件，
+ *    整页截图粘成的 docx 也一样传不上来——不是不该支持，是这个耦合挡住了。
+ * 2. **每次上传都付 OCR 的钱。** 一份 16 页扫描件要 9 秒，而用户的目的常常只是把文件
+ *    交给 skill 处理，根本不需要平台先读一遍。
+ * 3. **抽取结果绕模型一圈。** 文本经 `JSON.stringify` 进 system 消息时换行被转义成字面
+ *    `\n`，模型转述给下游工具后分页标记全部失配（实测 16 页材料被当成 1 页，报告里
+ *    所有位置都写"第1页"）。现在材料以文件形态直达 skill 的 `inputs/`，不穿过模型输出。
+ *
+ * 于是模型面对的规则也统一了：**附件就是文件，要读内容就调 extract_document_text**，
+ * 而不是"有的附件自带内容、有的不带"，还得自己判断在哪种情形。
+ */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -191,37 +36,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { objectKey, originalFilename, contentType } = req.body;
 
-  if (!objectKey || !originalFilename || !contentType) {
+  if (!objectKey || !originalFilename) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const authHeader = req.headers.authorization || "";
-  const authToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
   try {
-    // Download file from OSS
-    const { url } = await ossClient.sign({ objectKey });
-    const response = await axios.get(url, { responseType: "arraybuffer", timeout: 300000 });
-    const buffer = Buffer.from(response.data);
-
-    // Extract content from buffer
-    const extracted = await extractContentFromBuffer(
-      buffer,
-      originalFilename,
-      contentType,
-      authToken
-    );
-
     return res.status(200).json({
       success: true,
-      content: extracted.content,
-      type: extracted.type,
-      filename: extracted.filename,
       objectKey,
+      filename: originalFilename,
+      type: describeType(contentType, originalFilename),
+      // 字段保持在位、值恒为空串：调用方不必分情况处理，而"内容此刻还没有"这件事
+      // 由 content 为空表达。
+      content: "",
     });
   } catch (error: any) {
     console.error("[Chat Upload Confirm] Error:", error);
     logError(error);
-    return res.status(400).json({ error: error.message || "File processing failed" });
+    return res.status(400).json({ error: error.message || "Upload confirm failed" });
   }
+}
+
+/** 给用户看的类型标签（附件气泡上显示），不参与任何分派逻辑。 */
+function describeType(contentType: string | undefined, filename: string): string {
+  const mime = (contentType || "").toLowerCase();
+  const name = (filename || "").toLowerCase();
+
+  if (mime.startsWith("image/")) return "Image";
+  if (mime === "application/pdf" || name.endsWith(".pdf")) return "PDF";
+  if (mime.includes("word") || name.endsWith(".docx") || name.endsWith(".doc")) return "Word";
+  if (
+    mime.includes("excel") ||
+    mime.includes("spreadsheet") ||
+    name.endsWith(".xlsx") ||
+    name.endsWith(".xls")
+  )
+    return "Excel";
+  if (mime === "text/csv" || name.endsWith(".csv")) return "CSV";
+  if (mime.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) return "Text";
+  if (mime === "application/postscript" || name.endsWith(".ai")) return "AI";
+  return "File";
 }

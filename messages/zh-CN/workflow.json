@@ -53,7 +53,6 @@
   "apiEndpoint": "API端点",
   "requestMethod": "请求方法",
   "workflowConfig": "工作流配置",
-  "appType": "应用类型",
   "viewMode": "工作流展示模式（暂不支持保存）",
   "workflowEditor": "工作流编辑器",
   "editorDesc": "拖拽节点、建立连接、配置属性",

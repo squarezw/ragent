@@ -1,7 +1,7 @@
 {
   "home": "Dashboard",
   "datasets": "Knowledge",
-  "apps": "Applications",
+  "apps": "Digital Employees",
   "chat": "Chat",
   "settings": "Settings",
   "logout": "Logout",
@@ -26,5 +26,8 @@
   "promptDetail": "Prompt Detail",
   "promptMonitoring": "Prompt",
   "toolsManagement": "Tools",
-  "processManagement": "Process"
+  "processManagement": "Process",
+  "skillsManagement": "Skills",
+  "reviewQueue": "Review Queue",
+  "promptManagementDeprecated": "Prompt management is being retired: an app's prompt now lives in its Agent.md (Digital Employees → Agent.md)."
 }

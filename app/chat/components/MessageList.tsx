@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslations } from "next-intl";
 import { Bot, FileSpreadsheet, FileText, FileType, User } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import FeedbackUI from "@/app/chat/components/FeedbackUI";
@@ -54,6 +55,10 @@ interface MessageListProps {
   activeRuns?: Record<number, TaskState>;
   /** Cancel callback passed to running task cards. */
   onCancelRun?: (runId: number) => void;
+  /** In-flight tool indicator from `event: tool_status` SSE frames.
+   *  `label` is the skill name when present, else the tool name;
+   *  `failed: true` renders a lightweight failure hint instead. */
+  toolStatus?: { label: string; failed: boolean } | null;
 }
 
 export default function MessageList({
@@ -70,7 +75,24 @@ export default function MessageList({
   messagesEndRef,
   activeRuns,
   onCancelRun,
+  toolStatus,
 }: MessageListProps) {
+  const t = useTranslations("chat");
+
+  const toolStatusText = toolStatus
+    ? t(toolStatus.failed ? "toolFailed" : "toolRunning", { name: toolStatus.label })
+    : null;
+
+  const toolStatusIndicator = toolStatusText ? (
+    <span
+      data-testid="tool-status-indicator"
+      className={`text-xs ${
+        toolStatus?.failed ? "text-destructive" : "text-muted-foreground animate-pulse"
+      }`}
+    >
+      {toolStatusText}
+    </span>
+  ) : null;
   // Long-task cards rendered at the top so users always see in-flight progress
   // when scrolled to the latest message (which auto-anchors to bottom).
   // Sort: running/queued first (most relevant), terminal last; within each
@@ -173,10 +195,13 @@ export default function MessageList({
               <Bot className="w-4 h-4 text-success" />
             </div>
             <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
-              <div className="flex items-center gap-1">
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1">
+                  <span className="thinking-dot" />
+                  <span className="thinking-dot" />
+                  <span className="thinking-dot" />
+                </span>
+                {toolStatusIndicator}
               </div>
               <style jsx>{`
                 .thinking-dot {
@@ -226,6 +251,7 @@ export default function MessageList({
                   <span className="streaming-dot" />
                   <span className="streaming-dot" />
                 </span>
+                {toolStatusIndicator && <div className="mt-1">{toolStatusIndicator}</div>}
                 <style jsx>{`
                   .streaming-dot {
                     display: inline-block;

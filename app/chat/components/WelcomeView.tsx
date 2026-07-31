@@ -7,13 +7,7 @@ import { useTimeGreeting } from "@/hooks/useTimeGreeting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ChatInputComposite from "./ChatInputComposite";
 import AppShortcuts from "./AppShortcuts";
-
-interface Attachment {
-  filename: string;
-  type: string;
-  content: string;
-  url?: string;
-}
+import type { Attachment } from "../hooks/useFileAttachments";
 
 interface App {
   id: number;

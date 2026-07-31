@@ -1,7 +1,7 @@
 {
   "home": "工作台",
   "datasets": "知识库",
-  "apps": "智能应用",
+  "apps": "数字员工",
   "chat": "智能对话",
   "settings": "设置",
   "logout": "退出",
@@ -26,5 +26,8 @@
   "promptDetail": "提示词详情",
   "promptMonitoring": "提示词监控",
   "toolsManagement": "工具管理",
-  "processManagement": "流程管理"
+  "processManagement": "流程管理",
+  "skillsManagement": "Skill 管理",
+  "reviewQueue": "审核队列",
+  "promptManagementDeprecated": "提示词管理即将下线：应用的提示词已迁到「数字员工 → Agent.md」，在那里编辑。"
 }

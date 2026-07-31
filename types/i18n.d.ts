@@ -38,6 +38,8 @@ type Messages = typeof import("../messages/en/common.json") & {
   tools: typeof import("../messages/en/tools.json");
   processManagement: typeof import("../messages/en/processManagement.json");
   zdObserve: typeof import("../messages/en/zdObserve.json");
+  skills: typeof import("../messages/en/skills.json");
+  reviews: typeof import("../messages/en/reviews.json");
 };
 
 declare module "next-intl" {

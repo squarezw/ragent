@@ -1,0 +1,75 @@
+// P5 审核工作流：状态归一化 + 徽标映射（纯函数，供 skills / apps / reviews 页面共用）
+
+/** 审核生命周期状态（skills 与 apps 同构） */
+export type ReviewStatus = "draft" | "pending_review" | "rejected" | "published";
+
+export const REVIEW_STATUSES: ReviewStatus[] = ["draft", "pending_review", "rejected", "published"];
+
+/**
+ * 容错归一化后端返回的 status。
+ * 后端并行开发中，status 可能缺失或形状不对：
+ * - 合法值原样返回；
+ * - 缺失/非法时按 published_content 兜底推断（有已发布正文=published，否则=draft），
+ *   与 P0-P2 的旧两态推断保持行为一致。
+ */
+export function resolveReviewStatus(
+  status: unknown,
+  publishedContent?: string | null
+): ReviewStatus {
+  if (typeof status === "string" && (REVIEW_STATUSES as string[]).includes(status)) {
+    return status as ReviewStatus;
+  }
+  return publishedContent != null ? "published" : "draft";
+}
+
+/**
+ * 已发布但草稿有未发布修改（存在 published_content 且 content ≠ published_content）。
+ * 已发布后再编辑（后端会把 status 翻回 draft/pending/rejected）也要标出差异，
+ * 所以只看正文，不看 status。
+ */
+export function hasUnpublishedChanges(
+  content: string | null | undefined,
+  publishedContent: string | null | undefined
+): boolean {
+  if (publishedContent == null) return false;
+  return (content ?? "") !== publishedContent;
+}
+
+/** 徽标渲染信息：i18n key（skills 命名空间）+ shadcn Badge variant + 附加类 */
+export interface ReviewStatusBadge {
+  labelKey: "statusDraft" | "statusPendingReview" | "statusRejected" | "statusPublished";
+  variant: "default" | "secondary" | "destructive" | "outline";
+  className?: string;
+}
+
+const BADGE_MAP: Record<ReviewStatus, ReviewStatusBadge> = {
+  draft: { labelKey: "statusDraft", variant: "secondary" },
+  pending_review: {
+    labelKey: "statusPendingReview",
+    variant: "outline",
+    className: "text-blue-600 border-blue-300",
+  },
+  rejected: { labelKey: "statusRejected", variant: "destructive" },
+  published: { labelKey: "statusPublished", variant: "default" },
+};
+
+export function reviewStatusBadge(status: ReviewStatus): ReviewStatusBadge {
+  return BADGE_MAP[status];
+}
+
+/**
+ * 数字员工（App）专用：`published` 不出徽标。
+ *
+ * 与 Skill 的区别 —— Skill 有 content / published_content 双快照，"已发布"要和
+ * "有未发布修改"区分，徽标有信息量；App 的配置即线上态，`published` 是正常终态
+ * 且没有任何出口动作（后端无 unpublish 端点，编辑也不回退状态），显示它只是噪音。
+ * 其余三态是异常态：既有动作可做（提交审核 / 通过 / 驳回），又意味着"目前仅所有者
+ * 可对话"（后端 chat 门），必须让人看见。
+ *
+ * 传入非法或缺失 status（存量应用无该字段）同样不出徽标。
+ */
+export function appStatusBadge(status?: string): ReviewStatusBadge | null {
+  if (!status || !(REVIEW_STATUSES as readonly string[]).includes(status)) return null;
+  if (status === "published") return null;
+  return BADGE_MAP[status as ReviewStatus];
+}

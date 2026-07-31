@@ -1,6 +1,6 @@
 "use client";
 
-import { clearChatSelectionCache } from "@/lib/authUtils";
+import { clearChatSelectionCache, clearSwrCache } from "@/lib/authUtils";
 import axios from "@/lib/axios";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
@@ -93,6 +93,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("ragent_logged_in");
 
     clearChatSelectionCache();
+    clearSwrCache();
     globalUser = null;
     globalLoading = false;
     globalUserPromise = null;

@@ -8,6 +8,16 @@ export interface Attachment {
   type: string;
   content: string;
   url?: string;
+  /**
+   * 对象存储的 key。除了拼下载 URL，它还要作为结构化字段随聊天请求发给后端——
+   * skill 沙箱要的是**原始文件**（扫描件、Excel、图纸），而 `content` 只是抽取出的
+   * 文本。后端凭它取回字节、写进容器的 inputs/ 下。
+   *
+   * 原先只保留了派生的 `url`，objectKey 在上传后就被丢掉了。
+   */
+  objectKey?: string;
+  /** 字节数，随请求发给后端用于超限预判（避免白下载一遍大文件） */
+  size?: number;
 }
 
 export function useFileAttachments() {
@@ -46,6 +56,8 @@ export function useFileAttachments() {
         type: result.type,
         content: result.content,
         url: getFileUrl(result.objectKey),
+        objectKey: result.objectKey,
+        size: file.size,
       };
 
       setAttachments((prev) => [...prev, newAttachment]);
@@ -70,6 +82,16 @@ export function useFileAttachments() {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/plain",
     "application/postscript",
+    // 图片。长期传不上来不是因为不该支持，而是上传要求抽取必须成功——
+    // upload-confirm 的 default 分支对未知类型直接抛 "Unsupported file format"。
+    // 上传与抽取解耦（文字经 extract_document_text 按需取）之后这个限制就没有理由了。
+    // 平台侧 OCR 单张约 1.3s，且只在模型真需要读它时才发生。
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+    "image/webp",
   ];
 
   const validateAndUploadFiles = async (files: File[]) => {
@@ -136,6 +158,14 @@ export function useFileAttachments() {
       if (lowerFilename.endsWith(".xls")) return "application/vnd.ms-excel";
       if (lowerFilename.endsWith(".txt")) return "text/plain";
       if (lowerFilename.endsWith(".ai")) return "application/postscript";
+      // 图片也要走扩展名兜底：部分浏览器/系统对图片给不出 MIME，
+      // 落到 octet-stream 就会被判成不支持而传不上来。
+      if (lowerFilename.endsWith(".png")) return "image/png";
+      if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) return "image/jpeg";
+      if (lowerFilename.endsWith(".gif")) return "image/gif";
+      if (lowerFilename.endsWith(".bmp")) return "image/bmp";
+      if (lowerFilename.endsWith(".tif") || lowerFilename.endsWith(".tiff")) return "image/tiff";
+      if (lowerFilename.endsWith(".webp")) return "image/webp";
       return "application/octet-stream";
     };
 

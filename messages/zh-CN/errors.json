@@ -17,10 +17,10 @@
   "wechatAuthFailed": "获取企业微信授权链接失败",
   "qrGenerationFailed": "生成二维码失败",
   "unbindFailed": "解绑失败",
-  "cannotLoadApps": "无法加载应用列表",
+  "cannotLoadApps": "无法加载数字员工列表",
   "loadDatasetsFailed": "加载数据集失败",
   "loadPromptsFailed": "加载提示词失败",
   "loadWechatAppsFailed": "加载微信应用失败",
-  "enterAppName": "请输入应用名称",
-  "cannotDeleteApp": "无法删除应用"
+  "enterAppName": "请输入数字员工名称",
+  "cannotDeleteApp": "无法删除数字员工"
 }
