@@ -12,6 +12,7 @@ import {
   addRequiresName,
   filterToolOptions,
   filterWorkflowOptions,
+  selectableWorkflowOptions,
   groupToolOptions,
   removeRequiresName,
   resolveToolSelection,
@@ -43,6 +44,8 @@ interface RequiresPickerProps {
   entries: RequiresSelectionEntry[];
   buildGroups: (query: string) => PickerGroup[];
   optionCount: number;
+  /** optionCount 为 0 时显示的说明；不给则用「候选清单取不到」那句 */
+  emptyHint?: string;
   onChange: (next: string[]) => void;
 }
 
@@ -54,6 +57,7 @@ function RequiresPicker({
   entries,
   buildGroups,
   optionCount,
+  emptyHint,
   onChange,
 }: RequiresPickerProps) {
   const t = useTranslations("skills");
@@ -146,7 +150,8 @@ function RequiresPicker({
 
       {optionCount === 0 ? (
         <p className="text-xs text-amber-700 dark:text-amber-400">
-          {t("requiresOptionsUnavailable")}
+          {/* "取不到清单"与"清单里没有能选的"是两回事，别共用一句话 */}
+          {emptyHint ?? t("requiresOptionsUnavailable")}
         </p>
       ) : (
         <div className="max-h-56 overflow-y-auto rounded-md border divide-y">
@@ -295,9 +300,11 @@ export function RequiresWorkflowsSelector({
 }) {
   const t = useTranslations("skills");
 
+  // 规则（含"已选中的停用项要留下"这条）在 lib/skillRequires.selectableWorkflowOptions
   const buildGroups = useCallback(
     (query: string): PickerGroup[] => {
-      const items = filterWorkflowOptions(options, query);
+      const items = selectableWorkflowOptions(
+        filterWorkflowOptions(options, query), selected);
       if (items.length === 0) return [];
       return [
         {
@@ -312,8 +319,13 @@ export function RequiresWorkflowsSelector({
         },
       ];
     },
-    [options, t]
+    [options, selected, t]
   );
+
+  // 计数用「实际可选的」而不是 options.length：全部停用且一个都没选时，
+  // optionCount>0 会让空清单显示成"没有匹配的选项"（像是搜索词的问题），
+  // 而真实情况是这个部署压根没有可用的长任务。
+  const selectableCount = selectableWorkflowOptions(options, selected).length;
 
   return (
     <RequiresPicker
@@ -323,7 +335,10 @@ export function RequiresWorkflowsSelector({
       selected={selected}
       entries={resolveWorkflowSelection(selected, options)}
       buildGroups={buildGroups}
-      optionCount={options.length}
+      optionCount={selectableCount}
+      emptyHint={
+        options.length > 0 ? t("requiresAllWorkflowsDisabled") : undefined
+      }
       onChange={onChange}
     />
   );
