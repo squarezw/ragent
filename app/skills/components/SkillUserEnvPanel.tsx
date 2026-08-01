@@ -60,12 +60,15 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
 
   const [rows, setRows] = useState<EnvRow[]>([]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  // 聚焦过的行才可写，见输入框上的 readOnly——挡浏览器自动填充
+  const [focused, setFocused] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   // 服务端现值到达（或保存后回填）时重建行；同时收起所有已明文显示的值
   useEffect(() => {
     setRows(buildEnvRows(declaredKeys, env));
     setRevealed(new Set());
+    setFocused(new Set());
   }, [declaredKeys, env]);
 
   const validation = useMemo(() => validateEnvRows(rows), [rows]);
@@ -200,7 +203,25 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
                             ? "password"
                             : "text"
                         }
-                        autoComplete="off"
+                        // 反自动填充。`autoComplete="off"` 单独用不住：Chrome 看到
+                        // 「文本框 + 密码框」相邻就按登录表单处理，把用户名/密码填进来
+                        // ——实测把 `admin` 填进了 ChatGPT_BaseURL（2026-08-01）。
+                        // 那是全部字段改成 password 型之前不会发生的，此刻不改就等着
+                        // 有人连着 `admin` 一起点保存。
+                        //   · `new-password`：告诉 Chrome 这不是"已保存的那个密码"
+                        //   · name = 环境变量名：别让启发式把它当 username 字段
+                        //   · data-*ignore：1Password / LastPass 的关闭开关
+                        autoComplete="new-password"
+                        name={`skill-env-${row.key || row.id}`}
+                        data-1p-ignore
+                        data-lpignore="true"
+                        // 最后一道，且不依赖任何浏览器启发式：**没聚焦前是只读的**。
+                        // Chrome 不会往只读输入框里填东西；点进去即解锁，打字与粘贴
+                        // 都照常（本来也得先聚焦才能粘）。
+                        readOnly={!focused.has(row.id)}
+                        onFocus={() =>
+                          setFocused((prev) => new Set(prev).add(row.id))
+                        }
                         value={row.value}
                         onChange={(e) => patchRow(row.id, { value: e.target.value })}
                         placeholder={t("envValuePlaceholder")}
@@ -276,6 +297,8 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
               onClick={() => {
                 setRows(buildEnvRows(declaredKeys, env));
                 setRevealed(new Set());
+                // 一并重新上锁：取消后这些框又回到没被碰过的状态
+                setFocused(new Set());
               }}
             >
               {tc("cancel")}
