@@ -19,6 +19,7 @@ import {
   summarizeEnvConfig,
   validateEnvRows,
 } from "@/lib/skillUserEnv";
+import { isSecretEnvKey } from "@/lib/skillUserEnv";
 import { useSkillUserEnv } from "@/hooks/useSkillUserEnv";
 
 interface SkillUserEnvPanelProps {
@@ -33,7 +34,10 @@ interface SkillUserEnvPanelProps {
  * 三条硬约束，改这个组件前先读一遍：
  * 1. `meta.configurable === false` 时整块不渲染——没有 `.env.example` /
  *    `.env.template` 模板资产的 skill 不该出现这个入口。
- * 2. **值一律用 password 型输入框，且绝不写进 console / 埋点 / toast**。
+ * 2. **凭据类的值用 password 型输入框，且任何值都绝不写进 console / 埋点 / toast**。
+ *    哪些算凭据看 `isSecretEnvKey`（按键名判：key/secret/token/cookie…）。
+ *    BaseURL / Deployment / Providers 这类明文显示：遮住它们没有安全收益，
+ *    只让人看不清自己填了什么——2026-08-01 那次「值整体错了一行」就更难被发现。
  *    保存失败只展示后端 detail（中文校验信息）。
  * 3. 「仅属主」是硬约束：这里只显示当前登录用户自己的那份，没有也不要加
  *    「查看别人的值」的入口——管理员想排查只能看 meta 的键名与计数。
@@ -187,8 +191,15 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
                     <div className="min-w-0 sm:flex-1 flex items-center gap-1">
                       <Input
                         id={`env-value-${row.id}`}
-                        // 值一律 password 型；点眼睛才临时明文（浏览器不该记住凭据）
-                        type={revealed.has(row.id) ? "text" : "password"}
+                        // 只有像凭据的键（ApiKey / token / cookie…）默认打码；
+                        // BaseURL、Deployment、Providers 这类直接明文——把模型名
+                        // 遮成一排圆点没有安全收益，只是让人看不清自己填了什么。
+                        // 眼睛按钮对所有行都在，随时可反向切换。
+                        type={
+                          isSecretEnvKey(row.key) && !revealed.has(row.id)
+                            ? "password"
+                            : "text"
+                        }
                         autoComplete="off"
                         value={row.value}
                         onChange={(e) => patchRow(row.id, { value: e.target.value })}
