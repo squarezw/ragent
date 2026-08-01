@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import {
   buildExecConfigPayload,
@@ -45,6 +46,11 @@ export default function SkillExecConfigForm({
   const [timeout, setTimeoutSec] = useState(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
   const [needsNetwork, setNeedsNetwork] = useState(config?.needs_network ?? false);
   const [warmPool, setWarmPool] = useState(config?.warm_pool ?? false);
+  // 一行一条 glob；空行忽略。用 textarea 而不是 tag 输入：写的是 glob 不是枚举，
+  // 而且多数 skill 一条都不填
+  const [artifactExclude, setArtifactExclude] = useState(
+    (config?.artifact_exclude ?? []).join("\n")
+  );
 
   const selection = useMemo(
     () => resolveImageSelection(config?.image, images),
@@ -56,6 +62,7 @@ export default function SkillExecConfigForm({
     setTimeoutSec(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
     setNeedsNetwork(config?.needs_network ?? false);
     setWarmPool(config?.warm_pool ?? false);
+    setArtifactExclude((config?.artifact_exclude ?? []).join("\n"));
   }, [config]);
 
   useEffect(() => {
@@ -143,6 +150,19 @@ export default function SkillExecConfigForm({
         />
       </div>
 
+      <div className="space-y-1.5">
+        <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
+        <Textarea
+          id="exec-artifact-exclude"
+          rows={2}
+          value={artifactExclude}
+          onChange={(e) => setArtifactExclude(e.target.value)}
+          placeholder="**/findings.json"
+          className="font-mono text-xs"
+        />
+        <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+      </div>
+
       <div className="flex justify-end">
         <Button
           disabled={!canSave}
@@ -154,6 +174,10 @@ export default function SkillExecConfigForm({
                   timeout_sec: timeoutValue,
                   needs_network: needsNetwork,
                   warm_pool: warmPool,
+                  artifact_exclude: artifactExclude
+                    .split("\n")
+                    .map((g) => g.trim())
+                    .filter(Boolean),
                 },
                 // 可写目录不在表单里编辑，但要按 GET 现值透传回去——后端全量覆盖，
                 // 漏传等于把 fund 的 .report_state 持久状态目录配置清空。

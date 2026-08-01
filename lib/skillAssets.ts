@@ -71,6 +71,9 @@ export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | nu
       : [],
     needs_network: obj.needs_network === true,
     warm_pool: obj.warm_pool === true,
+    artifact_exclude: Array.isArray(obj.artifact_exclude)
+      ? obj.artifact_exclude.filter((s): s is string => typeof s === "string")
+      : [],
     updated_at: asString(obj.updated_at),
   };
 }
@@ -134,7 +137,8 @@ export type ExecConfigField =
   | "timeout_sec"
   | "writable_subdirs"
   | "needs_network"
-  | "warm_pool";
+  | "warm_pool"
+  | "artifact_exclude";
 
 /**
  * draft vs published exec 配置逐字段对比，返回有差异的字段名。
@@ -153,6 +157,10 @@ export function diffExecConfig(
   }
   if (draft.needs_network !== published.needs_network) changed.push("needs_network");
   if (draft.warm_pool !== published.warm_pool) changed.push("warm_pool");
+  // 这项决定用户能拿到哪些产物，发布前必须看得见它变了
+  if (draft.artifact_exclude.join("\n") !== published.artifact_exclude.join("\n")) {
+    changed.push("artifact_exclude");
+  }
   return changed;
 }
 
@@ -435,6 +443,7 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
     writable_subdirs: summary.writable_subdirs,
     needs_network: summary.needs_network,
     warm_pool: summary.warm_pool,
+    artifact_exclude: summary.artifact_exclude,
     updated_at: summary.updated_at ?? null,
   };
 }
@@ -445,6 +454,8 @@ export interface ExecConfigEdits {
   timeout_sec: number;
   needs_network: boolean;
   warm_pool: boolean;
+  /** 表单里可编辑；不传则沿用服务端现值（见 buildExecConfigPayload） */
+  artifact_exclude?: string[];
 }
 
 /**
@@ -460,7 +471,7 @@ export interface ExecConfigEdits {
  */
 export function buildExecConfigPayload(
   edits: ExecConfigEdits,
-  loaded: Pick<SkillExecConfig, "writable_subdirs"> | null
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
 ): SkillExecConfigPayload {
   return {
     image: edits.image,
@@ -468,6 +479,9 @@ export function buildExecConfigPayload(
     writable_subdirs: loaded?.writable_subdirs ?? [],
     needs_network: edits.needs_network,
     warm_pool: edits.warm_pool,
+    // 与 writable_subdirs 同一个坑：后端全量覆盖，不带回则任何一次保存都会把
+    // CRP 的 ["**/findings.json"] 静默清空，中间产物又开始发链接给用户
+    artifact_exclude: edits.artifact_exclude ?? loaded?.artifact_exclude ?? [],
   };
 }
 

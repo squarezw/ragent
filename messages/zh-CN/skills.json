@@ -90,6 +90,8 @@
   "execWritableSubdirs": "可写目录",
   "execNeedsNetwork": "网络访问",
   "execWarmPool": "预热池",
+  "execArtifactExclude": "内部产物",
+  "execArtifactExcludeHelp": "命中这些 glob 的产物不投递给用户（不上传、不给下载链接），但仍会列在产物清单里供排查。一行一条，例如 **/findings.json。留空 = 全部投递。",
   "execEnabled": "是",
   "execDisabled": "否",
   "execNone": "（无运行配置）",

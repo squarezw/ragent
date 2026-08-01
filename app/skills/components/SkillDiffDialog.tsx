@@ -165,6 +165,12 @@ function ExecConfigColumn({
       label: t("execWarmPool"),
       value: config.warm_pool ? t("execEnabled") : t("execDisabled"),
     },
+    {
+      field: "artifact_exclude",
+      label: t("execArtifactExclude"),
+      value:
+        config.artifact_exclude.length > 0 ? config.artifact_exclude.join(", ") : "-",
+    },
   ];
 
   return (

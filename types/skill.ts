@@ -67,6 +67,8 @@ export interface SkillExecConfig {
   /** 只管要不要出网；false = 容器完全禁网（--network none） */
   needs_network: boolean;
   warm_pool: boolean;
+  /** 不投递给用户的产物 glob（迁移 047）；命中者不给下载链接，但仍列在产物清单里 */
+  artifact_exclude: string[];
   updated_at: string | null;
 }
 
@@ -77,6 +79,7 @@ export interface SkillExecConfigPayload {
   writable_subdirs: string[];
   needs_network: boolean;
   warm_pool: boolean;
+  artifact_exclude: string[];
 }
 
 /**

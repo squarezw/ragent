@@ -90,6 +90,8 @@
   "execWritableSubdirs": "Writable dirs",
   "execNeedsNetwork": "Network access",
   "execWarmPool": "Warm pool",
+  "execArtifactExclude": "Internal artifacts",
+  "execArtifactExcludeHelp": "Artifacts matching these globs are not delivered to the user (no upload, no link) but still appear in the artifact manifest for troubleshooting. One per line, e.g. **/findings.json. Empty = deliver everything.",
   "execEnabled": "Yes",
   "execDisabled": "No",
   "execNone": "(no exec config)",
