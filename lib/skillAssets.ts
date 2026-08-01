@@ -323,6 +323,38 @@ export function isViewableAssetPath(path: string): boolean {
   return !BINARY_ASSET_EXTENSIONS.has(normalized.slice(dot).toLowerCase());
 }
 
+/** 交给 kkFileView 预览的类型：平台本来就有这个模块，不在前端自己造轮子 */
+export const OFFICE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
+]);
+
+export const IMAGE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
+]);
+
+/** 路径的小写扩展名；无扩展名返回空串 */
+export function assetExtname(path: string): string {
+  const name = normalizeAssetPath(path).split("/").pop() || "";
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/**
+ * 这个资产能不能预览。
+ *
+ * 文本与代码直接读；office 与图片各自渲染。剩下的（.zip/.so/.pyc…）不给按钮——
+ * 点开只有一屏乱码，那比没有按钮更让人困惑。
+ *
+ * 放在 lib 而不是组件里：Node 的类型剥离只处理 .ts，从 .tsx 导入跑不了测试，
+ * 而这条判定正是需要拿真实资产清单去验的那种规则。
+ */
+export function isPreviewableAsset(path: string): boolean {
+  const ext = assetExtname(path);
+  if (!ext) return true; // 无扩展名的按文本试（LICENSE、Makefile 之类）
+  if (OFFICE_PREVIEW_EXTENSIONS.has(ext) || IMAGE_PREVIEW_EXTENSIONS.has(ext)) return true;
+  return !BINARY_ASSET_EXTENSIONS.has(ext);
+}
+
 /**
  * 按顶层目录推断 kind；references/、根文件与未知目录按扩展名分流
  * （文本 → reference，二进制 → asset），与后端 classify_kind 同口径。

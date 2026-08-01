@@ -157,6 +157,8 @@
   "assetExportAll": "Export all",
   "assetExportAllHint": "Download SKILL.md and every asset as a zip",
   "assetExportFailed": "Export failed",
+  "assetPreview": "Preview",
+  "assetPreviewFailed": "Preview failed",
   "assetsQuota": "{count} files · {size} / {limit} limit",
   "assetsEmpty": "No assets yet",
   "assetsRootGroup": "Root",

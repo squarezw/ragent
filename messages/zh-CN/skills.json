@@ -157,6 +157,8 @@
   "assetExportAll": "导出全部",
   "assetExportAllHint": "打包下载 SKILL.md 与全部资产（zip）",
   "assetExportFailed": "导出失败",
+  "assetPreview": "预览",
+  "assetPreviewFailed": "预览失败",
   "assetsQuota": "{count} 个文件 · {size} / 上限 {limit}",
   "assetsEmpty": "暂无资产",
   "assetsRootGroup": "根目录",
