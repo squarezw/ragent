@@ -190,7 +190,7 @@
   "pathErrorAbsolute": "必须是 Skill 目录内的相对路径",
   "pathErrorEmptySegment": "路径不能包含空路径段",
   "pathErrorDotSegment": "路径不能包含 . 或 .. 路径段",
-  "pathErrorHiddenSegment": "路径不能包含以 . 开头的隐藏目录；持久状态目录请填到「可写子目录」",
+  "pathErrorHiddenSegment": "路径不能包含以 . 开头的隐藏文件或目录；持久状态目录请填到「可写子目录」。唯一例外是根级 .env.example / .env.template（个人环境变量的键名模板）",
   "execImagePlaceholder": "选择沙箱镜像",
   "execImageHint": "只能选择平台登记的沙箱镜像白名单",
   "execImagePinned": "已锁版本",

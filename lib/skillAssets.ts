@@ -214,8 +214,24 @@ export type AssetPathError =
   | "hiddenSegment";
 
 /**
+ * 根级 env 模板：per-user 环境变量的键名 schema 就从它们解析（迁移 041）。
+ * 与后端 `app/services/skill_user_env.ENV_TEMPLATE_NAMES` 逐字对齐。
+ */
+export const ENV_TEMPLATE_NAMES: readonly string[] = [".env.example", ".env.template"];
+
+/** 隐藏段规则的唯一例外：**根级**的这两个文件名（子目录里的同名文件不算） */
+export function isEnvTemplatePath(path: string): boolean {
+  return ENV_TEMPLATE_NAMES.includes(path);
+}
+
+/**
  * 镜像后端 validate_asset_path：拒绝空/超长/反斜杠或 NUL/绝对路径/空段/`.`|`..` 段/隐藏段。
  * 隐藏段（`.report_state` 之类）只能走 exec-config 的 writable_subdirs，不作为资产入库。
+ *
+ * **唯一例外是根级 `.env.example` / `.env.template`**。这条以前漏了：后端
+ * `validate_asset_path` 有 `is_env_template_path` 放行，前端没有，于是一个合法资产
+ * 在界面上传不进去，报错还说它是"隐藏目录"（它是文件）。CRP 的 `.env.example`
+ * 本来就在库里——是导入脚本放进去的，从界面反而补不回来。
  */
 export function validateAssetPath(path: string): AssetPathError | null {
   if (typeof path !== "string" || path.length === 0) return "empty";
@@ -223,6 +239,7 @@ export function validateAssetPath(path: string): AssetPathError | null {
   // 空格与中文合法（现有资产就有「（模版）新建元一期…docx」），只拒后端拒的反斜杠 / NUL
   if (path.includes("\\") || path.includes("\u0000")) return "backslash";
   if (path.startsWith("/")) return "absolute";
+  if (isEnvTemplatePath(path)) return null;
   for (const part of path.split("/")) {
     if (!part) return "emptySegment";
     if (part === "." || part === "..") return "dotSegment";

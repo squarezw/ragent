@@ -11,6 +11,7 @@ import {
   formatBytes,
   groupAssetsByDir,
   inferAssetKind,
+  isEnvTemplatePath,
   isModelReadableAsset,
   isViewableAssetPath,
   joinEncodedSegments,
@@ -695,4 +696,27 @@ test("arrayBufferToBase64 与 Buffer 编码一致（含大于分块阈值的输�
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) % 256;
   assert.equal(arrayBufferToBase64(bytes.buffer), Buffer.from(bytes).toString("base64"));
   assert.equal(arrayBufferToBase64(new Uint8Array([]).buffer), "");
+});
+
+
+test("validateAssetPath 放行根级 env 模板（前端曾漏这条例外）", () => {
+  // 后端 validate_asset_path 有 is_env_template_path 放行，前端没有 →
+  // 一个合法资产在界面上传不进去，报错还说它是"隐藏目录"（它是文件）。
+  assert.equal(validateAssetPath(".env.example"), null);
+  assert.equal(validateAssetPath(".env.template"), null);
+});
+
+test("validateAssetPath 只放行根级、只放行这两个名字", () => {
+  // 与后端 is_env_template_path 同口径：子目录里的同名文件不算，真 .env 也不算
+  assert.equal(validateAssetPath("scripts/.env.example"), "hiddenSegment");
+  assert.equal(validateAssetPath(".env"), "hiddenSegment");
+  assert.equal(validateAssetPath(".envrc"), "hiddenSegment");
+  assert.equal(validateAssetPath(".git/config"), "hiddenSegment");
+  assert.equal(validateAssetPath(".report_state/x.json"), "hiddenSegment");
+});
+
+test("isEnvTemplatePath 与后端 ENV_TEMPLATE_NAMES 对齐", () => {
+  assert.equal(isEnvTemplatePath(".env.example"), true);
+  assert.equal(isEnvTemplatePath(".env.template"), true);
+  assert.equal(isEnvTemplatePath("sub/.env.example"), false);
 });

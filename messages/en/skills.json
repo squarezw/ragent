@@ -190,7 +190,7 @@
   "pathErrorAbsolute": "Path must be relative to the skill directory",
   "pathErrorEmptySegment": "Path cannot contain empty segments",
   "pathErrorDotSegment": "Path cannot contain . or .. segments",
-  "pathErrorHiddenSegment": "Path cannot contain hidden segments starting with a dot; use writable subdirectories for persistent state",
+  "pathErrorHiddenSegment": "Paths cannot contain hidden files or directories starting with '.'; put persistent state directories under \"writable subdirectories\". The only exception is a root-level .env.example / .env.template (the key schema for personal env vars)",
   "execImagePlaceholder": "Select a sandbox image",
   "execImageHint": "Only images registered in the platform allowlist can be used",
   "execImagePinned": "digest pinned",
