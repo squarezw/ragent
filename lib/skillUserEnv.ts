@@ -28,6 +28,32 @@ export const MAX_ENV_TOTAL_BYTES = 64 * 1024;
  * 平台保留名判定（后端 is_reserved_env_key 的镜像，大小写不敏感——
  * 后端用 key.upper()，`skill_work_dir` 同样被拒）。
  */
+/**
+ * 名字里出现这些词，就当作凭据，默认打码。
+ *
+ * 全部小写后做子串匹配。宁可多遮几个（用户点眼睛就能看），也不要漏遮一个真凭据。
+ * 反过来 BaseURL / Deployment / ApiVersion / Providers 这类不含这些词，照常明文
+ * ——把一个模型名遮成一排圆点没有任何安全收益，只是让人看不清自己填了什么。
+ */
+const SECRET_KEY_HINTS = [
+  "key",        // ApiKey / API_KEY / SECRET_KEY
+  "secret",
+  "token",
+  "password",
+  "passwd",
+  "pwd",
+  "credential",
+  "cookie",     // 招标 skill 的 BZZ_COOKIE 是登录态，等同凭据
+  "signature",
+  "private",
+] as const;
+
+/** 这个变量该不该默认打码。眼睛按钮对所有行都可用，这只决定初始状态。 */
+export function isSecretEnvKey(key: string): boolean {
+  const lower = (key || "").toLowerCase();
+  return SECRET_KEY_HINTS.some((hint) => lower.includes(hint));
+}
+
 export function isReservedEnvKey(key: string): boolean {
   return typeof key === "string" && key.toUpperCase().startsWith(RESERVED_ENV_PREFIX);
 }

@@ -19,6 +19,8 @@ export interface SkillsProxyOptions {
   passQuery?: string[];
   /** 期望纯文本响应（如 export 的 SKILL.md / Agent.md） */
   text?: boolean;
+  /** 二进制响应（zip 等）：按字节透传，并把 Content-Disposition 一起带回给浏览器 */
+  binary?: boolean;
   /**
    * 放开 axios 的 body 体积上限（资产上传单文件 20MB，base64 后约 27MB）。
    * 路由侧还要各自配 `api.bodyParser.sizeLimit`，Next 默认 1mb 会先一步 413。
@@ -68,13 +70,23 @@ export async function proxySkillsApi(
       method,
       headers,
       data: method === "GET" || method === "DELETE" ? undefined : req.body,
-      responseType: options.text ? "text" : "json",
+      responseType: options.binary ? "arraybuffer" : options.text ? "text" : "json",
       // text 模式下禁用 axios 的 JSON 自动解析
       transformResponse: options.text ? [(data) => data] : undefined,
       maxBodyLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
       maxContentLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
     });
 
+    if (options.binary) {
+      res.setHeader(
+        "Content-Type",
+        response.headers["content-type"] || "application/octet-stream"
+      );
+      // 不带回这个头，浏览器就不知道文件名，存成一串 id
+      const disposition = response.headers["content-disposition"];
+      if (disposition) res.setHeader("Content-Disposition", disposition);
+      return res.status(response.status).send(Buffer.from(response.data));
+    }
     if (options.text) {
       res.setHeader("Content-Type", response.headers["content-type"] || "text/markdown");
       return res.status(response.status).send(response.data);

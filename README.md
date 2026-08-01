@@ -100,7 +100,7 @@ pnpm dev
 ### Tests & Checks
 
 ```bash
-pnpm test        # node --test
+pnpm test        # node --test (needs Node >= 22.6 for type stripping)
 pnpm check:ci    # biome lint + format check
 ```
 

@@ -2,7 +2,9 @@
 
 import { type DragEvent, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import axios from "@/lib/axios";
 import { toast } from "sonner";
+import SkillAssetPreviewDialog from "./SkillAssetPreviewDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, FileCode2, Loader2, Package, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, Download, Eye, FileCode2, Loader2, Package, Trash2, Upload, X } from "lucide-react";
 import {
   ASSET_KINDS,
   ASSET_MAX_FILE_BYTES,
@@ -34,6 +36,7 @@ import {
   formatBytes,
   groupAssetsByDir,
   isModelReadableAsset,
+  isPreviewableAsset,
   planUploads,
   shortSha,
   willRevertToDraft,
@@ -127,6 +130,42 @@ export default function SkillAssetsPanel({
   } = useSkillAssets(skill.id, canEdit);
 
   const [staged, setStaged] = useState<StagedFile[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<{
+    path: string;
+    size_bytes: number;
+  } | null>(null);
+
+  /**
+   * 打包下载 SKILL.md + 全部资产。
+   *
+   * 走 axios 取 blob，**不能用 `window.location.href` 直接导航**：那样只带 cookie，
+   * 而 /api/v1 代理要求 Authorization 头（lib/skillsProxy），结果是一个 401 的
+   * 空文件下载下来，看起来像功能坏了。
+   */
+  const handleExportAll = async () => {
+    setExporting(true);
+    try {
+      const res = await axios.get(
+        `/api/v1/skills/${skill.id}/assets/archive?stage=draft`,
+        { responseType: "blob" }
+      );
+      const url = window.URL.createObjectURL(
+        new Blob([res.data], { type: "application/zip" })
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${skill.name || `skill-${skill.id}`}-draft.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t("assetExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
   const [dragging, setDragging] = useState(false);
   const [execFormOpen, setExecFormOpen] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -245,13 +284,36 @@ export default function SkillAssetsPanel({
                 <FileCode2 className="h-4 w-4" />
                 {t("assetManifestSection")}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {t("assetsQuota", {
-                  count: items.length,
-                  size: formatBytes(totalBytes),
-                  limit: formatBytes(ASSET_MAX_TOTAL_BYTES),
-                })}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {t("assetsQuota", {
+                    count: items.length,
+                    size: formatBytes(totalBytes),
+                    limit: formatBytes(ASSET_MAX_TOTAL_BYTES),
+                  })}
+                </p>
+                {/*
+                  导出的是 draft stage —— 与上面这张清单同一份。导出跟屏幕上看到的
+                  不是同一份会很怪。没有资产时不给按钮：一个只装着 SKILL.md 的 zip
+                  没有意义，而 SKILL.md 另有导出入口。
+                */}
+                {items.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title={t("assetExportAllHint")}
+                    disabled={exporting}
+                    onClick={handleExportAll}
+                  >
+                    {exporting ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    {t("assetExportAll")}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {assetsLoading ? (
@@ -312,10 +374,26 @@ export default function SkillAssetsPanel({
                             <span className="whitespace-nowrap font-mono text-muted-foreground">
                               {shortSha(item.sha256)}
                             </span>
+                            {/* 能预览的才给按钮：.zip/.so/.pyc 点开只有一屏乱码，
+                                那比没有按钮更让人困惑 */}
+                            {isPreviewableAsset(item.path) ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 ml-auto text-muted-foreground"
+                                onClick={() => setPreviewTarget(item)}
+                                aria-label={t("assetPreview")}
+                                title={t("assetPreview")}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <span className="ml-auto" />
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               onClick={() => setDeleteTarget(item.path)}
                               aria-label={t("assetDelete")}
                             >
@@ -531,6 +609,13 @@ export default function SkillAssetsPanel({
           </CardContent>
         )}
       </Card>
+
+      <SkillAssetPreviewDialog
+        skillId={skill.id}
+        path={previewTarget?.path ?? null}
+        sizeBytes={previewTarget?.size_bytes}
+        onClose={() => setPreviewTarget(null)}
+      />
 
       {/* 删除确认：删的是草稿，published 快照不动 */}
       <AlertDialog

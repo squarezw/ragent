@@ -11,6 +11,7 @@ import {
   formatBytes,
   groupAssetsByDir,
   inferAssetKind,
+  isEnvTemplatePath,
   isModelReadableAsset,
   isViewableAssetPath,
   joinEncodedSegments,
@@ -213,6 +214,7 @@ const baseCfg: SkillExecConfigSummary = {
   writable_subdirs: ["state"],
   needs_network: false,
   warm_pool: false,
+  artifact_exclude: [],
 };
 
 test("diffExecConfig 相同配置无差异（stage/image_enabled 不参与对比）", () => {
@@ -486,6 +488,43 @@ test("buildExecConfigPayload 首次配置（无现值）为空清单", () => {
   assert.deepEqual(buildExecConfigPayload(execEdits, null).writable_subdirs, []);
 });
 
+test("buildExecConfigPayload 表单未编辑内部产物时按现值透传", () => {
+  // 与 writable_subdirs 同一个坑：后端全量覆盖，漏传等于把 CRP 的
+  // ["**/findings.json"] 静默清空，中间产物又开始发链接给用户。
+  const loaded = parseExecConfig({
+    image: "ragent-skill-crp:latest",
+    artifact_exclude: ["**/findings.json"],
+  });
+  const payload = buildExecConfigPayload(execEdits, loaded);
+  assert.deepEqual(payload.artifact_exclude, ["**/findings.json"]);
+});
+
+test("buildExecConfigPayload 表单显式给了内部产物就用表单的", () => {
+  const loaded = parseExecConfig({
+    image: "x:1",
+    artifact_exclude: ["**/old.json"],
+  });
+  const payload = buildExecConfigPayload(
+    { ...execEdits, artifact_exclude: ["**/findings.json"] },
+    loaded
+  );
+  assert.deepEqual(payload.artifact_exclude, ["**/findings.json"]);
+});
+
+test("buildExecConfigPayload 表单清空内部产物即真的清空", () => {
+  // 空数组是"我要清掉"，不能被当成"没填"而回落现值——否则这项永远删不掉
+  const loaded = parseExecConfig({ image: "x:1", artifact_exclude: ["**/a.json"] });
+  const payload = buildExecConfigPayload({ ...execEdits, artifact_exclude: [] }, loaded);
+  assert.deepEqual(payload.artifact_exclude, []);
+});
+
+test("diffExecConfig 标出内部产物声明的变化", () => {
+  assert.deepEqual(
+    diffExecConfig({ ...baseCfg, artifact_exclude: ["**/findings.json"] }, baseCfg),
+    ["artifact_exclude"]
+  );
+});
+
 test("parseSandboxImages 归一化并回算 ref", () => {
   const images = parseSandboxImages({
     items: [
@@ -657,4 +696,27 @@ test("arrayBufferToBase64 与 Buffer 编码一致（含大于分块阈值的输�
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) % 256;
   assert.equal(arrayBufferToBase64(bytes.buffer), Buffer.from(bytes).toString("base64"));
   assert.equal(arrayBufferToBase64(new Uint8Array([]).buffer), "");
+});
+
+
+test("validateAssetPath 放行根级 env 模板（前端曾漏这条例外）", () => {
+  // 后端 validate_asset_path 有 is_env_template_path 放行，前端没有 →
+  // 一个合法资产在界面上传不进去，报错还说它是"隐藏目录"（它是文件）。
+  assert.equal(validateAssetPath(".env.example"), null);
+  assert.equal(validateAssetPath(".env.template"), null);
+});
+
+test("validateAssetPath 只放行根级、只放行这两个名字", () => {
+  // 与后端 is_env_template_path 同口径：子目录里的同名文件不算，真 .env 也不算
+  assert.equal(validateAssetPath("scripts/.env.example"), "hiddenSegment");
+  assert.equal(validateAssetPath(".env"), "hiddenSegment");
+  assert.equal(validateAssetPath(".envrc"), "hiddenSegment");
+  assert.equal(validateAssetPath(".git/config"), "hiddenSegment");
+  assert.equal(validateAssetPath(".report_state/x.json"), "hiddenSegment");
+});
+
+test("isEnvTemplatePath 与后端 ENV_TEMPLATE_NAMES 对齐", () => {
+  assert.equal(isEnvTemplatePath(".env.example"), true);
+  assert.equal(isEnvTemplatePath(".env.template"), true);
+  assert.equal(isEnvTemplatePath("sub/.env.example"), false);
 });

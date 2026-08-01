@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  isSecretEnvKey,
   MAX_ENV_KEYS,
   MAX_ENV_VALUE_LENGTH,
   buildEnvPayload,
@@ -305,4 +306,30 @@ test("summarizeEnvConfig 未配置任何键时缺口 = 全部声明键", () => {
   assert.equal(summary.configuredCount, 0);
   assert.deepEqual(summary.missingKeys, ["A", "B"]);
   assert.deepEqual(summary.extraKeys, []);
+});
+
+
+test("isSecretEnvKey 遮住凭据类", () => {
+  for (const k of [
+    "DeepSeek_ApiKey", "OPENAI_API_KEY", "ChatGPT_ApiKey",
+    "BZZ_COOKIE", "GITHUB_TOKEN", "DB_PASSWORD", "my_secret", "PRIVATE_PEM",
+  ]) {
+    assert.equal(isSecretEnvKey(k), true, k);
+  }
+});
+
+test("isSecretEnvKey 不遮配置类", () => {
+  // 把模型名/地址遮成一排圆点没有安全收益，只让人看不清自己填了什么
+  for (const k of [
+    "Providers", "DeepSeek_BaseURL", "DeepSeek_Deployment",
+    "ChatGPT_ApiVersion", "REGION", "TIMEOUT_SEC", "ENDPOINT",
+  ]) {
+    assert.equal(isSecretEnvKey(k), false, k);
+  }
+});
+
+test("isSecretEnvKey 大小写无关且容忍空值", () => {
+  assert.equal(isSecretEnvKey("apikey"), true);
+  assert.equal(isSecretEnvKey("APIKEY"), true);
+  assert.equal(isSecretEnvKey(""), false);
 });

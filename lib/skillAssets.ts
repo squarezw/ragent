@@ -71,6 +71,9 @@ export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | nu
       : [],
     needs_network: obj.needs_network === true,
     warm_pool: obj.warm_pool === true,
+    artifact_exclude: Array.isArray(obj.artifact_exclude)
+      ? obj.artifact_exclude.filter((s): s is string => typeof s === "string")
+      : [],
     updated_at: asString(obj.updated_at),
   };
 }
@@ -134,7 +137,8 @@ export type ExecConfigField =
   | "timeout_sec"
   | "writable_subdirs"
   | "needs_network"
-  | "warm_pool";
+  | "warm_pool"
+  | "artifact_exclude";
 
 /**
  * draft vs published exec 配置逐字段对比，返回有差异的字段名。
@@ -153,6 +157,10 @@ export function diffExecConfig(
   }
   if (draft.needs_network !== published.needs_network) changed.push("needs_network");
   if (draft.warm_pool !== published.warm_pool) changed.push("warm_pool");
+  // 这项决定用户能拿到哪些产物，发布前必须看得见它变了
+  if (draft.artifact_exclude.join("\n") !== published.artifact_exclude.join("\n")) {
+    changed.push("artifact_exclude");
+  }
   return changed;
 }
 
@@ -206,8 +214,24 @@ export type AssetPathError =
   | "hiddenSegment";
 
 /**
+ * 根级 env 模板：per-user 环境变量的键名 schema 就从它们解析（迁移 041）。
+ * 与后端 `app/services/skill_user_env.ENV_TEMPLATE_NAMES` 逐字对齐。
+ */
+export const ENV_TEMPLATE_NAMES: readonly string[] = [".env.example", ".env.template"];
+
+/** 隐藏段规则的唯一例外：**根级**的这两个文件名（子目录里的同名文件不算） */
+export function isEnvTemplatePath(path: string): boolean {
+  return ENV_TEMPLATE_NAMES.includes(path);
+}
+
+/**
  * 镜像后端 validate_asset_path：拒绝空/超长/反斜杠或 NUL/绝对路径/空段/`.`|`..` 段/隐藏段。
  * 隐藏段（`.report_state` 之类）只能走 exec-config 的 writable_subdirs，不作为资产入库。
+ *
+ * **唯一例外是根级 `.env.example` / `.env.template`**。这条以前漏了：后端
+ * `validate_asset_path` 有 `is_env_template_path` 放行，前端没有，于是一个合法资产
+ * 在界面上传不进去，报错还说它是"隐藏目录"（它是文件）。CRP 的 `.env.example`
+ * 本来就在库里——是导入脚本放进去的，从界面反而补不回来。
  */
 export function validateAssetPath(path: string): AssetPathError | null {
   if (typeof path !== "string" || path.length === 0) return "empty";
@@ -215,6 +239,7 @@ export function validateAssetPath(path: string): AssetPathError | null {
   // 空格与中文合法（现有资产就有「（模版）新建元一期…docx」），只拒后端拒的反斜杠 / NUL
   if (path.includes("\\") || path.includes("\u0000")) return "backslash";
   if (path.startsWith("/")) return "absolute";
+  if (isEnvTemplatePath(path)) return null;
   for (const part of path.split("/")) {
     if (!part) return "emptySegment";
     if (part === "." || part === "..") return "dotSegment";
@@ -313,6 +338,38 @@ export function isViewableAssetPath(path: string): boolean {
   const slash = normalized.lastIndexOf("/");
   if (dot <= 0 || dot < slash + 1) return true;
   return !BINARY_ASSET_EXTENSIONS.has(normalized.slice(dot).toLowerCase());
+}
+
+/** 交给 kkFileView 预览的类型：平台本来就有这个模块，不在前端自己造轮子 */
+export const OFFICE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
+]);
+
+export const IMAGE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
+]);
+
+/** 路径的小写扩展名；无扩展名返回空串 */
+export function assetExtname(path: string): string {
+  const name = normalizeAssetPath(path).split("/").pop() || "";
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/**
+ * 这个资产能不能预览。
+ *
+ * 文本与代码直接读；office 与图片各自渲染。剩下的（.zip/.so/.pyc…）不给按钮——
+ * 点开只有一屏乱码，那比没有按钮更让人困惑。
+ *
+ * 放在 lib 而不是组件里：Node 的类型剥离只处理 .ts，从 .tsx 导入跑不了测试，
+ * 而这条判定正是需要拿真实资产清单去验的那种规则。
+ */
+export function isPreviewableAsset(path: string): boolean {
+  const ext = assetExtname(path);
+  if (!ext) return true; // 无扩展名的按文本试（LICENSE、Makefile 之类）
+  if (OFFICE_PREVIEW_EXTENSIONS.has(ext) || IMAGE_PREVIEW_EXTENSIONS.has(ext)) return true;
+  return !BINARY_ASSET_EXTENSIONS.has(ext);
 }
 
 /**
@@ -435,6 +492,7 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
     writable_subdirs: summary.writable_subdirs,
     needs_network: summary.needs_network,
     warm_pool: summary.warm_pool,
+    artifact_exclude: summary.artifact_exclude,
     updated_at: summary.updated_at ?? null,
   };
 }
@@ -445,6 +503,8 @@ export interface ExecConfigEdits {
   timeout_sec: number;
   needs_network: boolean;
   warm_pool: boolean;
+  /** 表单里可编辑；不传则沿用服务端现值（见 buildExecConfigPayload） */
+  artifact_exclude?: string[];
 }
 
 /**
@@ -460,7 +520,7 @@ export interface ExecConfigEdits {
  */
 export function buildExecConfigPayload(
   edits: ExecConfigEdits,
-  loaded: Pick<SkillExecConfig, "writable_subdirs"> | null
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
 ): SkillExecConfigPayload {
   return {
     image: edits.image,
@@ -468,6 +528,9 @@ export function buildExecConfigPayload(
     writable_subdirs: loaded?.writable_subdirs ?? [],
     needs_network: edits.needs_network,
     warm_pool: edits.warm_pool,
+    // 与 writable_subdirs 同一个坑：后端全量覆盖，不带回则任何一次保存都会把
+    // CRP 的 ["**/findings.json"] 静默清空，中间产物又开始发链接给用户
+    artifact_exclude: edits.artifact_exclude ?? loaded?.artifact_exclude ?? [],
   };
 }
 

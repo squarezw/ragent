@@ -356,6 +356,25 @@ export function filterWorkflowOptions(
   return options.filter((o) => matches(query, o.kind, o.display_name, o.description));
 }
 
+/**
+ * 候选清单里该出现哪些长任务。
+ *
+ * 已被全局停用的不出现：勾了只会让这个 Skill 不被注入，摆出来是在邀请用户犯错
+ * （生产上 8 个 cad.* 全停用时，整张清单都是红字警告）。
+ *
+ * **但已经选中的必须留下。** 一个 skill 可能在 kind 还启用时就声明了依赖，之后那个
+ * kind 被全局停用；此时若把它从清单里抹掉，用户一编辑保存就静默丢了这条依赖——连
+ * "为什么这个 skill 不被注入"的线索都跟着没了。留着（带停用标注）才能让人看见、
+ * 自己决定要不要去掉。
+ */
+export function selectableWorkflowOptions(
+  options: RequiresWorkflowOption[],
+  selected: string[]
+): RequiresWorkflowOption[] {
+  const picked = new Set(selected);
+  return options.filter((o) => o.is_enabled || picked.has(o.kind));
+}
+
 /** 已选条目的展示信息；known=false 表示选项里没有这个名字（手工兜底输入），要打警示样式 */
 export interface RequiresSelectionEntry {
   name: string;

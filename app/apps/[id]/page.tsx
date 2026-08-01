@@ -58,6 +58,26 @@ import { REVIEW_STATUSES, appStatusBadge, type ReviewStatus } from "@/lib/review
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
+/**
+ * 工具类型对应的文案键。workflow 行原先没有分支，`native ? 原生 : MCP` 把长任务
+ * 标成了「MCP」。它是第三类：绑定它不是"给一个工具"，而是收窄这个数字员工的
+ * 长任务范围（后端 Phase 3）。
+ *
+ * 返回键而不是接收 t：next-intl 的 translator 类型不是 `(k: string) => string`，
+ * 传进来会类型不兼容；返回字面量联合则天然是合法键。
+ */
+function toolTypeKey(toolType: string): "nativeTool" | "workflowTool" | "mcpTool" {
+  if (toolType === "native") return "nativeTool";
+  if (toolType === "workflow") return "workflowTool";
+  return "mcpTool";
+}
+
+function toolTypeClass(toolType: string) {
+  if (toolType === "native") return "bg-blue-100 text-blue-800";
+  if (toolType === "workflow") return "bg-amber-100 text-amber-800";
+  return "bg-purple-100 text-purple-800";
+}
+
 interface AppInfo {
   id: number;
   name: string;
@@ -463,13 +483,9 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                         <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
                         <TableCell>
                           <Badge
-                            className={
-                              tool.tool_type === "native"
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-purple-100 text-purple-800"
-                            }
+                            className={toolTypeClass(tool.tool_type)}
                           >
-                            {tool.tool_type === "native" ? t("nativeTool") : t("mcpTool")}
+                            {t(toolTypeKey(tool.tool_type))}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -550,6 +566,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         open={bindDialogOpen}
         onClose={() => setBindDialogOpen(false)}
         boundToolIds={appTools.map((t) => t.tool_id)}
+        boundHasWorkflow={appTools.some((t) => t.tool_type === "workflow")}
         onBind={handleBindTools}
       />
 
@@ -580,11 +597,14 @@ function BindToolsDialog({
   open,
   onClose,
   boundToolIds,
+  boundHasWorkflow,
   onBind,
 }: {
   open: boolean;
   onClose: () => void;
   boundToolIds: number[];
+  /** 这个应用是否已经绑过长任务——决定要不要提示"绑了就只剩绑定的" */
+  boundHasWorkflow: boolean;
   onBind: (toolIds: number[]) => void;
 }) {
   const t = useTranslations("apps");
@@ -641,6 +661,20 @@ function BindToolsDialog({
             <div className="text-center py-8 text-muted-foreground">{t("allToolsBound")}</div>
           ) : (
             <div className="space-y-2">
+              {/*
+                绑第一个长任务会把这个数字员工从"全部长任务"切成"只有已绑定的"
+                （后端 Phase 3：未绑 = 不限制）。不说出来就是个静默陷阱——管理员
+                以为在加一项能力，实际上同时移除了其余所有长任务。
+                只在真要发生这件事时才提示：本次选中了长任务、且原先一个都没绑。
+              */}
+              {selectedToolIds.some(
+                (id) => availableTools.find((x) => x.id === id)?.tool_type === "workflow"
+              ) &&
+                !boundHasWorkflow && (
+                  <p className="text-xs rounded-md border border-amber-500/50 text-amber-600 dark:text-amber-400 px-3 py-2">
+                    {t("workflowBindNotice")}
+                  </p>
+                )}
               {availableTools.map((tool) => (
                 <div
                   key={tool.id}
@@ -657,13 +691,9 @@ function BindToolsDialog({
                   </div>
                   <div className="flex gap-2">
                     <Badge
-                      className={
-                        tool.tool_type === "native"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-purple-100 text-purple-800"
-                      }
+                      className={toolTypeClass(tool.tool_type)}
                     >
-                      {tool.tool_type === "native" ? t("nativeTool") : t("mcpTool")}
+                      {t(toolTypeKey(tool.tool_type))}
                     </Badge>
                     <Badge variant="outline">{tool.category}</Badge>
                   </div>

@@ -147,6 +147,8 @@
   "statistics": "Statistics",
   "nativeTool": "Native",
   "mcpTool": "MCP",
+  "workflowTool": "Long task",
+  "workflowBindNotice": "Once a long task is bound, this digital employee keeps **only the bound ones**. Nothing is bound right now, which means all of them are available. Unbind them all to go back.",
   "enabled": "Enabled",
   "disabled": "Disabled",
   "calls": "Calls",

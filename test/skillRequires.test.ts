@@ -15,6 +15,7 @@ import {
   resolveRequiresGapGuidance,
   resolveToolSelection,
   resolveWorkflowSelection,
+  selectableWorkflowOptions,
   summarizeDiagnostics,
   toggleRequiresName,
   type SkillRequiresGap,
@@ -518,4 +519,39 @@ test("parseSaveWarnings: 抽出非空字符串，缺失返回空数组", () => {
   );
   assert.deepEqual(parseSaveWarnings({ id: 1, warnings: null }), []);
   assert.deepEqual(parseSaveWarnings(null), []);
+});
+
+
+const WF = (kind: string, is_enabled: boolean) => ({
+  kind,
+  display_name: kind,
+  description: "",
+  is_enabled,
+});
+
+test("selectableWorkflowOptions 隐藏已停用的候选", () => {
+  const got = selectableWorkflowOptions([WF("a.on", true), WF("b.off", false)], []);
+  assert.deepEqual(got.map((o) => o.kind), ["a.on"]);
+});
+
+test("selectableWorkflowOptions 保留已选中的停用项", () => {
+  // 这条是重点：skill 早先声明了依赖、之后那个 kind 被全局停用。抹掉它会让用户
+  // 一编辑保存就静默丢了这条依赖，连"为什么不被注入"的线索都没有了。
+  const got = selectableWorkflowOptions(
+    [WF("a.on", true), WF("b.off", false)],
+    ["b.off"]
+  );
+  assert.deepEqual(got.map((o) => o.kind), ["a.on", "b.off"]);
+});
+
+test("selectableWorkflowOptions 全停用且无选中时返回空", () => {
+  assert.deepEqual(selectableWorkflowOptions([WF("a.off", false)], []), []);
+});
+
+test("selectableWorkflowOptions 不改变原数组顺序", () => {
+  const got = selectableWorkflowOptions(
+    [WF("z", true), WF("a", true)],
+    []
+  );
+  assert.deepEqual(got.map((o) => o.kind), ["z", "a"]);
 });

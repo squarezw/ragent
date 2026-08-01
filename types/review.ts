@@ -67,6 +67,8 @@ export interface SkillExecConfigSummary {
   /** 只管要不要出网；false = 容器完全禁网（--network none） */
   needs_network: boolean;
   warm_pool: boolean;
+  /** 不投递给用户的产物 glob（迁移 047）；diff 里也要显示，否则发布前看不出这项变了 */
+  artifact_exclude: string[];
   updated_at?: string | null;
 }
 

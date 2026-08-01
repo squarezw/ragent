@@ -19,6 +19,7 @@ import {
   summarizeEnvConfig,
   validateEnvRows,
 } from "@/lib/skillUserEnv";
+import { isSecretEnvKey } from "@/lib/skillUserEnv";
 import { useSkillUserEnv } from "@/hooks/useSkillUserEnv";
 
 interface SkillUserEnvPanelProps {
@@ -33,7 +34,10 @@ interface SkillUserEnvPanelProps {
  * 三条硬约束，改这个组件前先读一遍：
  * 1. `meta.configurable === false` 时整块不渲染——没有 `.env.example` /
  *    `.env.template` 模板资产的 skill 不该出现这个入口。
- * 2. **值一律用 password 型输入框，且绝不写进 console / 埋点 / toast**。
+ * 2. **凭据类的值用 password 型输入框，且任何值都绝不写进 console / 埋点 / toast**。
+ *    哪些算凭据看 `isSecretEnvKey`（按键名判：key/secret/token/cookie…）。
+ *    BaseURL / Deployment / Providers 这类明文显示：遮住它们没有安全收益，
+ *    只让人看不清自己填了什么——2026-08-01 那次「值整体错了一行」就更难被发现。
  *    保存失败只展示后端 detail（中文校验信息）。
  * 3. 「仅属主」是硬约束：这里只显示当前登录用户自己的那份，没有也不要加
  *    「查看别人的值」的入口——管理员想排查只能看 meta 的键名与计数。
@@ -56,12 +60,15 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
 
   const [rows, setRows] = useState<EnvRow[]>([]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  // 聚焦过的行才可写，见输入框上的 readOnly——挡浏览器自动填充
+  const [focused, setFocused] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   // 服务端现值到达（或保存后回填）时重建行；同时收起所有已明文显示的值
   useEffect(() => {
     setRows(buildEnvRows(declaredKeys, env));
     setRevealed(new Set());
+    setFocused(new Set());
   }, [declaredKeys, env]);
 
   const validation = useMemo(() => validateEnvRows(rows), [rows]);
@@ -187,9 +194,34 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
                     <div className="min-w-0 sm:flex-1 flex items-center gap-1">
                       <Input
                         id={`env-value-${row.id}`}
-                        // 值一律 password 型；点眼睛才临时明文（浏览器不该记住凭据）
-                        type={revealed.has(row.id) ? "text" : "password"}
-                        autoComplete="off"
+                        // 只有像凭据的键（ApiKey / token / cookie…）默认打码；
+                        // BaseURL、Deployment、Providers 这类直接明文——把模型名
+                        // 遮成一排圆点没有安全收益，只是让人看不清自己填了什么。
+                        // 眼睛按钮对所有行都在，随时可反向切换。
+                        type={
+                          isSecretEnvKey(row.key) && !revealed.has(row.id)
+                            ? "password"
+                            : "text"
+                        }
+                        // 反自动填充。`autoComplete="off"` 单独用不住：Chrome 看到
+                        // 「文本框 + 密码框」相邻就按登录表单处理，把用户名/密码填进来
+                        // ——实测把 `admin` 填进了 ChatGPT_BaseURL（2026-08-01）。
+                        // 那是全部字段改成 password 型之前不会发生的，此刻不改就等着
+                        // 有人连着 `admin` 一起点保存。
+                        //   · `new-password`：告诉 Chrome 这不是"已保存的那个密码"
+                        //   · name = 环境变量名：别让启发式把它当 username 字段
+                        //   · data-*ignore：1Password / LastPass 的关闭开关
+                        autoComplete="new-password"
+                        name={`skill-env-${row.key || row.id}`}
+                        data-1p-ignore
+                        data-lpignore="true"
+                        // 最后一道，且不依赖任何浏览器启发式：**没聚焦前是只读的**。
+                        // Chrome 不会往只读输入框里填东西；点进去即解锁，打字与粘贴
+                        // 都照常（本来也得先聚焦才能粘）。
+                        readOnly={!focused.has(row.id)}
+                        onFocus={() =>
+                          setFocused((prev) => new Set(prev).add(row.id))
+                        }
                         value={row.value}
                         onChange={(e) => patchRow(row.id, { value: e.target.value })}
                         placeholder={t("envValuePlaceholder")}
@@ -265,6 +297,8 @@ export default function SkillUserEnvPanel({ skillId, skillDisplayName }: SkillUs
               onClick={() => {
                 setRows(buildEnvRows(declaredKeys, env));
                 setRevealed(new Set());
+                // 一并重新上锁：取消后这些框又回到没被碰过的状态
+                setFocused(new Set());
               }}
             >
               {tc("cancel")}
