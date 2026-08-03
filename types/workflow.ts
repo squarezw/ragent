@@ -40,8 +40,9 @@ export interface AppWithWorkflow {
   id: number;
   name: string;
   description: string;
-  app_type: "Chat" | "Tool" | "Plugin" | "Subscription" | "Custom";
-  platform: "Web" | "Wechat" | "Feishu" | "iOS" | "Android";
+  // 触发方式（列名沿用 app_type）。Tool / Plugin 不再是可选项，仅兼容存量数据。
+  app_type: "Chat" | "Subscription" | "Email" | "Custom" | "Tool" | "Plugin";
+  platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
   user_id: number;
   ai_model: string;
   prompt_id: number | null;
