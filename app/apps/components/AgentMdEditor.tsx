@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,23 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   AlertCircle,
   AlertTriangle,
   Eye,
   FileText,
   Loader2,
   Sparkles,
-  Undo2,
   X,
 } from "lucide-react";
 import { useAgentMd, type AgentMdValidationError } from "@/hooks/useAgentMd";
@@ -62,7 +50,7 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
   const { user } = useCurrentUser();
   const canManage = checkSuperAdmin(user);
 
-  const { agentMd, loading, save, generate, remove, fetchExport } = useAgentMd(appId);
+  const { agentMd, loading, save, generate, fetchExport } = useAgentMd(appId);
 
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -72,7 +60,6 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
   const [saveWarnings, setSaveWarnings] = useState<string[]>([]);
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
-  const [revertDialogOpen, setRevertDialogOpen] = useState(false);
 
   const isWechat = platform === "Wechat";
   const isLegacy = agentMd?.is_legacy !== false;
@@ -114,17 +101,6 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
     }
   };
 
-  const handleRevert = async () => {
-    const ok = await remove();
-    if (ok) {
-      setRevertDialogOpen(false);
-      setDirty(false);
-      setContent("");
-      setValidationErrors([]);
-      setSaveWarnings([]);
-      onChanged?.();
-    }
-  };
 
   const handleExportView = async () => {
     setExportLoading(true);
@@ -157,14 +133,15 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
+          {/*
+            标题直接写「角色设定」，不再显示文件名 Agent.md，也不再挂状态徽章：
+            标题旁边写着「角色设定」、下面又挂一个写着「角色设定」的彩色 Badge，
+            是同一句话说两遍。isLegacy 的状态由下面那段说明文字承担
+            （legacyDesc / noAgentMdDesc 已经把处境讲清楚了）。
+          */}
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Agent.md
-            {isLegacy ? (
-              <Badge variant="secondary">{t("legacyMode")}</Badge>
-            ) : (
-              <Badge>{t("agentMdMode")}</Badge>
-            )}
+            {t("agentMdMode")}
           </CardTitle>
           {!isLegacy && canManage && (
             <div className="flex gap-2">
@@ -180,15 +157,6 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
                   <Eye className="h-4 w-4 mr-2" />
                 )}
                 {t("exportView")}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive"
-                onClick={() => setRevertDialogOpen(true)}
-              >
-                <Undo2 className="h-4 w-4 mr-2" />
-                {t("revertToPrompt")}
               </Button>
               <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -313,24 +281,6 @@ export default function AgentMdEditor({ appId, platform, promptId, onChanged }: 
         </DialogContent>
       </Dialog>
 
-      {/* 回退到提示词：二次确认 */}
-      <AlertDialog open={revertDialogOpen} onOpenChange={setRevertDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("confirmRevert")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("revertWarning")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRevert}
-              className="bg-destructive text-destructive-foreground"
-            >
-              {t("revertToPrompt")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Card>
   );
 }

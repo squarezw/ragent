@@ -104,20 +104,6 @@ export const useAgentMd = (appId: number | null) => {
     }
   };
 
-  // 回退到提示词模式（DELETE 置 NULL）
-  const remove = async (): Promise<boolean> => {
-    if (!appId) return false;
-    try {
-      await axios.delete(`/api/v1/apps/${appId}/agent-md`);
-      toast.success(t("revertSuccess"));
-      mutate();
-      return true;
-    } catch (error: any) {
-      console.error("Delete agent.md error:", error);
-      return false;
-    }
-  };
-
   // 导出视图（?export=true 合成只读版）
   const fetchExport = async (): Promise<AgentMdResponse | null> => {
     if (!appId) return null;
@@ -136,7 +122,6 @@ export const useAgentMd = (appId: number | null) => {
     error,
     save,
     generate,
-    remove,
     fetchExport,
     refresh: mutate,
   };

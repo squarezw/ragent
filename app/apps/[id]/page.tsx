@@ -2,6 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import { triggerLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics
 import AppSkillsSection from "../components/AppSkillsSection";
 import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
 import AgentMdEditor from "../components/AgentMdEditor";
+import AppAvatar from "../components/AppAvatar";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -85,6 +87,8 @@ interface AppInfo {
   app_type: string;
   platform: string;
   ai_model: string;
+  /** 头像 URL：内置头像静态路径或上传后的 OSS 读代理路径；空=按名称生成占位 */
+  avatar_url?: string | null;
   agent_md?: string | null;
   /** legacy 提示词绑定；用来判断 Agent.md 区块该说「升级」还是「创建」 */
   prompt_id?: number | null;
@@ -96,6 +100,8 @@ interface AppInfo {
   visibility?: string;
   /** 创建者（提交人）用户ID，自审判定用 */
   user_id?: number | null;
+  /** 作者显示名（nickname 优先退 username）。用户被删除时为空 */
+  author?: string | null;
   owner_dept_id?: number | null;
   owner_tenant_id?: number | null;
 }
@@ -245,10 +251,10 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   // 审核人不能审自己提交的对象（超管除外，后端违者 403）
   const selfReview = isSelfReview(user?.id, appInfo.user_id, checkSuperAdmin(user));
   // 状态徽标并入基本信息首行；动作/提示另起一行，且只在真有内容时渲染
+  // 提交审核按钮已移到标题右侧，草稿态下这条 footer 便没有内容了——留着就是一条
+  // 空的分隔线。rejected 仍要留：那里有"查看驳回理由"的链接，塞不进 hover。
   const reviewFooterVisible =
-    status === "draft" ||
-    status === "rejected" ||
-    (status === "pending_review" && canReview);
+    status === "rejected" || (status === "pending_review" && canReview);
 
   return (
     <div
@@ -267,6 +273,11 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           <ArrowLeft className="h-4 w-4 mr-2" />
           {t("back")}
         </Button>
+        <AppAvatar
+          src={appInfo.avatar_url}
+          name={appInfo.name}
+          size={isCustom ? 32 : 44}
+        />
         <div>
           <h1 className={isCustom ? "text-xl font-bold leading-tight" : "text-3xl font-bold"}>
             {appInfo.name}
@@ -281,12 +292,31 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       {appInfo.app_type !== "Custom" && (
         <Card>
           <CardHeader>
-            <CardTitle>{t("basicInfo")}</CardTitle>
+            {/* 动作按钮放标题右侧，与「已绑定工具」「已绑定 Skill」两区一致。
+                原先它单独占一行、下面还跟一句说明，把一屏里最靠上的位置让给了
+                一个大多数时候不需要点的按钮；说明文字改挂到按钮的 hover 上。 */}
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>{t("basicInfo")}</CardTitle>
+              {(status === "draft" || status === "rejected") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSubmitReview}
+                  disabled={reviewActionPending}
+                  title={status === "draft" ? tr("draftOwnerOnlyHint") : undefined}
+                >
+                  <Send className="h-4 w-4 mr-1" />
+                  {ts("submitReview")}
+                </Button>
+              )}
+            </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {/* 6 列：触发方式 / 平台 / AI 模型 / 作者 / 创建时间 / 状态。
+              加了作者之后是 6 格，留在 5 列会让最后一格独占一行。 */}
+          <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div>
               <div className="text-sm text-muted-foreground mb-1">{t("appType")}</div>
-              <Badge variant="outline">{appInfo.app_type}</Badge>
+              <Badge variant="outline">{triggerLabel(appInfo.app_type, t)}</Badge>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">{t("platform")}</div>
@@ -295,6 +325,12 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             <div>
               <div className="text-sm text-muted-foreground mb-1">{t("aiModel")}</div>
               <div className="text-sm">{appInfo.ai_model}</div>
+            </div>
+            {/* 作者。用户被删除时后端给 null——显示 — 而不是整格消失：
+                这是固定列的网格，少一格会让后面的列错位。 */}
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">{t("author")}</div>
+              <div className="text-sm">{appInfo.author || "—"}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">{tc("createdAt")}</div>
@@ -310,19 +346,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             )}
             {/* 审核动作与状态提示：仅在确有内容时才占一行，已发布应用不留空带 */}
             {reviewFooterVisible && (
-              <div className="col-span-2 md:col-span-5 pt-2 border-t">
+              <div className="col-span-2 md:col-span-3 lg:col-span-6 pt-2 border-t">
                 <div className="flex items-center gap-2 flex-wrap">
-                  {(status === "draft" || status === "rejected") && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSubmitReview}
-                      disabled={reviewActionPending}
-                    >
-                      <Send className="h-4 w-4 mr-1" />
-                      {ts("submitReview")}
-                    </Button>
-                  )}
                   {status === "pending_review" &&
                     canReview &&
                     (selfReview ? (
@@ -361,9 +386,6 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                     </Button>
                   </p>
                 )}
-                {status === "draft" && (
-                  <p className="text-xs text-muted-foreground mt-2">{tr("draftOwnerOnlyHint")}</p>
-                )}
               </div>
             )}
           </CardContent>
@@ -392,8 +414,13 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       {/* 以下工具统计 / 绑定列表仅非 Custom 应用展示 */}
       {appInfo.app_type !== "Custom" && (
         <>
-          {/* 工具统计 */}
-          {statistics && (
+          {/*
+            工具统计。没绑工具就整行不显示——三个 0 既不提供信息，还占掉一屏顶部
+            最显眼的位置。这么判是安全的：后端的统计就是遍历 app_tools 绑定关系算
+            出来的（tools.py get_app_tools_statistics），零绑定时三个数必然都是 0，
+            不存在"有历史调用但被藏起来"的情况。
+          */}
+          {statistics && appTools.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardHeader className="pb-3">

@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
+import { triggerLabel } from "@/lib/appTrigger";
+import AppAvatarPicker from "./components/AppAvatarPicker";
+import AppAvatar from "./components/AppAvatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,8 +72,9 @@ interface App {
   id: number;
   name: string;
   description: string;
-  app_type: "Chat" | "Tool" | "Plugin" | "Subscription" | "Custom";
-  platform: "Web" | "Wechat" | "Feishu" | "iOS" | "Android";
+  app_type: "Chat" | "Subscription" | "Email" | "Custom" | "Tool" | "Plugin";
+  platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
+  avatar_url?: string | null;
   user_id: number;
   ai_model: string;
   prompt_id: number | null;
@@ -101,13 +105,6 @@ interface Dataset {
   dimension?: number;
 }
 
-interface Prompt {
-  id: number;
-  role: string;
-  content: string;
-  is_active?: boolean;
-}
-
 interface WechatAgent {
   agentid: number;
   name: string;
@@ -124,23 +121,13 @@ const platformIcons: Record<string, any> = {
   Android: Smartphone,
 };
 
-// 平台颜色映射
-const platformColors: Record<string, string> = {
-  Web: "bg-primary/10 text-primary",
-  Wechat: "bg-green-100 text-green-800", // 保持品牌识别色
-  Feishu: "bg-purple-100 text-purple-800", // 保持品牌识别色
-  iOS: "bg-muted text-muted-foreground",
-  Android: "bg-orange-100 text-orange-800", // 保持品牌识别色
-};
+// 触发方式与平台标签一律中性灰（Badge 的 secondary）。
+//
+// 原先每个取值一种颜色：紫、绿、黄、蓝、翠、橙……一屏卡片下来像调色板，而这些
+// 颜色不承载任何含义——"聊天"是紫的、"Web"也是紫的，读者得先学会一套配色表才
+// 知道颜色没在说话。真正需要抢眼的是异常状态（草稿/待审/驳回，见 reviewStatus），
+// 颜色留给它们才有对比度。详情页那两个标签一直是中性的 outline，这里跟它对齐。
 
-// 应用类型颜色映射
-const appTypeColors: Record<string, string> = {
-  Chat: "bg-primary/10 text-primary",
-  Tool: "bg-yellow-100 text-yellow-800", // 保持识别色
-  Plugin: "bg-purple-100 text-purple-800", // 保持识别色
-  Subscription: "bg-blue-100 text-blue-800", // 订阅聚合
-  Custom: "bg-slate-100 text-slate-800", // 自定义渲染
-};
 
 // 判断是否为订阅聚合应用
 const isStreamApp = (app: App) => app.app_type === "Subscription";
@@ -155,7 +142,6 @@ export default function AppsPage() {
 
   const [apps, setApps] = useState<App[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -197,8 +183,10 @@ export default function AppsPage() {
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
-    app_type: "Chat" | "Tool" | "Plugin" | "Subscription" | "Custom";
-    platform: "Web" | "Wechat" | "Feishu" | "iOS" | "Android";
+    app_type: "Chat" | "Subscription" | "Email" | "Custom" | "Tool" | "Plugin";
+    platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
+    // 空串 = 用户主动清空（后端据此落 NULL）；null = 本来就没设过
+    avatar_url: string | null;
     ai_model: string;
     prompt_id: number | null;
     dataset_ids: string[];
@@ -210,6 +198,7 @@ export default function AppsPage() {
     description: "",
     app_type: "Chat",
     platform: "Web",
+    avatar_url: null,
     ai_model: "deepseek",
     prompt_id: null,
     dataset_ids: [],
@@ -240,14 +229,6 @@ export default function AppsPage() {
     }
   }, []);
 
-  const loadPrompts = useCallback(async () => {
-    try {
-      const response = await axios.get("/api/prompts");
-      setPrompts(response.data || []);
-    } catch {
-      // silently fail - prompts will show as empty
-    }
-  }, []);
 
   const loadWechatAgents = useCallback(async () => {
     try {
@@ -269,7 +250,7 @@ export default function AppsPage() {
     dataLoadedRef.current = true;
 
     // 并行加载所有数据
-    Promise.all([loadApps(), loadDatasets(), loadPrompts()]).catch(() => {
+    Promise.all([loadApps(), loadDatasets()]).catch(() => {
       dataLoadedRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,6 +317,7 @@ export default function AppsPage() {
       description: "",
       app_type: "Chat",
       platform: "Web",
+      avatar_url: null,
       ai_model: "deepseek",
       prompt_id: null,
       dataset_ids: [],
@@ -480,6 +462,7 @@ export default function AppsPage() {
       description: app.description,
       app_type: app.app_type,
       platform: app.platform,
+      avatar_url: app.avatar_url ?? null,
       ai_model: app.ai_model,
       prompt_id: app.prompt_id,
       dataset_ids: datasetIds,
@@ -737,7 +720,9 @@ export default function AppsPage() {
                         return (
                           <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
                             <TableCell>
-                              <div className="space-y-1">
+                              <div className="flex items-center gap-3">
+                                <AppAvatar src={app.avatar_url} name={app.name} size={32} />
+                                <div className="space-y-1 min-w-0">
                                 <div className="font-semibold flex items-center gap-2">
                                   <Link
                                     href={`/apps/${app.id}`}
@@ -759,6 +744,7 @@ export default function AppsPage() {
                                     ID: {app.settings.wechat.agent_id}
                                   </div>
                                 )}
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell>
@@ -774,12 +760,12 @@ export default function AppsPage() {
                               })()}
                             </TableCell>
                             <TableCell>
-                              <Badge className={`${appTypeColors[app.app_type]} font-medium`}>
-                                {app.app_type}
+                              <Badge variant="secondary" className="font-medium">
+                                {triggerLabel(app.app_type, t)}
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge className={`${platformColors[app.platform]} font-medium`}>
+                              <Badge variant="secondary" className="font-medium">
                                 <PlatformIcon className="h-3 w-3 mr-1" />
                                 {app.platform}
                               </Badge>
@@ -953,7 +939,8 @@ export default function AppsPage() {
                         }`}
                       >
                         <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3">
+                            <AppAvatar src={app.avatar_url} name={app.name} size={44} />
                             <div className="space-y-2 flex-1 min-w-0">
                               {/* 「默认」跟在名称后面，与表格视图一致（那边一直是内联的，
                                   只有卡片单独占一行）。
@@ -990,10 +977,10 @@ export default function AppsPage() {
                                 </Badge>
                               ) : null;
                             })()}
-                            <Badge className={`${appTypeColors[app.app_type]} font-medium`}>
-                              {app.app_type}
+                            <Badge variant="secondary" className="font-medium">
+                              {triggerLabel(app.app_type, t)}
                             </Badge>
-                            <Badge className={`${platformColors[app.platform]} font-medium`}>
+                            <Badge variant="secondary" className="font-medium">
                               <PlatformIcon className="h-3 w-3 mr-1" />
                               {app.platform}
                             </Badge>
@@ -1218,6 +1205,15 @@ export default function AppsPage() {
             </div>
 
             <div className="space-y-2">
+              <Label className="text-sm font-semibold">{t("avatar")}</Label>
+              <AppAvatarPicker
+                value={formData.avatar_url}
+                name={formData.name}
+                onChange={(v) => setFormData({ ...formData, avatar_url: v })}
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-semibold">
                 {t("email")}
               </Label>
@@ -1250,7 +1246,17 @@ export default function AppsPage() {
               <p className="text-xs text-muted-foreground ml-6">{t("setAsDefaultDesc")}</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/*
+              触发方式 / 平台 / AI 模型 同一行。AI 模型对 Subscription、Custom
+              不适用，隐藏时列数跟着降到 2——否则会空出三分之一，看着像少了个字段。
+            */}
+            <div
+              className={`grid gap-4 ${
+                formData.app_type !== "Subscription" && formData.app_type !== "Custom"
+                  ? "grid-cols-3"
+                  : "grid-cols-2"
+              }`}
+            >
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">{t("appType")}</Label>
                 <Select
@@ -1276,11 +1282,24 @@ export default function AppsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {/*
+                      触发方式 = 这个数字员工被什么触发。
+                      · 订阅聚合归到「定时任务」，但**底层值仍是 Subscription**——
+                        isStreamApp 靠它决定要不要显示订阅源管理（8 处调用）。
+                      · Tool / Plugin 已撤下：Plugin 属于「平台」维度（下面那个选择器），
+                        Tool 既不是触发方式也不是平台，生产上零使用。
+                        存量数据里若还有这两个值，下面的 legacy 分支仍会显示出来，
+                        不会变成一个空白的下拉框。
+                    */}
                     <SelectItem value="Chat">{t("chatType")}</SelectItem>
-                    <SelectItem value="Tool">{t("toolType")}</SelectItem>
                     <SelectItem value="Subscription">{t("subscriptionType")}</SelectItem>
-                    <SelectItem value="Plugin">{t("pluginType")}</SelectItem>
+                    <SelectItem value="Email">{t("emailType")}</SelectItem>
                     <SelectItem value="Custom">{t("customType")}</SelectItem>
+                    {(formData.app_type === "Tool" || formData.app_type === "Plugin") && (
+                      <SelectItem value={formData.app_type}>
+                        {formData.app_type === "Tool" ? t("toolType") : t("pluginType")}
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1297,6 +1316,7 @@ export default function AppsPage() {
                   <SelectContent>
                     <SelectItem value="Web">Web</SelectItem>
                     <SelectItem value="Wechat">{t("wechat")}</SelectItem>
+                    <SelectItem value="Plugin">{t("pluginPlatform")}</SelectItem>
                     <SelectItem value="Feishu">{t("feishu")}</SelectItem>
                     <SelectItem value="iOS">iOS</SelectItem>
                     <SelectItem value="Android">Android</SelectItem>
@@ -1304,6 +1324,25 @@ export default function AppsPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {formData.app_type !== "Subscription" && formData.app_type !== "Custom" && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">{t("aiModel")}</Label>
+                  <Select
+                    value={formData.ai_model}
+                    onValueChange={(value) => setFormData({ ...formData, ai_model: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="deepseek">Deepseek</SelectItem>
+                      <SelectItem value="qwen">Qwen</SelectItem>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {/* Stream 应用订阅源管理 */}
@@ -1512,77 +1551,31 @@ export default function AppsPage() {
               </div>
             )}
 
-            {/* AI 模型和提示词（Subscription / Custom 应用不需要，隐藏） */}
-            {formData.app_type !== "Subscription" && formData.app_type !== "Custom" && (
-              <div className="grid grid-cols-2 gap-4">
+            {/*
+              角色设定单独一行：它是这个数字员工的说明书入口，和上面几个下拉不是
+              一类东西，挤在同一行会被当成"又一个选项"。
+              新建态没有 editingApp、也就没有 id 可跳，整块不显示——角色在应用
+              建好之后编辑（后端建应用时已自动铺一份起始角色）。
+            */}
+            {editingApp &&
+              formData.app_type !== "Subscription" &&
+              formData.app_type !== "Custom" && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold">{t("aiModel")}</Label>
-                  <Select
-                    value={formData.ai_model}
-                    onValueChange={(value) => setFormData({ ...formData, ai_model: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="deepseek">Deepseek</SelectItem>
-                      <SelectItem value="qwen">Qwen</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {editingApp?.agent_md != null ? (
-                  // 已升级 Agent.md 的应用：提示词选择区替换为模式徽标 + 详情页编辑入口
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">{t("prompt")}</Label>
-                    <div className="flex items-center gap-2 h-10">
-                      <Badge>
-                        <FileText className="h-3 w-3 mr-1" />
-                        {ts("agentMdMode")}
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="h-auto p-0"
-                        onClick={() => router.push(`/apps/${editingApp.id}`)}
-                      >
-                        {ts("editAgentMd")}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{ts("agentMdModeDesc")}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">{t("prompt")}</Label>
-                    <Select
-                      value={formData.prompt_id?.toString() || "none"}
-                      onValueChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          prompt_id: value === "none" ? null : parseInt(value, 10),
-                        })
-                      }
+                  <Label className="text-sm font-semibold">{ts("agentMdMode")}</Label>
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/apps/${editingApp.id}`)}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("promptPlaceholder")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">{t("noPrompt")}</SelectItem>
-                        {prompts
-                          .filter((p) => p.is_active !== false)
-                          .map((prompt) => (
-                            <SelectItem key={prompt.id} value={prompt.id.toString()}>
-                              {prompt.role}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                      <FileText className="h-4 w-4 mr-2" />
+                      {ts("editAgentMd")}
+                    </Button>
                   </div>
-                )}
-              </div>
-            )}
+                  <p className="text-xs text-muted-foreground">{ts("agentMdModeDesc")}</p>
+                </div>
+              )}
 
             {/* 关联知识库（Stream 应用不显示） */}
             {formData.app_type !== "Subscription" && (
