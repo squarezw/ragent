@@ -24,9 +24,12 @@ import {
 import { useAgentMd, type AgentMdValidationError } from "@/hooks/useAgentMd";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { canEditApp } from "@/lib/appPermissions";
 
 interface AgentMdEditorProps {
   appId: number;
+  /** app 的创建者。后端的 agent-md 写入一直是 owner 或超管，UI 此前只放超管 */
+  ownerUserId?: number | null;
   platform: string;
   /**
    * 应用绑定的 legacy prompt。没有它就没有"升级"可言——文案要说「创建」，
@@ -44,11 +47,17 @@ interface AgentMdEditorProps {
  *   走不到这一支；留着是为了存量应用。
  * - 已有 agent_md：全文编辑 + 保存（422 按行号展示）+ 导出视图 + 回退到提示词（二次确认）
  */
-export default function AgentMdEditor({ appId, platform, promptId, onChanged }: AgentMdEditorProps) {
+export default function AgentMdEditor({
+  appId,
+  ownerUserId,
+  platform,
+  promptId,
+  onChanged,
+}: AgentMdEditorProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
-  const canManage = checkSuperAdmin(user);
+  const canManage = canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user));
 
   const { agentMd, loading, save, generate, fetchExport } = useAgentMd(appId);
 

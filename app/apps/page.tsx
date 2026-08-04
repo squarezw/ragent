@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { triggerLabel } from "@/lib/appTrigger";
+import { canEditApp } from "@/lib/appPermissions";
 import AppAvatarPicker from "./components/AppAvatarPicker";
 import AppAvatar from "./components/AppAvatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -878,7 +879,7 @@ export default function AppsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 )}
-                                {isSuperAdmin && (
+                                {canEditApp(app, user, isSuperAdmin) && (
                                   <>
                                     <TooltipProvider>
                                       <Tooltip>
@@ -1100,7 +1101,7 @@ export default function AppsPage() {
                                   </Tooltip>
                                 </TooltipProvider>
                               )}
-                              {isSuperAdmin && (
+                              {canEditApp(app, user, isSuperAdmin) && (
                                 <>
                                   <TooltipProvider>
                                     <Tooltip>

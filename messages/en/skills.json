@@ -263,5 +263,7 @@
   "envValueErrorTooLong": "A value cannot exceed 8192 characters",
   "envValueErrorNul": "A value cannot contain NUL characters",
   "envErrorTooManyKeys": "At most 50 environment variables",
-  "envErrorTooLarge": "The variables cannot exceed 64 KB in total"
+  "envErrorTooLarge": "The variables cannot exceed 64 KB in total",
+  "bindSuccessWithTools": "Skill bound; required tools added automatically: {tools}",
+  "author": "Creator"
 }

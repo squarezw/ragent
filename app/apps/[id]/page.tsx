@@ -55,6 +55,7 @@ import ReviewLogDialog from "@/components/ReviewLogDialog";
 import ReviewRejectDialog from "@/components/ReviewRejectDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { canEditApp } from "@/lib/appPermissions";
 import { isSelfReview } from "@/lib/reviewQueue";
 import { REVIEW_STATUSES, appStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import axios from "@/lib/axios";
@@ -248,6 +249,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   // published 不出徽标（正常终态且无出口动作，规则见 lib/reviewStatus.ts）
   const statusBadge = appStatusBadge(appInfo.status);
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
+  // 绑工具/改配置 = owner 或超管（与后端 require_app_owner_or_super 同规矩）
+  const canEditThisApp = canEditApp(appInfo, user, checkSuperAdmin(user));
   // 审核人不能审自己提交的对象（超管除外，后端违者 403）
   const selfReview = isSelfReview(user?.id, appInfo.user_id, checkSuperAdmin(user));
   // 状态徽标并入基本信息首行；动作/提示另起一行，且只在真有内容时渲染
@@ -476,7 +479,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
-                {checkSuperAdmin(user) && (
+                {canEditThisApp && (
                   <Button size="sm" onClick={() => setBindDialogOpen(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     {t("bindTools")}
@@ -541,7 +544,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {checkSuperAdmin(user) && (
+                            {canEditThisApp && (
                               <>
                                 <Button
                                   variant="ghost"
@@ -573,7 +576,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           </Card>
 
           {/* Skills 绑定区 */}
-          <AppSkillsSection appId={appId} />
+          <AppSkillsSection appId={appId} ownerUserId={appInfo.user_id} />
 
           {/* Skill 生效诊断（requires 门控去静默） */}
           <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
@@ -581,6 +584,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           {/* Agent.md 编辑区块 */}
           <AgentMdEditor
             appId={appId}
+            ownerUserId={appInfo.user_id}
             platform={appInfo.platform}
             promptId={appInfo.prompt_id}
             onChanged={loadAppInfo}
