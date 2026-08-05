@@ -9,7 +9,11 @@ RUN npm install -g pnpm
     # && pnpm config set registry https://mirrors.cloud.tencent.com/npm/
 
 # 只拷贝依赖声明，利用缓存
-COPY package.json pnpm-lock.yaml ./
+#
+# pnpm-workspace.yaml 必须一起进来：pnpm 11 起，设置只从这个文件读（package.json 的
+# `pnpm` 字段被忽略）。它里面登记着 allowBuilds —— 缺了它，安装会因为"有依赖的构建
+# 脚本未评审"直接失败（ERR_PNPM_IGNORED_BUILDS），而且报错不会提示文件没拷进来。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # 安装依赖，使用更快的安装策略
 RUN pnpm install --frozen-lockfile --prefer-offline

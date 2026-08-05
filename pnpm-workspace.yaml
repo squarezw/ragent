@@ -1,0 +1,13 @@
+# pnpm 11 起，设置只从这里读 —— package.json 的 `pnpm` 字段已被忽略。
+#
+# allowBuilds：哪些依赖允许执行生命周期脚本。未登记的包算「未评审」，pnpm 11 直接
+# 让安装失败（ERR_PNPM_IGNORED_BUILDS），这是它的供应链加固：强迫人对每个要跑脚本的
+# 依赖做一次显式判断，而不是默默执行。
+#
+# 这三个填 false = **保持 pnpm 10 下的既有行为**（它们的脚本本来就没跑过，镜像一直正常，
+# 原生二进制来自各自的预编译平台包）。改成 true 是行为变更：sharp 可能转为从源码编译，
+# 构建时间与产物都要另行验证，不该混在一次"修 CI"里做。
+allowBuilds:
+  '@parcel/watcher': false
+  '@swc/core': false
+  sharp: false
