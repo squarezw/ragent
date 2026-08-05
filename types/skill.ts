@@ -28,6 +28,8 @@ export interface Skill {
   is_active: boolean;
   /** 作者用户 ID，编辑权判定用 */
   user_id?: number | null;
+  /** 创建者显示名（nickname 优先退 username）；作者账号已注销时为空 */
+  author?: string | null;
   created_at: string;
   updated_at: string;
 }

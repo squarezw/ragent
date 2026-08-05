@@ -1,4 +1,4 @@
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
@@ -46,6 +46,7 @@ const fetcher = async (url: string) => {
 export const useAppSkills = (appId: number | null) => {
   const t = useTranslations("skills");
   const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
+  const { mutate: mutateKey } = useSWRConfig();
   const url = appId ? `/api/v1/apps/${appId}/skills` : null;
 
   const { data, error, isLoading, mutate } = useSWR(url, fetcher, {
@@ -61,7 +62,24 @@ export const useAppSkills = (appId: number | null) => {
       const res = await axios.post(`/api/v1/apps/${appId}/skills`, {
         skill_id: skillId,
       });
-      toast.success(t("bindSuccess"));
+
+      // 后端会把 skill 声明的 requires.tools 自动补绑到这个应用上（否则整份 skill
+      // 静默不注入）。这是平台替用户做的**授权动作**，必须说出来 —— 悄悄多给一个
+      // 工具，比让用户自己去补更糟。
+      const autoBound: string[] = res.data?.data?.auto_bound_tools ?? [];
+      const warnings: string[] = res.data?.data?.warnings ?? [];
+
+      if (autoBound.length > 0) {
+        toast.success(t("bindSuccessWithTools", { tools: autoBound.join("、") }));
+        // 工具区是另一个 hook（useAppTools，key 前缀不同），不失效它的话用户会看到
+        // 一个"工具数没变"的界面，然后以为自动绑定没生效
+        mutateKey((key) => typeof key === "string" && key.includes(`/apps/${appId}/tools`));
+      } else {
+        toast.success(t("bindSuccess"));
+      }
+      // 警告分开提示：它们说的是"这份 skill 现在不会生效"，和成功不是一回事
+      warnings.forEach((w) => toast.warning(w));
+
       mutate();
       invalidateDiagnostics(appId);
       return res.data;

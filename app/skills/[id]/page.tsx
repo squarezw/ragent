@@ -13,6 +13,7 @@ import SkillUserEnvPanel from "../components/SkillUserEnvPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { canEditSkill } from "@/lib/skillPermissions";
 import { parseSaveWarnings, takeSaveWarnings } from "@/lib/skillRequires";
 
 export default function SkillDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -41,8 +42,18 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
 
   // P5：具备审核权者直接发布（自审即过），普通用户走提交审核
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
-  // P8：资产/exec 配置编辑权 = 作者本人 + 管理员，与后端 _can_edit_skill 同口径
-  const canEditAssets = canReview || (skill?.user_id != null && skill.user_id === user?.id);
+  // 资产/exec 配置编辑权 = 作者本人 / 超管 / **本租户**租户管理员，与后端
+  // _can_edit_skill 同口径（共用 lib/skillPermissions，别在这里另写一份）。
+  //
+  // 原先写的是 `canReview || 作者本人`，而 canReview 里的 checkTenantAdmin 不带租户范围
+  // ——别的租户的租户管理员在这一页能改，后端 is_reviewer 却要求同租户。松的一侧是界面，
+  // 所以表现为"能编辑能保存，保存时 403"。
+  const canEditAssets = canEditSkill(
+    skill,
+    user,
+    checkSuperAdmin(user),
+    checkTenantAdmin(user)
+  );
 
   const handleSaveDraft = async (payload: SkillPayload) => {
     setSaving(true);

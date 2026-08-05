@@ -263,5 +263,7 @@
   "envValueErrorTooLong": "值不能超过 8192 个字符",
   "envValueErrorNul": "值不能包含 NUL 字符",
   "envErrorTooManyKeys": "环境变量不能超过 50 项",
-  "envErrorTooLarge": "环境变量总体积不能超过 64 KB"
+  "envErrorTooLarge": "环境变量总体积不能超过 64 KB",
+  "bindSuccessWithTools": "已绑定 Skill，并自动补齐依赖工具：{tools}",
+  "author": "创建者"
 }

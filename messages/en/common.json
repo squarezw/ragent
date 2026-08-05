@@ -121,5 +121,6 @@
   "platformName": "AI Platform",
   "platformLogoText": "R",
   "platformTitle": "RAgent AI Platform",
-  "platformDescription": "RAgent AI Platform"
+  "platformDescription": "RAgent AI Platform",
+  "view": "View"
 }

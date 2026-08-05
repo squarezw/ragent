@@ -32,6 +32,8 @@ import {
   resolveReviewStatus,
   reviewStatusBadge,
 } from "@/lib/reviewStatus";
+import { canEditSkill } from "@/lib/skillPermissions";
+import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import type { Skill } from "@/types/skill";
 
 const visibilityColors: Record<string, string> = {
@@ -46,6 +48,8 @@ export default function SkillsPage() {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user, loading: userLoading } = useCurrentUser();
+  const isSuperAdmin = checkSuperAdmin(user);
+  const isTenantAdmin = checkTenantAdmin(user);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch] = useDebounce(search, 300);
@@ -112,8 +116,9 @@ export default function SkillsPage() {
                   <TableHead>{t("name")}</TableHead>
                   <TableHead>{t("displayName")}</TableHead>
                   <TableHead className="max-w-md">{t("description")}</TableHead>
-                  <TableHead>{t("visibility")}</TableHead>
-                  <TableHead>{tc("status")}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t("visibility")}</TableHead>
+                  <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
                   <TableHead className="text-right">{tc("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -138,6 +143,11 @@ export default function SkillsPage() {
                           {skill.description}
                         </span>
                       </TableCell>
+                      <TableCell className="text-sm">
+                        {/* 作者账号注销后 author 为空：显示占位符而不是空白单元格，
+                            空白会让人以为是渲染坏了 */}
+                        {skill.author || <span className="text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           className={`text-xs ${visibilityColors[skill.visibility] || visibilityColors.private}`}
@@ -160,20 +170,36 @@ export default function SkillsPage() {
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push(`/skills/${skill.id}`)}
-                          >
-                            {tc("edit")}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDelete(skill)}
-                          >
-                            {tc("delete")}
-                          </Button>
+                          {/* 没有写权限的人不该看到「编辑」「删除」——原先两个按钮无条件渲染，
+                              点下去才被后端 403 拦住。界面先说"你可以改"、动手后再说"不行"，
+                              用户会以为是系统坏了而不是自己没权限。
+                              但详情页他是能看的，所以按钮换成「查看」而不是整个消失。 */}
+                          {canEditSkill(skill, user, isSuperAdmin, isTenantAdmin) ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => router.push(`/skills/${skill.id}`)}
+                              >
+                                {tc("edit")}
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDelete(skill)}
+                              >
+                                {tc("delete")}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => router.push(`/skills/${skill.id}`)}
+                            >
+                              {tc("view")}
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

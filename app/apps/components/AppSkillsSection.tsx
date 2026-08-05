@@ -38,6 +38,7 @@ import { useAppSkills, normalizeAppSkill } from "@/hooks/useAppSkills";
 import { useSkills } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { canEditApp } from "@/lib/appPermissions";
 import type { AppSkill } from "@/types/skill";
 
 /**
@@ -45,12 +46,21 @@ import type { AppSkill } from "@/types/skill";
  * 已绑列表（发布状态 / 解绑）+ 添加绑定（可见 skills 搜索多选）。
  * 列表顺序沿用后端返回的绑定顺序，前端不再排序。
  */
-export default function AppSkillsSection({ appId }: { appId: number }) {
+export default function AppSkillsSection({
+  appId,
+  ownerUserId,
+}: {
+  appId: number;
+  /** app 的创建者。owner 也能绑/解绑（后端同规矩），不传则只有管理员能管 */
+  ownerUserId?: number | null;
+}) {
   const router = useRouter();
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
-  const canManage = checkSuperAdmin(user) || checkTenantAdmin(user);
+  // owner 或超管（与后端 require_app_owner_or_super 同一条规矩）；租户管理员沿用既有权限
+  const canManage =
+    canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user)) || checkTenantAdmin(user);
 
   const { appSkills, loading, bindSkill, unbindSkill } = useAppSkills(appId);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);

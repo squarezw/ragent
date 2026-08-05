@@ -121,5 +121,6 @@
   "platformName": "智能体中台",
   "platformLogoText": "睿",
   "platformTitle": "RAgent 智能体中台",
-  "platformDescription": "RAgent 智能体中台"
+  "platformDescription": "RAgent 智能体中台",
+  "view": "查看"
 }
