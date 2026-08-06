@@ -137,7 +137,23 @@ export default function SkillsPage() {
                       onClick={() => router.push(`/skills/${skill.id}`)}
                     >
                       <TableCell className="font-mono text-sm">{skill.name}</TableCell>
-                      <TableCell className="font-medium">{skill.display_name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {/* 不换行：加了徽标后这一格更窄，中文显示名会被压成一列一个字 */}
+                          <span className="whitespace-nowrap">{skill.display_name}</span>
+                          {/* 内置技能没有编辑/删除按钮，光藏起来用户不知道为什么。
+                              徽标 + hover 说明，比一个凭空消失的按钮好懂。 */}
+                          {skill.is_managed && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs shrink-0 font-normal"
+                              title={t("managedHint")}
+                            >
+                              {t("managed")}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="max-w-md">
                         <span className="line-clamp-2 text-sm text-muted-foreground">
                           {skill.description}

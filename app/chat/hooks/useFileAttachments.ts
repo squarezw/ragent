@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { uploadFile, getFileUrl } from "@/lib/ossUpload";
+import { isAllowedAttachment } from "@/lib/chatAttachments";
 
 export interface Attachment {
   filename: string;
@@ -74,33 +75,12 @@ export function useFileAttachments() {
     }
   };
 
-  const allowedTypes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain",
-    "application/postscript",
-    // 图片。长期传不上来不是因为不该支持，而是上传要求抽取必须成功——
-    // upload-confirm 的 default 分支对未知类型直接抛 "Unsupported file format"。
-    // 上传与抽取解耦（文字经 extract_document_text 按需取）之后这个限制就没有理由了。
-    // 平台侧 OCR 单张约 1.3s，且只在模型真需要读它时才发生。
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/bmp",
-    "image/tiff",
-    "image/webp",
-  ];
-
   const validateAndUploadFiles = async (files: File[]) => {
     const invalidFiles: string[] = [];
 
     for (const file of files) {
-      // .ai 文件 MIME 不固定，用扩展名兜底
-      const isAiFile = file.name.toLowerCase().endsWith(".ai");
-      if (!isAiFile && !allowedTypes.includes(file.type)) {
+      // 白名单在 lib/chatAttachments.ts —— 与 accept 属性同源
+      if (!isAllowedAttachment(file.name, file.type)) {
         invalidFiles.push(file.name);
       }
     }

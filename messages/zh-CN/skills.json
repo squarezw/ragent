@@ -265,5 +265,8 @@
   "envErrorTooManyKeys": "环境变量不能超过 50 项",
   "envErrorTooLarge": "环境变量总体积不能超过 64 KB",
   "bindSuccessWithTools": "已绑定 Skill，并自动补齐依赖工具：{tools}",
-  "author": "创建者"
+  "author": "创建者",
+  "managed": "平台维护",
+  "managedHint": "内置技能，随平台版本更新，不能修改或删除。如需定制请复制一份另建。",
+  "viewSkill": "查看 Skill"
 }

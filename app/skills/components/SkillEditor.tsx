@@ -33,6 +33,13 @@ interface SkillEditorProps {
   saving: boolean;
   /** 具备审核权（超管/租户管理员）：显示「发布」（自审即过）；否则显示「提交审核」 */
   canReview: boolean;
+  /**
+   * 只读态（内置技能）：藏掉所有写操作按钮、字段禁用。
+   *
+   * 不是"没权限"——是**谁都不能改**（真源在代码仓，改了会被下次同步覆盖）。
+   * 所以这里不显示禁用的按钮让人反复去点，而是整排换成一句说明。
+   */
+  readOnly?: boolean;
   onSaveDraft: (payload: SkillPayload) => void;
   onPublish: (payload: SkillPayload) => void;
   /** 普通用户提交审核（先保存草稿再 submit-review） */
@@ -49,6 +56,7 @@ export default function SkillEditor({
   skill,
   saving,
   canReview,
+  readOnly = false,
   onSaveDraft,
   onPublish,
   onSubmitReview,
@@ -143,7 +151,10 @@ export default function SkillEditor({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle>{skill ? t("editSkill") : t("createSkill")}</CardTitle>
+            {/* 只读态说「编辑」是骗人的——页面上一个能改的地方都没有 */}
+            <CardTitle>
+              {readOnly ? t("viewSkill") : skill ? t("editSkill") : t("createSkill")}
+            </CardTitle>
             {statusBadge && (
               <Badge variant={statusBadge.variant} className={statusBadge.className}>
                 {t(statusBadge.labelKey)}
@@ -155,15 +166,21 @@ export default function SkillEditor({
               </Badge>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {readOnly && (
+              // 内置技能：说清「为什么没有保存按钮」。凭空少一排按钮会让人以为界面坏了
+              <p className="text-sm text-muted-foreground mr-2">{t("managedHint")}</p>
+            )}
             <Button variant="outline" onClick={onCancel} disabled={saving}>
-              {tc("cancel")}
+              {readOnly ? tc("back") : tc("cancel")}
             </Button>
             {skill != null && isPublished && onShowDiff && (
               <Button variant="outline" onClick={onShowDiff} disabled={saving}>
                 {t("diffCompare")}
               </Button>
             )}
+            {!readOnly && (
+              <>
             {/* 审核中也允许继续保存草稿 */}
             <Button variant="secondary" onClick={() => onSaveDraft(payload)} disabled={!canSubmit}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -181,6 +198,8 @@ export default function SkillEditor({
               <Button onClick={() => onSubmitReview(payload)} disabled={!canSubmit}>
                 {t("submitReview")}
               </Button>
+            )}
+              </>
             )}
           </div>
         </div>
@@ -257,6 +276,7 @@ export default function SkillEditor({
               id="skill-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={readOnly}
               placeholder="weekly-report-format"
               className={nameInvalid ? "border-destructive" : ""}
             />
@@ -270,6 +290,7 @@ export default function SkillEditor({
               id="skill-display-name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
+              disabled={readOnly}
               placeholder={t("displayNamePlaceholder")}
             />
           </div>
@@ -281,6 +302,7 @@ export default function SkillEditor({
             id="skill-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={readOnly}
             placeholder={t("descriptionPlaceholder")}
             rows={3}
             className={descriptionTooLong ? "border-destructive" : ""}
@@ -304,6 +326,7 @@ export default function SkillEditor({
               <Textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
+                disabled={readOnly}
                 placeholder={t("contentPlaceholder")}
                 rows={16}
                 className="font-mono text-sm"
