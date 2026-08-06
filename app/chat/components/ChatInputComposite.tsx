@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import DatasetSelectorDropdown from "./DatasetSelectorDropdown";
 import type { Attachment } from "../hooks/useFileAttachments";
+import { ATTACHMENT_ACCEPT } from "@/lib/chatAttachments";
 
 interface App {
   id: number;
@@ -264,7 +265,7 @@ export default function ChatInputComposite({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.ai,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp"
+          accept={ATTACHMENT_ACCEPT}
           multiple
           onChange={onFileSelect}
           className="hidden"
