@@ -265,5 +265,8 @@
   "envErrorTooManyKeys": "At most 50 environment variables",
   "envErrorTooLarge": "The variables cannot exceed 64 KB in total",
   "bindSuccessWithTools": "Skill bound; required tools added automatically: {tools}",
-  "author": "Creator"
+  "author": "Creator",
+  "managed": "Built-in",
+  "managedHint": "Maintained by the platform and updated with each release — cannot be edited or deleted. Copy it to build your own.",
+  "viewSkill": "View Skill"
 }

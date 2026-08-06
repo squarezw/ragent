@@ -126,6 +126,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         skill={skill}
         saving={saving}
         canReview={canReview}
+        readOnly={!!skill.is_managed}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}
         onSubmitReview={handleSubmitReview}

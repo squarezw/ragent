@@ -30,6 +30,8 @@ export interface Skill {
   user_id?: number | null;
   /** 创建者显示名（nickname 优先退 username）；作者账号已注销时为空 */
   author?: string | null;
+  /** 平台维护的内置技能：随版本更新，任何人都不能改/删（绑定不受限） */
+  is_managed?: boolean;
   created_at: string;
   updated_at: string;
 }
