@@ -14,6 +14,8 @@ export interface SkillPayload {
   requires: SkillRequires;
   visibility: SkillVisibility;
   is_active?: boolean;
+  /** 迁移到别的租户。**仅超级管理员**，后端强制（普通更新不带这个字段）。 */
+  owner_tenant_id?: number | null;
 }
 
 /** 后端列表形状兼容：数组或 {items}/{skills} 包裹 */
@@ -113,6 +115,27 @@ export const useSkill = (skillId: number | null) => {
     }
   };
 
+  /**
+   * 迁移到另一个租户。**独立于草稿保存，也不走审核** —— 改的是归属不是内容，
+   * 已发布的 skill 迁完还是那份内容，退回草稿重审只会让线上少一个能用的技能。
+   *
+   * 后端 409（目标租户重名）/ 403（非超管）的 detail 直接透给用户：那两句话本身
+   * 就说清了下一步该干什么（"先改名再迁移"），比一句通用的"操作失败"有用得多。
+   */
+  const transferTenant = async (tenantId: number): Promise<boolean> => {
+    if (!skillId) return false;
+    try {
+      await axios.put(`/api/v1/skills/${skillId}/tenant`, { owner_tenant_id: tenantId });
+      toast.success("已迁移到新租户");
+      mutate();
+      return true;
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "迁移失败");
+      return false;
+    }
+  };
+
   const publish = async (): Promise<boolean> => {
     if (!skillId) return false;
     try {
@@ -174,6 +197,7 @@ export const useSkill = (skillId: number | null) => {
     loading: isLoading,
     error,
     saveDraft,
+    transferTenant,
     publish,
     submitReview,
     fetchDiff,

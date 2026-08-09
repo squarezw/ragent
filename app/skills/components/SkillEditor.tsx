@@ -13,6 +13,7 @@ import { AlertTriangle, Loader2, X } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import VisibilitySelect from "@/components/VisibilitySelect";
+import SkillTenantSelect from "./SkillTenantSelect";
 import axios from "@/lib/axios";
 import { SKILL_DESCRIPTION_MAX_LENGTH, isValidSkillName } from "@/lib/skillValidation";
 import { normalizeRequiresList } from "@/lib/skillRequires";
@@ -40,6 +41,15 @@ interface SkillEditorProps {
    * 所以这里不显示禁用的按钮让人反复去点，而是整排换成一句说明。
    */
   readOnly?: boolean;
+  /**
+   * 超级管理员：显示「所属租户」下拉，可把 Skill 迁到别的租户。
+   *
+   * 只对超管开放，是因为迁移会把内容从一个租户搬到另一个租户 —— 租户管理员若能做，
+   * 就等于能把别人租户的东西拉进自己租户。后端 `_apply_tenant_transfer` 同判据。
+   */
+  isSuperAdmin?: boolean;
+  /** 迁移到指定租户；独立于表单保存，也不走审核（见后端 PUT /skills/{id}/tenant） */
+  onTransferTenant?: (tenantId: number) => Promise<void>;
   onSaveDraft: (payload: SkillPayload) => void;
   onPublish: (payload: SkillPayload) => void;
   /** 普通用户提交审核（先保存草稿再 submit-review） */
@@ -57,6 +67,8 @@ export default function SkillEditor({
   saving,
   canReview,
   readOnly = false,
+  isSuperAdmin = false,
+  onTransferTenant,
   onSaveDraft,
   onPublish,
   onSubmitReview,
@@ -371,6 +383,15 @@ export default function SkillEditor({
           value={visibility}
           onChange={(value) => setVisibility(value as SkillVisibility)}
         />
+
+        {/* 新建时不显示：租户由后端按作者落定，这时候让人选一个反而能建出
+            "作者不在该租户"的数据。只在编辑已有 skill 时提供迁移。 */}
+        {isSuperAdmin && skill && !readOnly && onTransferTenant && (
+          <SkillTenantSelect
+            currentTenantId={skill.owner_tenant_id ?? null}
+            onTransfer={onTransferTenant}
+          />
+        )}
       </CardContent>
     </Card>
   );

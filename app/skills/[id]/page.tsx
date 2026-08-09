@@ -24,7 +24,16 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const skillId = Number(id);
 
   const { user, loading: userLoading } = useCurrentUser();
-  const { skill, loading, saveDraft, publish, submitReview, exportMarkdown, refresh } = useSkill(
+  const {
+    skill,
+    loading,
+    saveDraft,
+    transferTenant,
+    publish,
+    submitReview,
+    exportMarkdown,
+    refresh,
+  } = useSkill(
     Number.isFinite(skillId) ? skillId : null
   );
   const [saving, setSaving] = useState(false);
@@ -127,6 +136,10 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         saving={saving}
         canReview={canReview}
         readOnly={!!skill.is_managed}
+        isSuperAdmin={checkSuperAdmin(user)}
+        onTransferTenant={async (tenantId) => {
+          await transferTenant(tenantId);
+        }}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}
         onSubmitReview={handleSubmitReview}
