@@ -32,6 +32,11 @@ export interface Skill {
   author?: string | null;
   /** 平台维护的内置技能：随版本更新，任何人都不能改/删（绑定不受限） */
   is_managed?: boolean;
+  /** 所属租户。创建时按作者租户落定，之后**不跟着人事变动走**——
+   *  作者被调到别的租户时这里不变，要靠超管显式迁移（见 SkillEditor 的租户下拉）。 */
+  owner_tenant_id?: number | null;
+  /** 所属部门。跨租户迁移时后端会清空它（旧租户的部门在新租户里是悬空引用）。 */
+  owner_dept_id?: number | null;
   created_at: string;
   updated_at: string;
 }
