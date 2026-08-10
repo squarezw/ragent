@@ -15,19 +15,14 @@
   "skuManagement": "SKU管理",
   "knowledgeGraph": "知识图谱",
   "systemMonitoring": "系统监控",
-  "promptManagement": "提示词管理",
   "systemSettings": "系统设置",
   "orgManagement": "组织管理",
   "userManagement": "人员管理",
   "chatSessions": "会话管理",
   "search": "智能搜索",
   "about": "关于系统",
-  "newPrompt": "新建提示词",
-  "promptDetail": "提示词详情",
-  "promptMonitoring": "提示词监控",
   "toolsManagement": "工具管理",
   "processManagement": "流程管理",
   "skillsManagement": "Skill 管理",
-  "reviewQueue": "审核队列",
-  "promptManagementDeprecated": "提示词管理即将下线：应用的提示词已迁到「数字员工 → Agent.md」，在那里编辑。"
+  "reviewQueue": "审核队列"
 }

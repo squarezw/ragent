@@ -15,19 +15,14 @@
   "skuManagement": "SKU",
   "knowledgeGraph": "Graph",
   "systemMonitoring": "Monitoring",
-  "promptManagement": "Prompt",
   "systemSettings": "Settings",
   "orgManagement": "Organization",
   "userManagement": "Users",
   "chatSessions": "Sessions",
   "search": "Search",
   "about": "About System",
-  "newPrompt": "New Prompt",
-  "promptDetail": "Prompt Detail",
-  "promptMonitoring": "Prompt",
   "toolsManagement": "Tools",
   "processManagement": "Process",
   "skillsManagement": "Skills",
-  "reviewQueue": "Review Queue",
-  "promptManagementDeprecated": "Prompt management is being retired: an app's prompt now lives in its Agent.md (Digital Employees → Agent.md)."
+  "reviewQueue": "Review Queue"
 }

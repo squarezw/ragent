@@ -137,17 +137,6 @@ export default function AppSidebar() {
       items: [
         { title: t("chatSessions"), icon: MessageSquareMore, path: "/chat-sessions" },
         {
-          // 提示词管理即将下线：应用的提示词真源已迁到 Agent.md（apps.agent_md），
-          // chat 与企微两条链都优先读它（app/utils/app_prompt.resolve_app_prompt_body）。
-          // 入口先置灰而不是直接删——`prompt_id` 仍保留作回滚锚点，真删要等确认没有
-          // 应用还只靠它。
-          title: t("promptManagement"),
-          icon: MessageSquare,
-          path: "/prompts",
-          visible: isSuperAdmin || isTenantAdmin,
-          deprecated: t("promptManagementDeprecated"),
-        },
-        {
           // P5 开放自建：普通用户也可创建自己的 Skill（草稿走提交审核）
           title: t("skillsManagement"),
           icon: Sparkles,

@@ -31,11 +31,6 @@ interface AgentMdEditorProps {
   /** app 的创建者。后端的 agent-md 写入一直是 owner 或超管，UI 此前只放超管 */
   ownerUserId?: number | null;
   platform: string;
-  /**
-   * 应用绑定的 legacy prompt。没有它就没有"升级"可言——文案要说「创建」，
-   * 否则用户看到「升级为 Agent.md」会以为有东西要迁移（2026-07-31 报的 bug 现场）。
-   */
-  promptId?: number | null;
   /** Agent.md 状态变化（升级 / 回退）后通知父组件刷新应用信息 */
   onChanged?: () => void;
 }
@@ -51,7 +46,6 @@ export default function AgentMdEditor({
   appId,
   ownerUserId,
   platform,
-  promptId,
   onChanged,
 }: AgentMdEditorProps) {
   const t = useTranslations("skills");
@@ -73,7 +67,6 @@ export default function AgentMdEditor({
   const isWechat = platform === "Wechat";
   const isLegacy = agentMd?.is_legacy !== false;
   // 有旧提示词 = 真的在"升级"；没有 = 从零"创建"
-  const hasLegacyPrompt = promptId != null;
 
   // 后端内容加载/变化时回填（本地有未保存修改则不覆盖）
   useEffect(() => {
@@ -145,8 +138,7 @@ export default function AgentMdEditor({
           {/*
             标题直接写「角色设定」，不再显示文件名 Agent.md，也不再挂状态徽章：
             标题旁边写着「角色设定」、下面又挂一个写着「角色设定」的彩色 Badge，
-            是同一句话说两遍。isLegacy 的状态由下面那段说明文字承担
-            （legacyDesc / noAgentMdDesc 已经把处境讲清楚了）。
+            是同一句话说两遍。状态由下面那段说明文字承担（noAgentMdDesc）。
           */}
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -179,7 +171,7 @@ export default function AgentMdEditor({
         {isLegacy ? (
           <div className="text-center py-6 space-y-3">
             <p className="text-sm text-muted-foreground">
-              {hasLegacyPrompt ? t("legacyDesc") : t("noAgentMdDesc")}
+              {t("noAgentMdDesc")}
             </p>
             {canManage && (
               <>
@@ -189,7 +181,7 @@ export default function AgentMdEditor({
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  {hasLegacyPrompt ? t("upgradeToAgentMd") : t("createAgentMd")}
+                  {t("createAgentMd")}
                 </Button>
                 {isWechat && (
                   <p className="text-xs text-muted-foreground">{t("wechatUpgradeDisabled")}</p>
