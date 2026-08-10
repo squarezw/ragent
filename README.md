@@ -4,8 +4,7 @@ An enterprise AI agent platform (智能体中台) built with Next.js. It lets or
 
 ![RAgent screenshot](docs/assets/screenshot02.png)
 
-<sub>Dashboard, showing the Digital Employees and Skills sections. The greyed-out Prompt entry
-and the version badge predate v0.5.0, which removed the prompt library.</sub>
+<sub>The dashboard in v0.5.0, with Digital Employees and Skills in the sidebar.</sub>
 
 ## Core Features
 
