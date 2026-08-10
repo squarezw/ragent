@@ -2,9 +2,10 @@
 
 An enterprise AI agent platform (智能体中台) built with Next.js. It lets organizations build and operate AI agent applications on top of their own knowledge and business processes — from RAG-powered knowledge bases and intelligent Q&A to visual workflow orchestration, process management, and multi-tenant administration.
 
-![RAgent screenshot](docs/assets/screenshot01.png)
+![RAgent screenshot](docs/assets/screenshot02.png)
 
-<sub>Screenshot from v0.4.5 — predates the Digital Employee rename and the Skills section in the sidebar.</sub>
+<sub>Dashboard, showing the Digital Employees and Skills sections. The greyed-out Prompt entry
+and the version badge predate v0.5.0, which removed the prompt library.</sub>
 
 ## Core Features
 
@@ -35,6 +36,13 @@ filesystem at runtime — and the UI covers authoring, review, binding, and per-
   variables it needs via a `.env.example` asset; each user fills in their own values, injected
   per execution. Values are never returned by any endpoint, including to administrators, who
   see only which keys are set.
+- **Skills can be written by talking.** A built-in skill-creator ships with the platform. Bind
+  it to a digital employee and you can ask for a skill in plain language instead of starting
+  from a blank editor. It drafts the body, writes scripts, configures the sandbox and submits
+  for review — but approval stays a human action, and a draft's scripts are not in the
+  executable set until someone approves them. The built-in skill itself cannot be edited or
+  deleted by anyone, since it is versioned with the code and any change would be overwritten
+  on the next release.
 
 > ⚠️ **Deployment requirement.** Skill *execution* needs the `ragent-service` process to be
 > able to run `docker`. If the backend itself runs in a container, that container needs the
@@ -44,9 +52,10 @@ filesystem at runtime — and the UI covers authoring, review, binding, and per-
 ## Agent prompts
 
 A digital employee's system prompt lives in its **Agent.md**, edited on the employee's own
-page. The standalone prompt library is being retired and its navigation entry is disabled;
-existing prompts were copied into the corresponding Agent.md verbatim, and the original
-`prompt_id` is kept as a rollback anchor.
+page. That is the only place it lives.
+
+The standalone prompt library was removed in v0.5.0. Existing prompts had already been copied
+into the corresponding Agent.md verbatim, and nothing reads the old records at runtime.
 
 ## Architecture
 

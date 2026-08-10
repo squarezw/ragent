@@ -29,7 +29,6 @@ type Messages = typeof import("../messages/en/common.json") & {
   monitoring: typeof import("../messages/en/monitoring.json");
   demo: typeof import("../messages/en/demo.json");
   about: typeof import("../messages/en/about.json");
-  prompts: typeof import("../messages/en/prompts.json");
   feedback: typeof import("../messages/en/feedback.json");
   systemSettings: typeof import("../messages/en/systemSettings.json");
   password: typeof import("../messages/en/password.json");

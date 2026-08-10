@@ -13,7 +13,6 @@ const routeTitleKeys: { [key: string]: string } = {
   "/graph": "knowledgeGraph",
   "/process-management": "processManagement",
   "/sop": "sopManagement",
-  "/prompts": "promptManagement",
   "/organization": "organization",
   "/user": "userManagement",
   "/settings": "settings",
@@ -23,14 +22,10 @@ const routeTitleKeys: { [key: string]: string } = {
 
 // 子路由标题映射
 const subRouteTitleKeys: { [key: string]: string } = {
-  "/prompts/new": "newPrompt",
-  "/prompts/": "promptDetail",
-  "/monitoring/prompts": "promptMonitoring",
 };
 
 // 动态路由模式匹配
 const dynamicRoutePatterns: { pattern: RegExp; titleKey: string }[] = [
-  { pattern: /^\/prompts\/[^/]+$/, titleKey: "promptDetail" },
 ];
 
 export default function DynamicTitle() {
@@ -75,7 +70,7 @@ export default function DynamicTitle() {
       <Badge variant="outline" className="text-xs hidden sm:inline-flex">
         <Shield className="mr-1 h-3 w-3" />
         <a href="/about" className="text-primary hover:underline">
-          v0.4.5
+          v0.5.0
         </a>
       </Badge>
     </div>

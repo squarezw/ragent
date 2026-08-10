@@ -78,7 +78,6 @@ interface App {
   avatar_url?: string | null;
   user_id: number;
   ai_model: string;
-  prompt_id: number | null;
   agent_md?: string | null;
   dataset_ids: string[];
   tool_count?: number;
@@ -189,8 +188,7 @@ export default function AppsPage() {
     // 空串 = 用户主动清空（后端据此落 NULL）；null = 本来就没设过
     avatar_url: string | null;
     ai_model: string;
-    prompt_id: number | null;
-    dataset_ids: string[];
+      dataset_ids: string[];
     email?: string;
     settings: Record<string, any>;
     is_default?: boolean;
@@ -201,7 +199,6 @@ export default function AppsPage() {
     platform: "Web",
     avatar_url: null,
     ai_model: "deepseek",
-    prompt_id: null,
     dataset_ids: [],
     email: "",
     settings: {},
@@ -320,8 +317,7 @@ export default function AppsPage() {
       platform: "Web",
       avatar_url: null,
       ai_model: "deepseek",
-      prompt_id: null,
-      dataset_ids: [],
+        dataset_ids: [],
       email: "",
       settings: {},
       is_default: false,
@@ -349,8 +345,7 @@ export default function AppsPage() {
         app_type: "Chat" as const,
         platform: "Web" as const,
         ai_model: "deepseek",
-        prompt_id: null,
-        dataset_ids: ["quality_knowledge_base"], // 使用质量知识库
+            dataset_ids: ["quality_knowledge_base"], // 使用质量知识库
         settings: {
           workflow: {
             nodes: [
@@ -465,7 +460,6 @@ export default function AppsPage() {
       platform: app.platform,
       avatar_url: app.avatar_url ?? null,
       ai_model: app.ai_model,
-      prompt_id: app.prompt_id,
       dataset_ids: datasetIds,
       email: app.email || "",
       settings: app.settings || {},

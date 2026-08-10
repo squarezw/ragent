@@ -91,8 +91,6 @@ interface AppInfo {
   /** 头像 URL：内置头像静态路径或上传后的 OSS 读代理路径；空=按名称生成占位 */
   avatar_url?: string | null;
   agent_md?: string | null;
-  /** legacy 提示词绑定；用来判断 Agent.md 区块该说「升级」还是「创建」 */
-  prompt_id?: number | null;
   created_at: string;
   updated_at: string;
   settings?: Record<string, any>;
@@ -586,7 +584,6 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             appId={appId}
             ownerUserId={appInfo.user_id}
             platform={appInfo.platform}
-            promptId={appInfo.prompt_id}
             onChanged={loadAppInfo}
           />
         </>

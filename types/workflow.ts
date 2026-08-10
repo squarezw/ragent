@@ -45,7 +45,6 @@ export interface AppWithWorkflow {
   platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
   user_id: number;
   ai_model: string;
-  prompt_id: number | null;
   dataset_ids: string[];
   settings: {
     wechat?: {
