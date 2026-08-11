@@ -133,6 +133,16 @@ export interface SandboxImage {
    * 写 exec-config 时不能用它——见 sandboxImageValue。
    */
   ref: string;
+  /**
+   * 本机是否真有这个镜像。**登记 ≠ 存在**：白名单记的是"被批准可用"，
+   * 不保证宿主机上真有。选了不存在的镜像，要到运行那一刻才以 docker 原文炸
+   * （exit 125 + pull access denied）。
+   *
+   * 三态：true=有；false=登记了但不存在；**null/undefined=docker 不可达**，
+   * 无从判断。后两者不能混——docker 不可达时整个部署都跑不了 skill，
+   * 那时把每一项都标成"不存在"会把人引去逐个重建镜像，而该做的是查 docker.sock。
+   */
+  present?: boolean | null;
 }
 
 /** requires.tools 的候选项（GET /api/v1/skills/requires-options → tools[]） */

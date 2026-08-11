@@ -720,3 +720,43 @@ test("isEnvTemplatePath 与后端 ENV_TEMPLATE_NAMES 对齐", () => {
   assert.equal(isEnvTemplatePath(".env.template"), true);
   assert.equal(isEnvTemplatePath("sub/.env.example"), false);
 });
+
+// ── 沙箱镜像的 present 三态 ───────────────────────────────────────────────
+//
+// `sandbox_images` 是**允许清单不是库存清单**：登记了不代表宿主机上真有。
+// 选了不存在的镜像，要到运行那一刻才以 docker 原文炸（exit 125 +
+// pull access denied），而那句话会把人引向"权限/registry 配错了"。
+//
+// 三态不能压成两态：true=有；false=登记了但不存在；null=**docker 不可达**。
+// 后两者混起来的话，后端没挂 docker.sock 时每一项都会显示"不存在"，
+// 把人引去逐个重建镜像 —— 而该做的是查 socket。
+
+test("present=true 原样保留", () => {
+  const [img] = parseSandboxImages({ items: [{ name: "python", tag: "3.11-slim", present: true }] });
+  assert.equal(img.present, true);
+});
+
+test("present=false 原样保留", () => {
+  const [img] = parseSandboxImages({ items: [{ name: "a", tag: "1", present: false }] });
+  assert.equal(img.present, false);
+});
+
+test("字段缺失（老后端）归为 null，不是 false", () => {
+  // 老后端不返回这个字段。当成 false 会让所有镜像都显示"本机没有"，
+  // 那是凭空造出来的告警。
+  const [img] = parseSandboxImages({ items: [{ name: "a", tag: "1" }] });
+  assert.equal(img.present, null);
+});
+
+test("present=null（docker 不可达）保持 null", () => {
+  const [img] = parseSandboxImages({ items: [{ name: "a", tag: "1", present: null }] });
+  assert.equal(img.present, null);
+});
+
+test("非布尔值一律归 null，不做真值转换", () => {
+  // "false" / 0 / "" 这类值若按真值转换，会得到与后端语义相反的结论
+  for (const bogus of ["true", "false", 0, 1, "", "yes"]) {
+    const [img] = parseSandboxImages({ items: [{ name: "a", tag: "1", present: bogus }] });
+    assert.equal(img.present, null, `present=${JSON.stringify(bogus)} 应归 null`);
+  }
+});
