@@ -554,6 +554,9 @@ export function parseSandboxImages(data: unknown): SandboxImage[] {
       is_enabled: item.is_enabled !== false,
       description: asString(item.description),
       ref: asString(item.ref) || (digest ? `${name}@${digest}` : `${name}:${tag}`),
+      // 显式区分三态：字段缺失（老后端）与 null（docker 不可达）都归为 null，
+      // 只有布尔值才当作确定的判断
+      present: typeof item.present === "boolean" ? item.present : null,
     });
   }
   return images;

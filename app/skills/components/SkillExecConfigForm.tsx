@@ -77,6 +77,11 @@ export default function SkillExecConfigForm({
   // 已下架或已从白名单移除的镜像：下拉框里没有这一项，补一条避免 Select 显示空白
   const orphanImage = useSelect && image && !images.some((i) => sandboxImageValue(i) === image);
 
+  // 选中的镜像本机没有 —— 只提示不拦截（同上：先配置后构建是合理流程）。
+  // present 为 null 时不提示：那说明 docker 不可达，判不出来，不是"不存在"。
+  const selectedMissing =
+    useSelect && images.some((i) => sandboxImageValue(i) === image && i.present === false);
+
   const canSave = !saving && !timeoutInvalid && !imageMissing;
 
   return (
@@ -95,6 +100,13 @@ export default function SkillExecConfigForm({
                   <SelectItem key={img.id} value={sandboxImageValue(img)}>
                     {sandboxImageValue(img)}
                     {img.digest ? ` · ${t("execImagePinned")}` : ""}
+                    {/* 标注而**不禁用**：镜像完全可能是先配置、后构建，禁用会挡住
+                        这条合理路径。这里的目的是让"选了会跑不起来"在选之前就看得见，
+                        而不是替用户决定不许选。present 为 null（docker 不可达）时
+                        什么都不标——那时所有镜像都判不出来，逐个标"不存在"是误导。 */}
+                    {img.present === false ? (
+                      <span className="ml-1.5 text-xs text-amber-600">· 本机无此镜像</span>
+                    ) : null}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -106,6 +118,13 @@ export default function SkillExecConfigForm({
               onChange={(e) => setImage(e.target.value)}
               placeholder="ragent-skill-fund:latest"
             />
+          )}
+          {selectedMissing && (
+            <p className="text-xs text-amber-600">
+              该镜像已登记但本机不存在，保存后运行会失败（exit 125）。
+              平台的 skill 运行镜像多为本地构建、未推送 registry，docker 会报
+              「pull access denied」——那不是权限问题。请重新构建该镜像，或改选一个本机已有的。
+            </p>
           )}
           <p className="text-xs text-muted-foreground">
             {useSelect
