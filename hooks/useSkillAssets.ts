@@ -134,6 +134,37 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     [skillId, assets.mutate]
   );
 
+  /**
+   * 在线编辑：把一份文本原样写回某个资产（draft stage）。
+   *
+   * 与 uploadAssets 的区别只是入参 —— 那个吃 File，这个吃字符串。后端是同一个
+   * PUT（整份 upsert），所以"改了一行"在传输上仍是整份提交；用户感受与实现口径
+   * 不同是正常的，不必为此另造一个增量接口。
+   *
+   * kind 必须**原样回传服务端给的值**（故用宽松的 string，不收窄成 SkillAssetKind）：
+   * 后端 PUT 是 upsert，kind 传错会把一份 script 悄悄改判成 reference，它就此不再被
+   * 执行且没有任何报错。收窄类型会强迫把未来新增的 kind 映射成某个已知值 —— 那正是
+   * 这里要防的"悄悄改判"。
+   */
+  const saveAssetText = useCallback(
+    async (path: string, kind: string, text: string): Promise<AssetUploadResult> => {
+      if (!skillId) return { path, ok: false, detail: "no skill" };
+      try {
+        const bytes = new TextEncoder().encode(text);
+        await axios.put(
+          `/api/v1/skills/${skillId}/assets/${encodeAssetPath(path)}`,
+          { kind, content_base64: arrayBufferToBase64(bytes.buffer as ArrayBuffer) },
+          { suppressErrorToast: true } as never
+        );
+        await assets.mutate();
+        return { path, ok: true };
+      } catch (error) {
+        return { path, ok: false, detail: detailOf(error) };
+      }
+    },
+    [skillId, assets.mutate]
+  );
+
   const deleteAsset = useCallback(
     async (path: string): Promise<AssetUploadResult> => {
       if (!skillId) return { path, ok: false, detail: "no skill" };
@@ -183,6 +214,7 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     uploading,
     uploadedCount,
     uploadAssets,
+    saveAssetText,
     deleteAsset,
     saveExecConfig,
     refresh: assets.mutate,
