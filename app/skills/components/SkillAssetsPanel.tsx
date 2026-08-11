@@ -125,6 +125,7 @@ export default function SkillAssetsPanel({
     uploading,
     uploadedCount,
     uploadAssets,
+    saveAssetText,
     deleteAsset,
     saveExecConfig,
   } = useSkillAssets(skill.id, canEdit);
@@ -134,6 +135,9 @@ export default function SkillAssetsPanel({
   const [previewTarget, setPreviewTarget] = useState<{
     path: string;
     size_bytes: number;
+    /** 原样取自服务端，保存时原封不动传回 —— PUT 是 upsert，kind 传错会把 script
+        改判成 reference，它就此不再被执行且不报错 */
+    kind: string;
   } | null>(null);
 
   /**
@@ -614,6 +618,17 @@ export default function SkillAssetsPanel({
         skillId={skill.id}
         path={previewTarget?.path ?? null}
         sizeBytes={previewTarget?.size_bytes}
+        kind={previewTarget?.kind}
+        onSave={
+          previewTarget
+            ? async (text) => {
+                const r = await saveAssetText(previewTarget.path, previewTarget.kind, text);
+                if (r.ok) toast.success("已保存到草稿");
+                else toast.error(r.detail || "保存失败");
+                return r.ok;
+              }
+            : undefined
+        }
         onClose={() => setPreviewTarget(null)}
       />
 
