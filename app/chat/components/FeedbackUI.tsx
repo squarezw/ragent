@@ -3,8 +3,9 @@
 import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
-import { ThumbsUp, ThumbsDown, Download } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Download, Copy, Check } from "lucide-react";
 import axios from "@/lib/axios";
+import { copyText } from "@/lib/clipboard";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -27,6 +28,31 @@ const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content
   const [disliked, setDisliked] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // 复制成功后图标短暂变成对勾。用 ref 记 timer 是为了在组件卸载时清掉——
+  // 聊天里换会话会卸载消息，定时器打到已卸载组件上会报 setState 警告。
+  const copiedTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    if (!content) return;
+    const ok = await copyText(content);
+    if (!ok) {
+      // 必须报出来。客户内网是 http，复制可能真的做不到，
+      // 静默失败会让人以为复制成功、粘贴出来才发现是旧内容。
+      toast.error(tc("copyFailed"));
+      return;
+    }
+    toast.success(tc("copied"));
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleExportPDF = async () => {
     if (!content) return;
@@ -85,6 +111,21 @@ const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content
 
   return (
     <div className="flex items-center gap-2 mt-2">
+      {content && (
+        <Button
+          size="icon"
+          variant="ghost"
+          title={t("copyAnswer")}
+          aria-label={t("copyAnswer")}
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <Check className="w-5 h-5 text-success" />
+          ) : (
+            <Copy className="w-5 h-5 text-muted-foreground" />
+          )}
+        </Button>
+      )}
       {content && (
         <Button
           size="icon"
