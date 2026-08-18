@@ -106,3 +106,19 @@ test("tenant 迁移的转发文件在位", () => {
     "缺 pages/api/v1/skills/[id]/tenant.ts —— 迁移租户会 404"
   );
 });
+
+
+test("导入的两个转发文件在位", () => {
+  // `/api/v1/skills/import` 只有一个路径段，会被任何 `[xxx].ts` 形态的
+  // 通配转发文件"匹配上"——于是上面那条覆盖检查看不出它缺了。但通配文件
+  // 转发的是 `/skills/{id}`，POST 一个叫 "import" 的 id 过去只会出错。
+  //
+  // 静态段文件名压过同目录的动态段（与 requires-options.ts 同理），所以这两个
+  // 文件必须真实存在，不能靠通配兜住。单独钉死。
+  for (const rel of [["import", "index.ts"], ["import", "validate.ts"]]) {
+    assert.ok(
+      fs.existsSync(path.join(PROXY_DIR, ...rel)),
+      `缺 pages/api/v1/skills/${rel.join("/")} —— 导入 skill 会拿到 Next.js 的 404`
+    );
+  }
+});

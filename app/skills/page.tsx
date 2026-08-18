@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import SkillImportDialog from "./components/SkillImportDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Search, Sparkles } from "lucide-react";
+import { Loader2, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills } from "@/hooks/useSkills";
@@ -58,6 +59,7 @@ export default function SkillsPage() {
   // 删除被引用时（409）弹引用应用清单
   const [referencedApps, setReferencedApps] = useState<any[] | null>(null);
   const [deletingSkill, setDeletingSkill] = useState<Skill | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const handleDelete = async (skill: Skill) => {
     if (!confirm(t("deleteConfirm", { name: skill.name }))) return;
@@ -89,6 +91,11 @@ export default function SkillsPage() {
               className="pl-8 w-56"
             />
           </div>
+          {/* 导入放在新建左边：从别处搬一个现成 skill 进来，比从空白开始更常见 */}
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            {t("importSkill")}
+          </Button>
           <Button onClick={() => router.push("/skills/new")}>
             <Plus className="h-4 w-4 mr-2" />
             {t("createSkill")}
@@ -256,6 +263,8 @@ export default function SkillsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SkillImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }
