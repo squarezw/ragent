@@ -98,15 +98,24 @@ export default function SkillEditor({
   const { options: requiresOptions } = useRequiresOptions();
 
   // skill 异步加载完成后回填表单
+  //
+  // 每个字段都要 `?? ""` 兜底：这些列在库里都可空，而 state 之后会被当字符串用
+  // （`name.trim()`、`description.length`）。上面的 useState 初始值有 `|| ""`，
+  // 这里当初没有 —— 于是空 display_name 的 skill 一打开详情页就
+  // "Cannot read properties of null (reading 'trim')"，整页白屏。
+  //
+  // 真实触发者是导入功能：SKILL.md 的 frontmatter 没写 display_name 时它存 NULL
+  // （有意为之，留空让用户填）。手工建的 skill 那一栏是空串，所以这个缺陷一直没被
+  // 碰到 —— 它等的是第一个真的存了 NULL 的来源。
   useEffect(() => {
     if (skill) {
-      setName(skill.name);
-      setDisplayName(skill.display_name);
-      setDescription(skill.description);
-      setContent(skill.content);
+      setName(skill.name ?? "");
+      setDisplayName(skill.display_name ?? "");
+      setDescription(skill.description ?? "");
+      setContent(skill.content ?? "");
       setRequiresTools(normalizeRequiresList(skill.requires?.tools));
       setRequiresWorkflows(normalizeRequiresList(skill.requires?.workflows));
-      setVisibility(skill.visibility);
+      setVisibility(skill.visibility ?? "tenant");
     }
   }, [skill]);
 
