@@ -289,5 +289,13 @@
   "importStatusError": "problem",
   "importStatusWarning": "warning",
   "importPickMd": "Choose SKILL.md",
-  "importSingleMdNote": "A lone SKILL.md is fine — document-only skills are common"
+  "importSingleMdNote": "A lone SKILL.md is fine — document-only skills are common",
+  "importDetected": "What you'll need to do after importing",
+  "importDetectedNone": "No extra setup — ready to use once imported",
+  "importNeedsEnv": "Fill in credentials",
+  "importNeedsEnvDesc": "A .env.example declaring these keys will be created; the actual values go in your personal environment variables — not into the skill, and not visible to anyone else",
+  "importNeedsNetwork": "Turn on outbound network",
+  "importNeedsNetworkDesc": "SKILL.md makes curl / http calls. Granting egress is an authorization decision, so the import will not do it for you",
+  "importWillCreateExec": "A run config will be created",
+  "importWillCreateExecDesc": "Executable content detected — image {image}, 120s timeout, network off by default; adjustable later under Run config"
 }

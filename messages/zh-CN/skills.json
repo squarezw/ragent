@@ -289,5 +289,13 @@
   "importStatusError": "有问题",
   "importStatusWarning": "注意",
   "importPickMd": "选择 SKILL.md",
-  "importSingleMdNote": "只有一个 SKILL.md 也可以 —— 不带脚本的纯文档 skill 是常见形态"
+  "importSingleMdNote": "只有一个 SKILL.md 也可以 —— 不带脚本的纯文档 skill 是常见形态",
+  "importDetected": "导入后需要做的事",
+  "importDetectedNone": "无需额外配置，导入后即可使用",
+  "importNeedsEnv": "填写凭证",
+  "importNeedsEnvDesc": "已生成 .env.example 声明这些键；真值在「个人环境变量」里各自填写，不会写进 skill、也不会被别人看到",
+  "importNeedsNetwork": "打开「允许出网」",
+  "importNeedsNetworkDesc": "SKILL.md 里有 curl / http 调用。出网是授权决定，导入不会替你打开",
+  "importWillCreateExec": "将自动创建运行配置",
+  "importWillCreateExecDesc": "检测到可执行内容，镜像 {image}，超时 120 秒，出网默认关闭 —— 之后可在「运行配置」里调整"
 }

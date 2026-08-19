@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle, ChevronDown, ChevronRight, File as FileIcon, Folder,
-  FolderOpen, Loader2, Upload,
+  FolderOpen, Globe, KeyRound, Loader2, Terminal, Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import axios from "@/lib/axios";
@@ -18,6 +18,7 @@ import {
   isZipFile, precheck, readDataTransfer, readFileList, readZip, toPayload,
   type BundleFile,
 } from "@/lib/skillBundle";
+import { structuralWarnings } from "@/lib/skillImportWarnings";
 import {
   buildTree, countByStatus, formatSize,
   type FileStatus, type ImportFileVerdict, type TreeNode,
@@ -33,6 +34,14 @@ interface ValidateResult {
   files: ImportFileVerdict[];
   total_files: number;
   total_bytes: number;
+  /** 从 SKILL.md 提取的凭证变量名；导入时会据此生成 .env.example */
+  env_keys: string[];
+  /** SKILL.md 里有 curl/http 调用。**只提示，导入不会自动打开出网** */
+  needs_network: boolean;
+  /** 建议的沙箱镜像档位（默认值，导入后可改） */
+  suggested_image: string | null;
+  /** 包里有可执行内容，导入时会自动建运行配置 */
+  executable: boolean;
 }
 
 const STATUS_STYLE: Record<FileStatus, string> = {
@@ -301,7 +310,69 @@ export default function SkillImportDialog({
               </div>
             )}
 
-            {result.warnings.map((w, i) => (
+            {/* 导入后要做什么，一次列全。
+                后端把这三件事也写进了 warnings（供 API 直接调用者读），这里改用
+                结构化字段渲染，并**过滤掉 warnings 里的同名条目** —— 同一件事在
+                同一屏出现两遍，用户会以为是两个问题。 */}
+            {result.ok && (
+              <div className="rounded-md border px-3 py-2 space-y-2">
+                <div className="text-sm font-medium">{t("importDetected")}</div>
+
+                {!result.env_keys.length && !result.needs_network && !result.executable && (
+                  <div className="text-sm text-muted-foreground">
+                    {t("importDetectedNone")}
+                  </div>
+                )}
+
+                {result.env_keys.length > 0 && (
+                  <div className="flex gap-2 text-sm">
+                    <KeyRound className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div>
+                        {t("importNeedsEnv")}：
+                        {result.env_keys.map((k) => (
+                          <span key={k}
+                            className="font-mono text-xs bg-muted rounded px-1 py-0.5 ml-1">
+                            {k}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {t("importNeedsEnvDesc")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {result.needs_network && (
+                  <div className="flex gap-2 text-sm">
+                    <Globe className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div>{t("importNeedsNetwork")}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {t("importNeedsNetworkDesc")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {result.executable && (
+                  <div className="flex gap-2 text-sm">
+                    <Terminal className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div>{t("importWillCreateExec")}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {t("importWillCreateExecDesc", {
+                          image: result.suggested_image || "python:3.11-slim",
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {structuralWarnings(result).map((w, i) => (
               <div key={i} className="text-sm text-muted-foreground">⚠️ {w}</div>
             ))}
 
