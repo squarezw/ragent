@@ -271,7 +271,7 @@
   "viewSkill": "View Skill",
   "importSkill": "Import Skill",
   "importTitle": "Import a skill directory",
-  "importHint": "Drop the whole skill folder or a zip here (must contain SKILL.md)",
+  "importHint": "Drop a skill folder, a zip, or a single SKILL.md here",
   "importPickFolder": "Choose folder",
   "importPickZip": "Choose zip",
   "importReading": "Reading files…",
@@ -287,5 +287,7 @@
   "importStatusOk": "will import",
   "importStatusSkipped": "skipped",
   "importStatusError": "problem",
-  "importStatusWarning": "warning"
+  "importStatusWarning": "warning",
+  "importPickMd": "Choose SKILL.md",
+  "importSingleMdNote": "A lone SKILL.md is fine — document-only skills are common"
 }

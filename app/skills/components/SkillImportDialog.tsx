@@ -61,6 +61,7 @@ export default function SkillImportDialog({
 
   const folderInput = useRef<HTMLInputElement>(null);
   const zipInput = useRef<HTMLInputElement>(null);
+  const mdInput = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setFiles([]); setResult(null); setBusy(null); setCollapsed(new Set());
@@ -211,7 +212,17 @@ export default function SkillImportDialog({
                     onClick={() => zipInput.current?.click()}>
                     {t("importPickZip")}
                   </Button>
+                  {/* 单个 SKILL.md 是常见形态：不带脚本的纯文档 skill。
+                      拖放本来就能处理它（落到 readFileList），但没有按钮的话
+                      用户看不出这条路存在 —— 提示文字只说了文件夹和 zip。 */}
+                  <Button variant="outline" size="sm"
+                    onClick={() => mdInput.current?.click()}>
+                    {t("importPickMd")}
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground/70 mt-3">
+                  {t("importSingleMdNote")}
+                </p>
               </>
             )}
           </div>
@@ -235,6 +246,24 @@ export default function SkillImportDialog({
             if (f) {
               if (!isZipFile(f)) { toast.error(t("importPickZip")); return; }
               void ingest(() => readZip(f));
+            }
+            e.target.value = "";
+          }}
+        />
+
+        <input
+          ref={mdInput} type="file" accept=".md,text/markdown" hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+              // 路径固定成 SKILL.md：用户可能把文件另存成了别的名字
+              // （skill-x.md、SKILL(1).md），而后端认的是根目录下这一个名字。
+              // 按原名传会得到"缺少 SKILL.md"——一个指向错误位置的报错。
+              void ingest(async () => [{
+                path: "SKILL.md",
+                size: f.size,
+                bytes: new Uint8Array(await f.arrayBuffer()),
+              }]);
             }
             e.target.value = "";
           }}
