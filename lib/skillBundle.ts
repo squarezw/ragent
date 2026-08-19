@@ -64,7 +64,12 @@ export async function readFileList(files: FileList | File[]): Promise<BundleFile
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** 拖放事件里可能是文件夹（DataTransferItem），也可能是若干文件或一个 zip。 */
+/** 单个 .md 文件（不含 zip）。纯文档 skill 是常见形态。 */
+export function isMarkdownFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".md") || file.type === "text/markdown";
+}
+
+/** 拖放事件里可能是文件夹（DataTransferItem），也可能是若干文件、一个 zip 或一个 .md。 */
 export async function readDataTransfer(dt: DataTransfer): Promise<BundleFile[]> {
   const items = Array.from(dt.items || []);
   const entries = items
@@ -74,6 +79,17 @@ export async function readDataTransfer(dt: DataTransfer): Promise<BundleFile[]> 
   // 只拖了一个 zip：走解压路径
   if (entries.length === 1 && entries[0].isFile && dt.files[0] && isZipFile(dt.files[0])) {
     return readZip(dt.files[0]);
+  }
+
+  // 只拖了一个 .md：当作 SKILL.md，**不管它原来叫什么名字**。
+  //
+  // 用户手上那个文件很可能叫 skill-x.md 或 SKILL(1).md —— 从别处另存下来时
+  // 改了名。按原名传，后端会报"根目录缺少 SKILL.md"，而那个文件明明就在眼前，
+  // 报错指向了错误的位置。单文件导入时文件名不携带信息，内容才是。
+  if (entries.length === 1 && dt.files.length === 1 && isMarkdownFile(dt.files[0])) {
+    const f = dt.files[0];
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    return [{ path: "SKILL.md", size: bytes.byteLength, bytes }];
   }
 
   if (entries.length > 0 && entries.some((e) => e.isDirectory)) {

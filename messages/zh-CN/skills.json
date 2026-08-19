@@ -271,7 +271,7 @@
   "viewSkill": "查看 Skill",
   "importSkill": "导入 Skill",
   "importTitle": "导入 Skill 目录",
-  "importHint": "把整个 skill 文件夹或 zip 拖到这里（需包含 SKILL.md）",
+  "importHint": "把整个 skill 文件夹、zip，或单个 SKILL.md 拖到这里",
   "importPickFolder": "选择文件夹",
   "importPickZip": "选择 zip",
   "importReading": "正在读取文件…",
@@ -287,5 +287,7 @@
   "importStatusOk": "将导入",
   "importStatusSkipped": "跳过",
   "importStatusError": "有问题",
-  "importStatusWarning": "注意"
+  "importStatusWarning": "注意",
+  "importPickMd": "选择 SKILL.md",
+  "importSingleMdNote": "只有一个 SKILL.md 也可以 —— 不带脚本的纯文档 skill 是常见形态"
 }

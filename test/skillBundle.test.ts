@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizePath, precheck, toBase64, toPayload, isZipFile,
+import { normalizePath, precheck, toBase64, toPayload, isZipFile, isMarkdownFile,
          BUNDLE_MAX_TOTAL_BYTES } from "../lib/skillBundle.ts";
 
 test("normalizePath 统一成 POSIX 相对路径", () => {
@@ -60,4 +60,23 @@ test("isZipFile 认扩展名与 MIME", () => {
   assert.ok(isZipFile({ name: "a", type: "application/zip" } as File));
   assert.ok(isZipFile({ name: "a", type: "application/x-zip-compressed" } as File));
   assert.equal(isZipFile({ name: "a.tar.gz", type: "" } as File), false);
+});
+
+
+test("isMarkdownFile 认扩展名与 MIME", () => {
+  assert.ok(isMarkdownFile({ name: "SKILL.md", type: "" } as File));
+  assert.ok(isMarkdownFile({ name: "skill-x.MD", type: "" } as File));
+  assert.ok(isMarkdownFile({ name: "notes", type: "text/markdown" } as File));
+  assert.equal(isMarkdownFile({ name: "a.txt", type: "text/plain" } as File), false);
+  assert.equal(isMarkdownFile({ name: "a.zip", type: "" } as File), false);
+});
+
+test("单个 .md 一律当作 SKILL.md，不看原文件名", () => {
+  // 用户手上那个文件很可能叫 skill-x.md 或 SKILL(1).md —— 从别处另存时改了名。
+  // 按原名传，后端会报"根目录缺少 SKILL.md"，而那个文件明明就在眼前，
+  // 报错指向了错误的位置。单文件导入时文件名不携带信息，内容才是。
+  const payload = toPayload([
+    { path: "SKILL.md", size: 3, bytes: new Uint8Array([97, 98, 99]) },
+  ]);
+  assert.equal(payload.files[0].path, "SKILL.md");
 });
