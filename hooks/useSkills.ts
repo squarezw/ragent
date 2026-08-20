@@ -30,11 +30,28 @@ const fetcher = async (url: string) => {
   return response.data;
 };
 
+/** 列表筛选条件。**只收窄可见范围，不放宽** —— 真正的边界在后端。 */
+export interface SkillListFilters {
+  /** 归属租户。仅超管的选项里会出现别人的租户 */
+  tenantId?: number | null;
+  /** 归属部门，含该部门的全部下级（子树由后端按 dept.path 展开） */
+  deptId?: number | null;
+}
+
 // Skill 全局 CRUD（形状照 useAppTools）
-export const useSkills = (query?: string) => {
+export const useSkills = (query?: string, filters?: SkillListFilters) => {
   const t = useTranslations("skills");
   const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
-  const url = `/api/v1/skills${query ? `?q=${encodeURIComponent(query)}` : ""}`;
+
+  // 用 URLSearchParams 而不是手拼 `?a=1&b=2`：条件是可选的，手拼要处理
+  // 「第一个参数用 ? 后面用 &」，漏一处就是一个不生效的筛选 —— 而不生效的
+  // 筛选看起来只是「结果比预期多」，不像 bug。
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (filters?.tenantId != null) params.set("tenant_id", String(filters.tenantId));
+  if (filters?.deptId != null) params.set("dept_id", String(filters.deptId));
+  const qs = params.toString();
+  const url = `/api/v1/skills${qs ? `?${qs}` : ""}`;
 
   const { data, error, isLoading, mutate } = useSWR(url, fetcher, {
     revalidateOnFocus: false,
