@@ -10,6 +10,15 @@ interface VisibilitySelectProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  /**
+   * 是否提供「全平台」选项。默认 true —— 保持既有调用方（datasets）行为不变。
+   *
+   * 传 false 用于非超管：跨租户共享只有超管有权批准，把选项摆在那里让人选了
+   * 再被后端 403 拒掉，是把一次注定失败的操作伪装成可用功能。
+   */
+  allowPublic?: boolean;
+  /** 选项下方追加内容（如「归属部门」选择器）。范围与归属是同一个决定的两半。 */
+  footer?: React.ReactNode;
 }
 
 export default function VisibilitySelect({
@@ -17,6 +26,8 @@ export default function VisibilitySelect({
   onChange,
   disabled = false,
   className = "",
+  allowPublic = true,
+  footer,
 }: VisibilitySelectProps) {
   const t = useTranslations("common");
 
@@ -49,7 +60,7 @@ export default function VisibilitySelect({
       icon: Globe,
       color: "bg-green-100 text-green-800",
     },
-  ];
+  ].filter((o) => allowPublic || o.value !== "public");
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -81,6 +92,7 @@ export default function VisibilitySelect({
           );
         })}
       </div>
+      {footer}
     </div>
   );
 }

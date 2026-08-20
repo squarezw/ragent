@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import SkillImportDialog from "./components/SkillImportDialog";
+import SkillOrgFilter, {
+  defaultOrgFilter,
+  type SkillOrgFilterValue,
+} from "./components/SkillOrgFilter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,7 +38,7 @@ import {
   reviewStatusBadge,
 } from "@/lib/reviewStatus";
 import { canEditSkill } from "@/lib/skillPermissions";
-import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { checkDeptAdmin, checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import type { Skill } from "@/types/skill";
 
 const visibilityColors: Record<string, string> = {
@@ -51,10 +55,35 @@ export default function SkillsPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
   const isTenantAdmin = checkTenantAdmin(user);
+  const isDeptAdmin = checkDeptAdmin(user);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch] = useDebounce(search, 300);
-  const { skills, loading, deleteSkill } = useSkills(debouncedSearch || undefined);
+
+  // 组织筛选。null = 这个角色不显示筛选器（普通用户）。
+  const [orgFilter, setOrgFilter] = useState<SkillOrgFilterValue | null>(null);
+  const [orgFilterReady, setOrgFilterReady] = useState(false);
+
+  // 默认值要等 user 到齐才能算 —— 首渲染时 user 是 null，那时算出来的默认值
+  // 是「全部」，会让部门管理员先看到一屏全租户的东西再跳回本部门。
+  useEffect(() => {
+    if (!user || orgFilterReady) return;
+    setOrgFilter(
+      defaultOrgFilter({
+        isSuperAdmin,
+        isTenantAdmin,
+        isDeptAdmin,
+        userTenantId: user.tenant_id ?? null,
+        userDeptId: user.dept_id ?? null,
+      })
+    );
+    setOrgFilterReady(true);
+  }, [user, orgFilterReady, isSuperAdmin, isTenantAdmin, isDeptAdmin]);
+
+  const { skills, loading, deleteSkill } = useSkills(debouncedSearch || undefined, {
+    tenantId: orgFilter?.tenantId ?? null,
+    deptId: orgFilter?.deptId ?? null,
+  });
 
   // 删除被引用时（409）弹引用应用清单
   const [referencedApps, setReferencedApps] = useState<any[] | null>(null);
@@ -91,6 +120,23 @@ export default function SkillsPage() {
               className="pl-8 w-56"
             />
           </div>
+          {orgFilter && (
+            <SkillOrgFilter
+              value={orgFilter}
+              onChange={setOrgFilter}
+              isSuperAdmin={isSuperAdmin}
+              userTenantId={user.tenant_id ?? null}
+              userDeptId={user.dept_id ?? null}
+              labels={{
+                allTenants: t("filterAllTenants"),
+                allDepts: t("filterAllDepts"),
+                tenant: t("filterTenant"),
+                dept: t("filterDept"),
+                reset: t("filterReset"),
+                deptIncludesChildren: t("filterDeptIncludesChildren"),
+              }}
+            />
+          )}
           {/* 导入放在新建左边：从别处搬一个现成 skill 进来，比从空白开始更常见 */}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
@@ -125,6 +171,7 @@ export default function SkillsPage() {
                   <TableHead className="max-w-md">{t("description")}</TableHead>
                   <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
                   <TableHead className="whitespace-nowrap">{t("visibility")}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t("columnOwner")}</TableHead>
                   <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
                   <TableHead className="text-right">{tc("actions")}</TableHead>
                 </TableRow>
@@ -177,6 +224,18 @@ export default function SkillsPage() {
                         >
                           {t(`visibility_${skill.visibility}`)}
                         </Badge>
+                      </TableCell>
+                      {/* 归属：这个 Skill 挂在哪个租户/部门。筛选了却看不出每条挂在哪，
+                          用户没法判断筛选到底生效没有，也没法判断该改谁的归属。
+                          部门优先显示 —— 它是更细的那一层，也是复用范围的起点。 */}
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                        {skill.owner_dept_name || skill.owner_tenant_name ? (
+                          <span title={[skill.owner_tenant_name, skill.owner_dept_name].filter(Boolean).join(" / ")}>
+                            {skill.owner_dept_name || skill.owner_tenant_name}
+                          </span>
+                        ) : (
+                          <span className="italic">{t("ownerUnassigned")}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">

@@ -87,6 +87,8 @@ export default function NewSkillPage() {
   return (
     <div className="container mx-auto p-6">
       <SkillEditor
+        isSuperAdmin={checkSuperAdmin(user)}
+        isTenantAdmin={checkTenantAdmin(user)}
         skill={null}
         saving={saving}
         canReview={canReview}

@@ -37,6 +37,10 @@ export interface Skill {
   owner_tenant_id?: number | null;
   /** 所属部门。跨租户迁移时后端会清空它（旧租户的部门在新租户里是悬空引用）。 */
   owner_dept_id?: number | null;
+  /** 归属租户名，后端列表随行返回。租户已删时为空——那时列表仍要能打开，只是不显示名字。 */
+  owner_tenant_name?: string | null;
+  /** 归属部门名，口径同 owner_tenant_name */
+  owner_dept_name?: string | null;
   created_at: string;
   updated_at: string;
 }

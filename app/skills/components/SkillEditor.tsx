@@ -14,6 +14,9 @@ import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ReviewLogDialog from "@/components/ReviewLogDialog";
 import VisibilitySelect from "@/components/VisibilitySelect";
 import SkillTenantSelect from "./SkillTenantSelect";
+import DeptSelect from "@/components/DeptSelect";
+import { useOrganization } from "@/hooks/useOrganization";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
 import { SKILL_DESCRIPTION_MAX_LENGTH, isValidSkillName } from "@/lib/skillValidation";
 import { normalizeRequiresList } from "@/lib/skillRequires";
@@ -48,6 +51,15 @@ interface SkillEditorProps {
    * 就等于能把别人租户的东西拉进自己租户。后端 `_apply_tenant_transfer` 同判据。
    */
   isSuperAdmin?: boolean;
+  /**
+   * 租户管理员：可以指定这个 Skill 归属本租户内的哪个部门。
+   *
+   * 归属部门决定「本部门及以下」这个范围从哪一层开始算 —— 挂在`技术部`的东西
+   * `开发组`能复用，挂在`开发组`的只有开发组能用。这是跨层级复用的开关。
+   * 不给部门管理员，是因为改归属等于把内容搬到别的部门名下（2026-08-20 裁定：
+   * 部门管理员只看不改）。
+   */
+  isTenantAdmin?: boolean;
   /** 迁移到指定租户；独立于表单保存，也不走审核（见后端 PUT /skills/{id}/tenant） */
   onTransferTenant?: (tenantId: number) => Promise<void>;
   onSaveDraft: (payload: SkillPayload) => void;
@@ -68,6 +80,7 @@ export default function SkillEditor({
   canReview,
   readOnly = false,
   isSuperAdmin = false,
+  isTenantAdmin = false,
   onTransferTenant,
   onSaveDraft,
   onPublish,
@@ -94,6 +107,10 @@ export default function SkillEditor({
     normalizeRequiresList(skill?.requires?.workflows)
   );
   const [visibility, setVisibility] = useState<SkillVisibility>(skill?.visibility || "tenant");
+  // 归属部门：决定「本部门及以下」从哪一层开始算。
+  // 默认取 skill 已有的；新建时留 null，由后端落成作者所在部门 ——
+  // 前端不猜这个默认值，猜错会把 skill 挂到错误的部门下并连带改变可见范围。
+  const [ownerDeptId, setOwnerDeptId] = useState<number | null>(skill?.owner_dept_id ?? null);
   const [variables, setVariables] = useState<string[]>([]);
   const { options: requiresOptions } = useRequiresOptions();
 
@@ -116,6 +133,7 @@ export default function SkillEditor({
       setRequiresTools(normalizeRequiresList(skill.requires?.tools));
       setRequiresWorkflows(normalizeRequiresList(skill.requires?.workflows));
       setVisibility(skill.visibility ?? "tenant");
+      setOwnerDeptId(skill.owner_dept_id ?? null);
     }
   }, [skill]);
 
@@ -163,9 +181,29 @@ export default function SkillEditor({
         workflows: requiresWorkflows,
       },
       visibility,
+      // 只在真的选了部门时才带上：不带 = 让后端保持原样（编辑）或落成作者部门（新建）。
+      // 带一个 null 上去会被理解成"清空归属部门"，那是另一个意思。
+      ...(ownerDeptId != null ? { owner_dept_id: ownerDeptId } : {}),
     }),
-    [name, displayName, description, content, requiresTools, requiresWorkflows, visibility]
+    [name, displayName, description, content, requiresTools, requiresWorkflows, visibility,
+     ownerDeptId]
   );
+
+  // 谁能改归属部门：超管与租户管理员。部门管理员按 2026-08-20 的裁定只看不改，
+  // 普通用户的 skill 固定挂在自己部门。这里只管**显示**，边界在后端。
+  const { departments } = useOrganization();
+  const { user: currentUser } = useCurrentUser();
+  const currentUserTenantId = currentUser?.tenant_id ?? null;
+
+  const canChooseDept = !readOnly && (isSuperAdmin || isTenantAdmin);
+
+  // 只列该 skill 所属租户的部门。列全部的话，超管会在一个属于租户 A 的 skill 上
+  // 选到租户 B 的部门 —— 那是一条跨租户的悬空归属，后端会拒，但用户不知道为什么。
+  const deptsOfOwnerTenant = useMemo(() => {
+    const tid = skill?.owner_tenant_id ?? currentUserTenantId;
+    if (tid == null) return departments;
+    return departments.filter((d) => d.tenant_id === tid);
+  }, [departments, skill?.owner_tenant_id, currentUserTenantId]);
 
   return (
     <Card>
@@ -388,9 +426,37 @@ export default function SkillEditor({
         </div>
         <p className="text-xs text-muted-foreground -mt-2">{t("requiresHelp")}</p>
 
+        {/* 范围与归属是同一个决定的两半：「本部门及以下」里的「本部门」指哪个，
+            由下面的归属部门决定。所以放在一个块里，而不是页面上隔开的两处设置。 */}
         <VisibilitySelect
           value={visibility}
           onChange={(value) => setVisibility(value as SkillVisibility)}
+          disabled={readOnly}
+          allowPublic={isSuperAdmin}
+          footer={
+            visibility === "dept" ? (
+              <div className="pt-2 space-y-1">
+                <label className="text-sm font-medium">{t("scopeOwnerDept")}</label>
+                {canChooseDept ? (
+                  <>
+                    <DeptSelect
+                      depts={deptsOfOwnerTenant}
+                      value={ownerDeptId}
+                      onChange={setOwnerDeptId}
+                      disabled={readOnly}
+                    />
+                    <p className="text-xs text-muted-foreground">{t("scopeOwnerDeptHint")}</p>
+                  </>
+                ) : (
+                  /* 不能改的人看到的是结论，不是一个灰掉的下拉 —— 灰掉的控件
+                     让人以为"再试试就能点"，一句话说清为什么更省事。 */
+                  <p className="text-xs text-muted-foreground">
+                    {skill?.owner_dept_name || t("scopeOwnerDeptLocked")}
+                  </p>
+                )}
+              </div>
+            ) : null
+          }
         />
 
         {/* 新建时不显示：租户由后端按作者落定，这时候让人选一个反而能建出
