@@ -318,5 +318,6 @@
   "scope_public_hint": "所有租户的所有成员可用（仅超级管理员可选）",
   "scopeOwnerDept": "归属部门",
   "scopeOwnerDeptHint": "默认为你所在的部门。它决定「本部门及以下」从哪一层开始算。",
-  "scopeOwnerDeptLocked": "归属部门固定为你所在的部门"
+  "scopeOwnerDeptLocked": "归属部门固定为你所在的部门",
+  "execWritableSubdirsHelp": "一行一个 skill 内相对路径（可用隐藏目录，如 .lark）。这些目录跨执行、跨对话保留，按使用者隔离；不填则每次执行都是干净的一次性目录。填错路径不会报错，只是那个目录不持久。"
 }

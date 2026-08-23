@@ -318,5 +318,6 @@
   "scope_public_hint": "All members of all tenants (super admin only)",
   "scopeOwnerDept": "Owning department",
   "scopeOwnerDeptHint": "Defaults to your own department. It decides where \"and below\" starts.",
-  "scopeOwnerDeptLocked": "Owning department is fixed to yours"
+  "scopeOwnerDeptLocked": "Owning department is fixed to yours",
+  "execWritableSubdirsHelp": "One skill-relative path per line (hidden dirs allowed, e.g. .lark). These persist across executions and conversations, isolated per user. Empty means every run starts clean. A wrong path does not error — that directory simply will not persist."
 }

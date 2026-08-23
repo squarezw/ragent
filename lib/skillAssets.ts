@@ -505,17 +505,23 @@ export interface ExecConfigEdits {
   warm_pool: boolean;
   /** 表单里可编辑；不传则沿用服务端现值（见 buildExecConfigPayload） */
   artifact_exclude?: string[];
+  /** 同上。2026-08-23 起表单里可编辑（此前只能改库） */
+  writable_subdirs?: string[];
 }
 
 /**
  * 组装 PUT /api/v1/skills/{id}/exec-config 请求体。
  *
- * writable_subdirs 已从表单下架（99% 的 skill 不需要，改由管理员走
- * scripts/import_skill_assets.py --writable-subdir 或直接调 API 设置），
- * 但**必须把 GET 拿到的现值原样带回**：后端对该字段是全量覆盖
- * （skills.py 的 `cfg.writable_subdirs = payload.writable_subdirs`，且 payload 侧
- * default_factory=list），不带回则任何一次保存都会把 fund skill 的
+ * writable_subdirs 与 artifact_exclude 两个列表字段，**表单里都可编辑**
+ * （writable_subdirs 从 2026-08-23 起；此前只能改库，结果是全平台只有 1 个 skill
+ * 用了它 —— 不是没人需要跨对话持久化，是没有入口）。
+ *
+ * 但 `edits` 里没给时**必须把 GET 拿到的现值原样带回**：后端对这两个字段是
+ * 全量覆盖（skills.py 的 `cfg.writable_subdirs = payload.writable_subdirs`，
+ * 且 payload 侧 default_factory=list），不带回则任何一次保存都会把 fund skill 的
  * [".report_state"] 静默清空，其增量调研的持久状态从此无处可写。
+ *
+ * 兜底保留的场景是「表单没渲染出这个字段」：GET 失败、或调用方只想改超时。
  * loaded 为 null（把一个非可执行 skill 首次配成可执行）时才是真正的空清单。
  */
 export function buildExecConfigPayload(
@@ -525,7 +531,7 @@ export function buildExecConfigPayload(
   return {
     image: edits.image,
     timeout_sec: edits.timeout_sec,
-    writable_subdirs: loaded?.writable_subdirs ?? [],
+    writable_subdirs: edits.writable_subdirs ?? loaded?.writable_subdirs ?? [],
     needs_network: edits.needs_network,
     warm_pool: edits.warm_pool,
     // 与 writable_subdirs 同一个坑：后端全量覆盖，不带回则任何一次保存都会把
