@@ -51,6 +51,14 @@ export default function SkillExecConfigForm({
   const [artifactExclude, setArtifactExclude] = useState(
     (config?.artifact_exclude ?? []).join("\n")
   );
+  // 一行一个相对路径。同样用 textarea：写的是路径不是枚举，且多数 skill 不填。
+  //
+  // 这个字段此前**只能改库**——API 支持、diff 里会显示，却没有输入框。
+  // 结果是全平台只有 1 个 skill 用了它（fund 的 .report_state），而那不是因为
+  // 没人需要跨对话持久化，是因为没有入口。
+  const [writableSubdirs, setWritableSubdirs] = useState(
+    (config?.writable_subdirs ?? []).join("\n")
+  );
 
   const selection = useMemo(
     () => resolveImageSelection(config?.image, images),
@@ -63,6 +71,7 @@ export default function SkillExecConfigForm({
     setNeedsNetwork(config?.needs_network ?? false);
     setWarmPool(config?.warm_pool ?? false);
     setArtifactExclude((config?.artifact_exclude ?? []).join("\n"));
+    setWritableSubdirs((config?.writable_subdirs ?? []).join("\n"));
   }, [config]);
 
   useEffect(() => {
@@ -169,17 +178,35 @@ export default function SkillExecConfigForm({
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
-        <Textarea
-          id="exec-artifact-exclude"
-          rows={2}
-          value={artifactExclude}
-          onChange={(e) => setArtifactExclude(e.target.value)}
-          placeholder="**/findings.json"
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+      {/* 两个都是「一行一条」的列表字段，并排放：它们的形态一样，
+          而且一个管「什么不给用户看」、一个管「什么跨执行留下来」，
+          放在一起比隔开更容易一起想清楚。 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
+          <Textarea
+            id="exec-artifact-exclude"
+            rows={2}
+            value={artifactExclude}
+            onChange={(e) => setArtifactExclude(e.target.value)}
+            placeholder="**/findings.json"
+            className="font-mono text-xs"
+          />
+          <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="exec-writable-subdirs">{t("execWritableSubdirs")}</Label>
+          <Textarea
+            id="exec-writable-subdirs"
+            rows={2}
+            value={writableSubdirs}
+            onChange={(e) => setWritableSubdirs(e.target.value)}
+            placeholder=".lark"
+            className="font-mono text-xs"
+          />
+          <p className="text-xs text-muted-foreground">{t("execWritableSubdirsHelp")}</p>
+        </div>
       </div>
 
       <div className="flex justify-end">
@@ -197,9 +224,14 @@ export default function SkillExecConfigForm({
                     .split("\n")
                     .map((g) => g.trim())
                     .filter(Boolean),
+                  writable_subdirs: writableSubdirs
+                    .split("\n")
+                    .map((d) => d.trim().replace(/^\/+|\/+$/g, ""))
+                    .filter(Boolean),
                 },
-                // 可写目录不在表单里编辑，但要按 GET 现值透传回去——后端全量覆盖，
-                // 漏传等于把 fund 的 .report_state 持久状态目录配置清空。
+                // 仍然传 config：两个列表字段现在都可编辑，但 buildExecConfigPayload
+                // 里的兜底还在——它保护的是「表单没渲染出这个字段」的情形（比如
+                // GET 失败、config 为 null），那时不该把已有配置清空。
                 config
               )
             )

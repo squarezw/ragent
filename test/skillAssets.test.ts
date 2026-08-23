@@ -455,7 +455,7 @@ const execEdits = {
 
 // 回归防线：可写目录已从表单下架，但后端 PUT 是全量覆盖（缺省 → []）。
 // 这条断言失败就意味着保存一次运行配置会清掉 fund 的 .report_state 持久状态。
-test("buildExecConfigPayload 按 GET 现值透传 writable_subdirs（表单不再编辑）", () => {
+test("buildExecConfigPayload：edits 未给 writable_subdirs 时透传 GET 现值", () => {
   const loaded = parseExecConfig({
     stage: "draft",
     image: "ragent-skill-fund:latest",
@@ -759,4 +759,80 @@ test("非布尔值一律归 null，不做真值转换", () => {
     const [img] = parseSandboxImages({ items: [{ name: "a", tag: "1", present: bogus }] });
     assert.equal(img.present, null, `present=${JSON.stringify(bogus)} 应归 null`);
   }
+});
+
+
+// ── writable_subdirs 现在可以在表单里编辑（2026-08-23）──
+//
+// 此前它只能改库：API 支持、diff 里会显示，却没有输入框。结果是全平台只有
+// 1 个 skill 用了它 —— 不是没人需要跨对话持久化，是没有入口。
+
+test("buildExecConfigPayload：edits 给了 writable_subdirs 就用它", () => {
+  const loaded = parseExecConfig({
+    stage: "draft",
+    image: "ragent-skill-general:latest",
+    timeout_sec: 120,
+    writable_subdirs: [".report_state"],
+    needs_network: true,
+  });
+  const payload = buildExecConfigPayload(
+    { ...execEdits, writable_subdirs: [".lark"] },
+    loaded
+  );
+  assert.deepEqual(payload.writable_subdirs, [".lark"], "表单的值应当覆盖服务端现值");
+});
+
+test("buildExecConfigPayload：edits 显式给空数组 = 真的清空", () => {
+  // 用户在表单里把内容删干净，意思就是"不要持久目录了"。
+  // 若这里回退成 loaded，删不掉 —— 表单看起来生效了，保存后又变回来。
+  const loaded = parseExecConfig({
+    stage: "draft",
+    image: "ragent-skill-general:latest",
+    timeout_sec: 120,
+    writable_subdirs: [".lark"],
+    needs_network: true,
+  });
+  const payload = buildExecConfigPayload({ ...execEdits, writable_subdirs: [] }, loaded);
+  assert.deepEqual(payload.writable_subdirs, [], "显式空数组必须落成空，不能回退成现值");
+});
+
+test("buildExecConfigPayload：loaded 为 null 且 edits 未给 → 空清单", () => {
+  // 把一个非可执行 skill 首次配成可执行：此时确实没有任何现值。
+  const payload = buildExecConfigPayload(execEdits, null);
+  assert.deepEqual(payload.writable_subdirs, []);
+  assert.deepEqual(payload.artifact_exclude, []);
+});
+
+test("buildExecConfigPayload：两个列表字段互不干扰", () => {
+  // 它们在表单里并排放，容易在改一个时把另一个漏掉 —— 后端是全量覆盖，
+  // 漏了就是静默清空（CRP 的 **/findings.json 会重新发链接给用户）。
+  const loaded = parseExecConfig({
+    stage: "draft",
+    image: "ragent-skill-docs:latest",
+    timeout_sec: 120,
+    writable_subdirs: [".lark"],
+    artifact_exclude: ["**/findings.json"],
+    needs_network: false,
+  });
+  const onlyWritable = buildExecConfigPayload(
+    { ...execEdits, writable_subdirs: [".other"] },
+    loaded
+  );
+  assert.deepEqual(onlyWritable.writable_subdirs, [".other"]);
+  assert.deepEqual(
+    onlyWritable.artifact_exclude,
+    ["**/findings.json"],
+    "只改可写目录时，内部产物不该被清空"
+  );
+
+  const onlyArtifact = buildExecConfigPayload(
+    { ...execEdits, artifact_exclude: ["**/tmp.json"] },
+    loaded
+  );
+  assert.deepEqual(onlyArtifact.artifact_exclude, ["**/tmp.json"]);
+  assert.deepEqual(
+    onlyArtifact.writable_subdirs,
+    [".lark"],
+    "只改内部产物时，可写目录不该被清空"
+  );
 });
