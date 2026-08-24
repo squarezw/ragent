@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
@@ -26,7 +26,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, Download, Eye, FileCode2, Loader2, Package, Trash2, Upload, X } from "lucide-react";
+import {
+  BookOpen,
+  Download,
+  Eye,
+  FileCode2,
+  Loader2,
+  Package,
+  Replace,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import {
   ASSET_KINDS,
   ASSET_MAX_FILE_BYTES,
@@ -40,9 +51,12 @@ import {
   planUploads,
   shortSha,
   willRevertToDraft,
+  partitionStagedUploads,
+  splitSkillMd,
+  stripRedundantRoot,
 } from "@/lib/skillAssets";
 import { useSkillAssets } from "@/hooks/useSkillAssets";
-import type { Skill, SkillAssetKind, SkillExecConfigPayload } from "@/types/skill";
+import type { Skill, SkillAssetItem, SkillAssetKind, SkillExecConfigPayload } from "@/types/skill";
 import SkillExecConfigForm from "./SkillExecConfigForm";
 
 interface SkillAssetsPanelProps {
@@ -126,6 +140,7 @@ export default function SkillAssetsPanel({
     uploadedCount,
     uploadAssets,
     saveAssetText,
+    replaceAssetFile,
     deleteAsset,
     saveExecConfig,
   } = useSkillAssets(skill.id, canEdit);
@@ -150,13 +165,10 @@ export default function SkillAssetsPanel({
   const handleExportAll = async () => {
     setExporting(true);
     try {
-      const res = await axios.get(
-        `/api/v1/skills/${skill.id}/assets/archive?stage=draft`,
-        { responseType: "blob" }
-      );
-      const url = window.URL.createObjectURL(
-        new Blob([res.data], { type: "application/zip" })
-      );
+      const res = await axios.get(`/api/v1/skills/${skill.id}/assets/archive?stage=draft`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/zip" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = `${skill.name || `skill-${skill.id}`}-draft.zip`;
@@ -177,16 +189,43 @@ export default function SkillAssetsPanel({
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const replaceInput = useRef<HTMLInputElement>(null);
+  /** 正在替换哪一份资产。用 ref 而非 state：从 onClick 到 input onChange 之间
+      不需要重渲染，而 state 的异步更新会让 onChange 读到上一次的值。 */
+  const replaceTarget = useRef<SkillAssetItem | null>(null);
+  /** 上次选文件夹时剥掉的顶层目录名，剥了就说出来，不做静默改写 */
+  const [strippedRoot, setStrippedRoot] = useState<string | null>(null);
 
   const groups = useMemo(() => groupAssetsByDir(items), [items]);
+  /**
+   * 根目录的 SKILL.md 是技能正文，不是资产。
+   *
+   * 它进资产表就是死重：isModelReadableAsset 把根目录 SKILL.md 排除在模型可读
+   * 之外（正文已全量注入），那一行谁也读不到、只占配额。平台在
+   * sync_builtin_skills.py 的 NOT_ASSETS 与后端导入里都已经这么约定。
+   */
+  const { body: bodyStaged, assets: assetStaged } = useMemo(
+    () => partitionStagedUploads(staged),
+    [staged]
+  );
+  /** SKILL.md 切出的正文（frontmatter 不进 content）；读文件是异步的，落在 state */
+  const [bodySplit, setBodySplit] = useState<{ body: string; error: string | null } | null>(null);
+
   const plan = useMemo(
     () =>
       planUploads(
         items,
-        staged.map((s) => ({ path: s.path, size: s.file.size, kind: s.kind }))
+        assetStaged.map((s) => ({ path: s.path, size: s.file.size, kind: s.kind }))
       ),
-    [items, staged]
+    [items, assetStaged]
   );
+  /** 行渲染按 id 找 entry：plan 只覆盖资产，下标跟 staged 不再一一对应 */
+  const entryByStagedId = useMemo(
+    () => new Map(assetStaged.map((item, i) => [item.id, plan.entries[i]])),
+    [assetStaged, plan]
+  );
+  /** 待上传总数 = 合格资产 + 一份正文（切分失败的不算） */
+  const pendingCount = plan.acceptedCount + (bodyStaged && !bodySplit?.error ? 1 : 0);
 
   /**
    * 实质编辑（上传/删除/改配置）会让后端把 published/rejected 打回 draft，
@@ -201,27 +240,95 @@ export default function SkillAssetsPanel({
     if (files.length > 0) setStaged((prev) => [...prev, ...files]);
   };
 
+  /**
+   * 文件夹来的一批：剥掉多余的顶层目录再入队。
+   *
+   * 只对**本批**判断，不掺已在队列里的文件 —— 连着选两个文件夹时，合起来看顶层
+   * 就不唯一了，于是第二个文件夹反而不剥，同一个操作两种结果。
+   */
+  /**
+   * SKILL.md 一进队列就切一次正文。
+   *
+   * 不放到「点上传」那一刻：切分失败（没有 frontmatter / --- 没闭合）要在列表里
+   * 当场看见并且能取消，而不是点了上传才报错 —— 那时资产可能已经传上去一半。
+   */
+  useEffect(() => {
+    if (!bodyStaged) {
+      setBodySplit(null);
+      return;
+    }
+    let stale = false;
+    bodyStaged.file.text().then((text) => {
+      if (!stale) setBodySplit(splitSkillMd(text));
+    });
+    return () => {
+      stale = true;
+    };
+  }, [bodyStaged]);
+
+  const addFolderFiles = (batch: StagedFile[]) => {
+    const { paths, stripped } = stripRedundantRoot(batch.map((b) => b.path));
+    setStrippedRoot(stripped);
+    addFiles(batch.map((b, i) => ({ ...b, path: paths[i] })));
+  };
+
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
-    addFiles(await collectDroppedFiles(event.dataTransfer));
+    addFolderFiles(await collectDroppedFiles(event.dataTransfer));
+  };
+
+  /** 把 SKILL.md 的正文写进草稿。frontmatter 不带过去 —— 见 splitSkillMd。 */
+  const runBodyUpdate = async (): Promise<boolean> => {
+    if (!bodyStaged || !bodySplit || bodySplit.error) return false;
+    try {
+      await axios.put(`/api/v1/skills/${skill.id}`, { content: bodySplit.body }, {
+        suppressErrorToast: true,
+      } as never);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const runUpload = async () => {
-    const uploadable = plan.entries
-      .map((entry, index) => ({ entry, staged: staged[index] }))
-      .filter(({ entry }) => entry.error === null)
+    const uploadable = assetStaged
+      .map((item) => ({ entry: entryByStagedId.get(item.id), staged: item }))
+      .filter((x) => x.entry && x.entry.error === null)
       .map(({ entry, staged: item }) => ({
         file: item.file,
-        path: entry.path,
-        kind: entry.kind,
+        // biome-ignore lint/style/noNonNullAssertion: 上一行的 filter 已保证非空
+        path: entry!.path,
+        // biome-ignore lint/style/noNonNullAssertion: 同上
+        kind: entry!.kind,
       }));
-    if (uploadable.length === 0) return;
+
+    // 正文先写：它失败了就别再往上堆资产，让用户先把 SKILL.md 修对。
+    // 反过来（先传资产）会得到一个"资产是新的、正文是旧的"的中间态。
+    const bodyPending = bodyStaged !== null && !bodySplit?.error;
+    if (bodyPending) {
+      const ok = await runBodyUpdate();
+      if (!ok) {
+        toast.error(t("skillBodyUpdateFailed"));
+        return;
+      }
+      toast.success(t("skillBodyUpdated"));
+      setStaged((prev) => prev.filter((x) => x.id !== bodyStaged.id));
+    }
+    if (uploadable.length === 0) {
+      if (bodyPending) onSkillChanged();
+      return;
+    }
 
     const results = await uploadAssets(uploadable);
     const failed = results.filter((r) => !r.ok);
     const okPaths = new Set(results.filter((r) => r.ok).map((r) => r.path));
-    setStaged((prev) => prev.filter((_, i) => !okPaths.has(plan.entries[i]?.path ?? "")));
+    setStaged((prev) =>
+      prev.filter((item) => {
+        const entry = entryByStagedId.get(item.id);
+        return !entry || !okPaths.has(entry.path);
+      })
+    );
     onSkillChanged();
 
     if (failed.length === 0) {
@@ -233,6 +340,16 @@ export default function SkillAssetsPanel({
       for (const item of failed) {
         console.error(`Upload asset failed: ${item.path}: ${item.detail}`);
       }
+    }
+  };
+
+  const runReplace = async (target: SkillAssetItem, file: File) => {
+    const result = await replaceAssetFile(target.path, target.kind, file);
+    if (result.ok) {
+      toast.success(t("assetReplaced", { path: target.path }));
+      onSkillChanged();
+    } else {
+      toast.error(result.detail || t("assetReplaceFailed"));
     }
   };
 
@@ -397,6 +514,19 @@ export default function SkillAssetsPanel({
                             <Button
                               variant="ghost"
                               size="icon"
+                              className="h-7 w-7 text-muted-foreground"
+                              onClick={() => {
+                                replaceTarget.current = item;
+                                replaceInput.current?.click();
+                              }}
+                              aria-label={t("assetReplace")}
+                              title={t("assetReplace")}
+                            >
+                              <Replace className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               onClick={() => setDeleteTarget(item.path)}
                               aria-label={t("assetDelete")}
@@ -450,6 +580,21 @@ export default function SkillAssetsPanel({
                   e.target.value = "";
                 }}
               />
+              {/* 替换用的单文件选择器。挑完文件才过 guard —— 与"先备好再确认"的上传
+                  流程一致：先弹退回草稿的确认、用户点了确认才弹文件框，会让人不知道
+                  自己刚确认的是什么。 */}
+              <input
+                ref={replaceInput}
+                type="file"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  e.target.value = "";
+                  const target = replaceTarget.current;
+                  replaceTarget.current = null;
+                  if (file && target) guard(() => runReplace(target, file));
+                }}
+              />
               <input
                 ref={folderInput}
                 type="file"
@@ -457,7 +602,7 @@ export default function SkillAssetsPanel({
                 hidden
                 {...DIRECTORY_INPUT_PROPS}
                 onChange={(e) => {
-                  addFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
+                  addFolderFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
                   e.target.value = "";
                 }}
               />
@@ -470,27 +615,43 @@ export default function SkillAssetsPanel({
                     {t("uploadPending", { count: staged.length })}
                   </p>
                   <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setStaged([])}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setStaged([]);
+                        setStrippedRoot(null);
+                      }}
+                    >
                       {tc("cancel")}
                     </Button>
                     <Button
                       size="sm"
-                      disabled={uploading || plan.acceptedCount === 0}
+                      disabled={uploading || pendingCount === 0}
                       onClick={() => guard(runUpload)}
                     >
                       {uploading && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                       {uploading
                         ? t("uploading", { done: uploadedCount, total: plan.acceptedCount })
-                        : t("uploadStart", { count: plan.acceptedCount })}
+                        : t("uploadStart", { count: pendingCount })}
                     </Button>
                   </div>
                 </div>
                 <p className="border-t px-3 py-2 text-xs text-muted-foreground">
                   {t("assetKindHint")}
                 </p>
+                {/* 剥掉一层目录是对用户输入的改写，必须看得见。下面那列路径本身已经是
+                    改写后的结果，但不说一句，用户会以为自己选错了文件夹。 */}
+                {strippedRoot && (
+                  <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                    {t("uploadStrippedRoot", { root: strippedRoot })}
+                  </p>
+                )}
                 <ul className="text-xs">
-                  {staged.map((item, index) => {
-                    const entry = plan.entries[index];
+                  {staged.map((item) => {
+                    const entry = entryByStagedId.get(item.id);
+                    // 正文那一行没有 entry（它不是资产），也就没有类型可选
+                    const isBody = entry === undefined;
                     const kindWarning = entry ? assetKindWarning(entry.path, entry.kind) : null;
                     return (
                       <li
@@ -517,6 +678,16 @@ export default function SkillAssetsPanel({
                               {uploadErrorMessage(t, entry.error)}
                             </p>
                           )}
+                          {/* 正文行：切分失败要当场看见。成功也要说清 frontmatter 不应用 ——
+                              默默只更新一半是最容易误导人的做法。 */}
+                          {isBody && bodySplit?.error && (
+                            <p className="text-destructive mt-1 break-words">{bodySplit.error}</p>
+                          )}
+                          {isBody && bodySplit && !bodySplit.error && (
+                            <p className="text-muted-foreground mt-1 break-words">
+                              {t("uploadSkillMdFrontmatterIgnored")}
+                            </p>
+                          )}
                           {/* 二进制标成 reference 会进注入块 footer 却读不出来，只提示不拦 */}
                           {kindWarning === "binaryAsReference" && (
                             <p className="text-amber-600 dark:text-amber-400 mt-1 break-words">
@@ -525,27 +696,36 @@ export default function SkillAssetsPanel({
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
-                          <Select
-                            value={entry?.kind ?? "reference"}
-                            onValueChange={(value) =>
-                              setStaged((prev) =>
-                                prev.map((s) =>
-                                  s.id === item.id ? { ...s, kind: value as SkillAssetKind } : s
+                          {isBody ? (
+                            <span className="whitespace-nowrap text-muted-foreground">
+                              {t("uploadSkillMdBody")}
+                            </span>
+                          ) : (
+                            <Select
+                              value={entry?.kind ?? "reference"}
+                              onValueChange={(value) =>
+                                setStaged((prev) =>
+                                  prev.map((s) =>
+                                    s.id === item.id ? { ...s, kind: value as SkillAssetKind } : s
+                                  )
                                 )
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-7 w-28 text-xs" aria-label={t("assetKind")}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ASSET_KINDS.map((kind) => (
-                                <SelectItem key={kind} value={kind}>
-                                  {assetKindLabel(t, kind)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-7 w-28 text-xs"
+                                aria-label={t("assetKind")}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ASSET_KINDS.map((kind) => (
+                                  <SelectItem key={kind} value={kind}>
+                                    {assetKindLabel(t, kind)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                           <span className="whitespace-nowrap text-muted-foreground">
                             {formatBytes(item.file.size)}
                           </span>
