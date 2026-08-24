@@ -8,7 +8,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ../public:/app/public
+      # 只挂需要持久化的**数据**目录，不要整个 public。
+      #
+      # 2026-08-03：整目录挂载会把镜像里代码自带的静态资源全部遮蔽 —— 新加的
+      # public/avatars/*.svg 在镜像里齐全，线上却 404，头像选择器一排裂图。
+      # （favicon.ico 之所以能显示，是因为它当年被人手工拷进了宿主目录，
+      #   不是来自镜像 —— 正好掩盖了这个问题。）
+      #
+      # 判据：uploads / sop-images 是用户数据，重建容器不能丢；其余是代码资源，
+      # 就该跟镜像一起走，改一次发一次。往 public 下新增静态资源时**不用**再动这里。
+      - ../public/uploads:/app/public/uploads
+      - ../public/sop-images:/app/public/sop-images
     env_file:
       - ../.env
     environment:
