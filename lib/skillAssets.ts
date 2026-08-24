@@ -342,11 +342,23 @@ export function isViewableAssetPath(path: string): boolean {
 
 /** 交给 kkFileView 预览的类型：平台本来就有这个模块，不在前端自己造轮子 */
 export const OFFICE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
-  ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".pdf",
 ]);
 
 export const IMAGE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".webp",
+  ".svg",
 ]);
 
 /** 路径的小写扩展名；无扩展名返回空串 */
@@ -382,6 +394,137 @@ export function inferAssetKind(path: string): SkillAssetKind {
   const mapped = slash > 0 ? TOP_DIR_KIND[normalized.slice(0, slash).toLowerCase()] : undefined;
   if (mapped) return mapped;
   return isViewableAssetPath(normalized) ? "reference" : "asset";
+}
+
+/** 技能正文本体的固定路径。根目录的 SKILL.md 不是资产。 */
+export const SKILL_MD_PATH = "SKILL.md";
+
+/**
+ * 这个路径是不是「技能正文」而非资产。
+ *
+ * 只认**根目录**的 SKILL.md：`references/SKILL.md` 是一份正当的参考文档。
+ * 平台在两个地方已经定了这条约定 —— scripts/sync_builtin_skills.py 的
+ * NOT_ASSETS，和后端 skill_import 导入时对 SKILL.md 的排除（正文进
+ * skills.content）。而 isModelReadableAsset 也明确把根目录 SKILL.md 排除在
+ * 模型可读资产之外（正文已全量注入），所以它作为资产存在纯属死重。
+ */
+export function isSkillBodyPath(path: string): boolean {
+  return normalizeAssetPath(path) === SKILL_MD_PATH;
+}
+
+/**
+ * 把待上传队列分成「正文」和「资产」两摊。
+ *
+ * 同一路径被加了两次时取**后加的那个**，与重复选文件时"后来的覆盖先前的"直觉一致。
+ */
+export function partitionStagedUploads<T extends { path: string }>(
+  staged: readonly T[]
+): { body: T | null; assets: T[] } {
+  const assets: T[] = [];
+  let body: T | null = null;
+  for (const item of staged) {
+    if (isSkillBodyPath(item.path)) body = item;
+    else assets.push(item);
+  }
+  return { body, assets };
+}
+
+/**
+ * 切出 SKILL.md 的正文（去掉 frontmatter）。
+ *
+ * **只做边界切分，不解析 frontmatter 里的值。** 值解析要处理折叠标量（`>-` `|`）、
+ * 缩进续行、引号剥离、CRLF —— 那套规则在后端 skill_import.parse_skill_md 里，
+ * 是唯一真源。在前端再实现一份，两边迟早对同一个 description 给出不同结果，
+ * 而分叉的表现是"传上去的和显示的不一样"，很难往解析器上想。
+ *
+ * 所以 frontmatter 里的 description / name 一律**不应用**，UI 必须明说这件事，
+ * 而不是默默只更新一半。
+ *
+ * 边界规则与后端逐字对齐：先统一换行，必须以 `---` 开头，再匹配闭合的 `---`。
+ * 报错文案也照抄 —— 同一份文件在两个入口得到两种说法，用户会以为是两个问题。
+ */
+export function splitSkillMd(text: string): {
+  body: string;
+  hasFrontmatter: boolean;
+  error: string | null;
+} {
+  // CRLF/CR 都规整成 LF：Windows 上生成的 SKILL.md 很常见，而它对
+  // frontmatter 的边界匹配是致命的（后端踩过）。
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  if (!normalized.startsWith("---")) {
+    return {
+      body: "",
+      hasFrontmatter: false,
+      error: "SKILL.md 必须以 `---` 开头的 frontmatter 起始",
+    };
+  }
+
+  const m = normalized.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?([\s\S]*)$/);
+  if (!m) {
+    return {
+      body: "",
+      hasFrontmatter: true,
+      error: "SKILL.md 的 frontmatter 没有闭合的 `---`",
+    };
+  }
+
+  return { body: m[2], hasFrontmatter: true, error: null };
+}
+
+/**
+ * 选（或拖入）文件夹上传时，剥掉那层多余的顶层目录。
+ *
+ * 用户选 `drawing-tolerance-extractor-draft/` 是想传**它里面的东西** ——
+ * scripts/、agents/、SKILL.md —— 而不是造一个同名目录把资产埋进去一层。
+ * 这是批量覆盖的主要用法，与「导入 skill」同一个意图（后端
+ * skill_import.strip_redundant_root）。
+ *
+ * 但判据不同：后端能靠「剥完必须出现根级 SKILL.md」兜底，而资产文件夹通常
+ * 没有 SKILL.md，那个阀在这里用不上。这里的阀是**剥完必须仍有目录层级**：
+ *
+ *   drawing-.../scripts/a.py + drawing-.../SKILL.md
+ *     → 剥 → scripts/a.py + SKILL.md          ✅ 仍有目录，剥
+ *   scripts/a.py + scripts/b.py（用户直接选了 scripts 文件夹）
+ *     → 剥 → a.py + b.py                       ❌ 只剩散文件，不剥
+ *
+ * 第二种必须不剥：kind 是按顶层目录推断的（TOP_DIR_KIND），`.py` 落到根级会
+ * 按扩展名判成 reference —— 脚本就此不再被执行，而上传照样成功、列表照样显示，
+ * 没有任何报错。宁可多留一层让用户自己改路径，也不能静默改判 kind。
+ *
+ * 同时选中多个文件夹时不剥：顶层不唯一，无法判断哪一层是多余的。
+ */
+export function stripRedundantRoot(paths: readonly string[]): {
+  paths: string[];
+  stripped: string | null;
+} {
+  const normalized = paths.map((p) => normalizeAssetPath(p));
+  const unchanged = { paths: normalized, stripped: null as string | null };
+  if (normalized.length === 0) return unchanged;
+
+  // 最外层有散文件 → 不是"多包了一层"的形态，原样保留。
+  //
+  // 这个判断必须显式写：`["scripts", "scripts/a.py"]` 的首段都是 scripts，
+  // 唯一性检查放不出它，而剥它会把那个叫 scripts 的**文件**原样留下、
+  // 同时把 scripts/a.py 剥成 a.py，得到一份自相矛盾的清单。
+  if (!normalized.every((p) => p.includes("/"))) return unchanged;
+
+  // 取首段用 split，不用 `slice(0, indexOf("/"))` —— 后者在没有斜杠时是
+  // slice(0, -1)，会把 "a.py" 算成 "a.p"，于是靠"顶层碰巧不唯一"来兜正确结果。
+  const tops = new Set(normalized.map((p) => p.split("/", 1)[0]));
+  if (tops.size !== 1) return unchanged;
+
+  const root = [...tops][0];
+  if (!root) return unchanged;
+
+  const stripped = normalized.map((p) => p.slice(p.indexOf("/") + 1));
+  // 剥完只剩散文件 → 见上面第二种反例。
+  // （不再检查"剥出空路径"：normalizeAssetPath 已去掉尾部斜杠，`my-skill/` 会
+  //   变成不含斜杠的 `my-skill`，在上面那个 every 就被拦下，走不到这里。
+  //   留一条测不到的分支，比没有这条分支更糟。）
+  if (!stripped.some((p) => p.includes("/"))) return unchanged;
+
+  return { paths: stripped, stripped: root };
 }
 
 /**

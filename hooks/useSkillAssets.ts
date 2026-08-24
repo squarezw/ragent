@@ -165,6 +165,33 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     [skillId, assets.mutate]
   );
 
+  /**
+   * 用一个新文件替换某个已有资产：**路径与 kind 都保持原样**，只换内容。
+   *
+   * kind 原样回传（宽松的 string，见 saveAssetText 上面那段）：后端 PUT 是
+   * upsert，替换时若按新文件名重新推断 kind，把 `scripts/run.py` 换成一个叫
+   * `run_v2.py` 的文件就会连带把它从 script 改判成 reference —— 它此后不再被
+   * 执行，而替换本身显示成功。替换的语义是"换这一份的内容"，不是"重新登记一份"。
+   */
+  const replaceAssetFile = useCallback(
+    async (path: string, kind: string, file: File): Promise<AssetUploadResult> => {
+      if (!skillId) return { path, ok: false, detail: "no skill" };
+      try {
+        const buffer = await file.arrayBuffer();
+        await axios.put(
+          `/api/v1/skills/${skillId}/assets/${encodeAssetPath(path)}`,
+          { kind, content_base64: arrayBufferToBase64(buffer) },
+          { suppressErrorToast: true } as never
+        );
+        await assets.mutate();
+        return { path, ok: true };
+      } catch (error) {
+        return { path, ok: false, detail: detailOf(error) };
+      }
+    },
+    [skillId, assets.mutate]
+  );
+
   const deleteAsset = useCallback(
     async (path: string): Promise<AssetUploadResult> => {
       if (!skillId) return { path, ok: false, detail: "no skill" };
@@ -215,6 +242,7 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     uploadedCount,
     uploadAssets,
     saveAssetText,
+    replaceAssetFile,
     deleteAsset,
     saveExecConfig,
     refresh: assets.mutate,
