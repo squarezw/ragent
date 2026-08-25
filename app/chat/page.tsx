@@ -22,6 +22,7 @@ import { useAppDatasets } from "@/app/chat/hooks/useAppDatasets";
 import { useMessageScroll } from "@/app/chat/hooks/useMessageScroll";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Attachment } from "./hooks/useFileAttachments";
+import type { TurnUsage } from "@/types/token-usage";
 
 interface Message {
   role: "user" | "assistant";
@@ -32,6 +33,7 @@ interface Message {
     | { id?: number; originalname: string; path: string; mimetype?: string }[];
   segment_ids?: number[];
   detail_id?: number;
+  usage?: TurnUsage;
   attachments?: Attachment[];
 }
 
@@ -245,7 +247,7 @@ export default function ChatPage() {
           }
         },
         onComplete: (result: any) => {
-          const { answer, detail_id, reference, segment_ids } = result;
+          const { answer, detail_id, reference, segment_ids, usage } = result;
           setMessages((msgs) => [
             ...msgs,
             {
@@ -254,6 +256,7 @@ export default function ChatPage() {
               reference,
               segment_ids,
               detail_id,
+              usage,
             },
           ]);
           setIsStreaming(false);
@@ -379,6 +382,7 @@ export default function ChatPage() {
             reference: formattedReference,
             segment_ids: detail.segmentsIds || [],
             detail_id: detail.id,
+            usage: detail.usage,
           });
         }
       }

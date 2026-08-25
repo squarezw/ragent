@@ -60,6 +60,7 @@ import { toast } from "sonner";
 import { useTranslations, useLocale } from "next-intl";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import type { TurnUsage } from "@/types/token-usage";
 
 interface Session {
   id: number;
@@ -105,6 +106,7 @@ interface SessionDetail {
   references?: any[];
   segmentsIds?: number[];
   segmentSimilarities?: number[];
+  usage?: TurnUsage;
 }
 
 interface SessionWithDetails extends Session {
@@ -850,6 +852,47 @@ export default function ChatSessionsPage() {
                                             onOpenReferencesDialog={openReferencesDialog}
                                             onPreviewFile={setPreviewFile}
                                           />
+                                          {detail.usage && (
+                                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                              <span>
+                                                {t("tokenInputLabel")}:{" "}
+                                                {(detail.usage.promptTokens ?? 0).toLocaleString()}
+                                              </span>
+                                              <span>
+                                                {t("tokenOutputLabel")}:{" "}
+                                                {(
+                                                  detail.usage.completionTokens ?? 0
+                                                ).toLocaleString()}
+                                              </span>
+                                              <span className="font-medium">
+                                                {t("tokenTotalLabel")}:{" "}
+                                                {(detail.usage.totalTokens ?? 0).toLocaleString()}
+                                              </span>
+                                              {detail.usage.llmCalls ? (
+                                                <span>
+                                                  {t("tokenCallsLabel", {
+                                                    count: detail.usage.llmCalls,
+                                                  })}
+                                                </span>
+                                              ) : null}
+                                              {detail.usage.cacheReadTokens ? (
+                                                <span className="text-emerald-600">
+                                                  {t("tokenCachedLabel")}:{" "}
+                                                  {detail.usage.cacheReadTokens.toLocaleString()}
+                                                </span>
+                                              ) : null}
+                                              {detail.usage.modelName ? (
+                                                <span className="font-mono">
+                                                  {detail.usage.modelName}
+                                                </span>
+                                              ) : null}
+                                              {detail.usage.partial ? (
+                                                <span className="text-amber-600">
+                                                  {t("tokenPartialLabel")}
+                                                </span>
+                                              ) : null}
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                       {detail.feedback && (

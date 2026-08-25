@@ -100,5 +100,12 @@
   "dropFilesHere": "Drop files here to upload",
   "feedbackAlreadySubmitted": "You have already submitted feedback for this message",
   "feedbackSubmitFailed": "Failed to submit feedback, please try again later",
-  "feedbackSubmitSuccess": "Feedback submitted successfully"
+  "feedbackSubmitSuccess": "Feedback submitted successfully",
+  "tokenTotal": "Used {count}",
+  "tokenInput": "in {count}",
+  "tokenOutput": "out {count}",
+  "tokenCalls": "{count} model calls",
+  "tokenPartialMark": " (partial)",
+  "tokenPartialHint": "interrupted — known portion only",
+  "tokenCached": "{count} cached"
 }

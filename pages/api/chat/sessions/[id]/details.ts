@@ -120,7 +120,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         vote_bad,
         "references",
         segments_ids,
-        segment_similarities
+        segment_similarities,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        llm_calls,
+        model_name,
+        usage_partial,
+        cache_read_tokens,
+        cache_write_tokens
       FROM chat_session_detail
       WHERE session_id = $1
       ORDER BY submitted_at ASC
@@ -181,6 +189,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           : [],
         segmentsIds: detail.segments_ids,
         segmentSimilarities: detail.segment_similarities,
+        // 用量：整块给或整块不给。
+        //
+        // total_tokens 为 NULL = 这一轮**没有记录**（存量对话，或 provider
+        // 没回 usage），与「消耗为 0」是两回事。这里给 undefined 而不是把各
+        // 字段填 0，前端才能靠「有没有这个对象」决定显示与否 —— 显示成 0
+        // 会被当成免费。
+        usage:
+          detail.total_tokens === null || detail.total_tokens === undefined
+            ? undefined
+            : {
+                promptTokens: detail.prompt_tokens,
+                completionTokens: detail.completion_tokens,
+                totalTokens: detail.total_tokens,
+                llmCalls: detail.llm_calls,
+                modelName: detail.model_name,
+                partial: detail.usage_partial === true,
+                cacheReadTokens: detail.cache_read_tokens,
+                cacheWriteTokens: detail.cache_write_tokens,
+              },
       })),
     };
 

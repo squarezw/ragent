@@ -8,6 +8,7 @@ import TaskProgressCard from "@/app/chat/components/TaskProgressCard";
 import { stripWorkflowRunStartedPrefix } from "@/hooks/useChatSession";
 import type { Attachment } from "@/app/chat/hooks/useFileAttachments";
 import type { TaskState } from "@/types/workflow-run";
+import type { TurnUsage } from "@/types/token-usage";
 
 function getFileIcon(mimetype?: string) {
   if (mimetype?.includes("pdf") || mimetype?.includes("PDF")) {
@@ -35,6 +36,7 @@ interface Message {
     | { id?: number; originalname: string; path: string; mimetype?: string }[];
   segment_ids?: number[];
   detail_id?: number;
+  usage?: TurnUsage;
   attachments?: Attachment[];
 }
 
@@ -178,6 +180,7 @@ export default function MessageList({
                 />
                 <FeedbackUI
                   detailId={msg.detail_id}
+                  usage={msg.usage}
                   sendFeedback={sendFeedback}
                   content={msg.content}
                 />

@@ -69,5 +69,11 @@
   "referenceLabel": "参考",
   "citationCount": "{count}条引用",
   "exportSuccess": "导出成功",
-  "exportFilename": "会话列表.xlsx"
+  "exportFilename": "会话列表.xlsx",
+  "tokenInputLabel": "输入",
+  "tokenOutputLabel": "输出",
+  "tokenTotalLabel": "合计",
+  "tokenCallsLabel": "{count} 次调用",
+  "tokenPartialLabel": "中断（部分用量）",
+  "tokenCachedLabel": "缓存命中"
 }
