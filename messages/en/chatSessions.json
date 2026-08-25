@@ -69,5 +69,11 @@
   "referenceLabel": "Reference",
   "citationCount": "{count, plural, =1 {1 citation} other {# citations}}",
   "exportSuccess": "Export successful",
-  "exportFilename": "sessions.xlsx"
+  "exportFilename": "sessions.xlsx",
+  "tokenInputLabel": "Input",
+  "tokenOutputLabel": "Output",
+  "tokenTotalLabel": "Total",
+  "tokenCallsLabel": "{count} calls",
+  "tokenPartialLabel": "interrupted (partial)",
+  "tokenCachedLabel": "Cached"
 }

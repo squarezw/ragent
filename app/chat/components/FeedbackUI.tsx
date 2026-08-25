@@ -8,9 +8,11 @@ import axios from "@/lib/axios";
 import { copyText } from "@/lib/clipboard";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import type { TurnUsage } from "@/types/token-usage";
 
 interface FeedbackUIProps {
   detailId?: number;
+  usage?: TurnUsage;
   sendFeedback: (
     detailId: number,
     voteGood: boolean,
@@ -20,7 +22,7 @@ interface FeedbackUIProps {
   content?: string;
 }
 
-const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content }) => {
+const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content, usage }) => {
   const t = useTranslations("chat");
   const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
@@ -108,6 +110,12 @@ const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content
       setIsExporting(false);
     }
   };
+
+  // 「共消耗」只在**有记录**时出现。
+  // usage 缺席 ≠ 消耗为 0：存量对话、provider 没回 usage 都会缺席，
+  // 渲染成「共消耗 0」会被读成「这轮免费」。
+  const totalTokens = usage?.totalTokens;
+  const hasUsage = typeof totalTokens === "number";
 
   return (
     <div className="flex items-center gap-2 mt-2">
@@ -230,8 +238,48 @@ const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      {hasUsage && (
+        <span
+          className="ml-1 text-xs text-muted-foreground whitespace-nowrap"
+          title={tokenUsageDetail(t, usage!)}
+        >
+          {t("tokenTotal", { count: formatTokenCount(totalTokens!) })}
+          {usage?.partial ? t("tokenPartialMark") : ""}
+        </span>
+      )}
     </div>
   );
 };
+
+/** 大数字读起来费劲：12,345 比 12345 快得多；上万折成 k 更快 */
+function formatTokenCount(n: number): string {
+  if (n >= 10000) return `${(n / 1000).toFixed(1)}k`;
+  return n.toLocaleString();
+}
+
+/**
+ * hover 出来的明细。
+ *
+ * 带上「调了几次模型」是有用的：一轮对话不等于一次调用，agent 每个工具轮次都重发
+ * 完整上下文，输入量因此逐轮累积。看到一个很大的输入量时，这个数字能立刻区分
+ * 「上下文长」还是「工具轮次多」——这两者的处置完全不同。
+ */
+type ChatTranslator = ReturnType<typeof useTranslations<"chat">>;
+
+function tokenUsageDetail(t: ChatTranslator, usage: TurnUsage): string {
+  const parts = [
+    t("tokenInput", { count: (usage.promptTokens ?? 0).toLocaleString() }),
+    t("tokenOutput", { count: (usage.completionTokens ?? 0).toLocaleString() }),
+  ];
+  if (usage.llmCalls) parts.push(t("tokenCalls", { count: usage.llmCalls }));
+  // 命中缓存的输入按约 1/10 计价 —— 同样的 token 数，成本可能差十倍。
+  // 只看总量会对成本产生完全错误的直觉。
+  if (usage.cacheReadTokens) {
+    parts.push(t("tokenCached", { count: usage.cacheReadTokens.toLocaleString() }));
+  }
+  if (usage.modelName) parts.push(usage.modelName);
+  if (usage.partial) parts.push(t("tokenPartialHint"));
+  return parts.join(" · ");
+}
 
 export default FeedbackUI;

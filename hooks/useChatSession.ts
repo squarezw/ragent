@@ -6,6 +6,7 @@ import {
   type ToolStatusEvent,
 } from "@/lib/chatSse";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { normalizeTurnUsage, type TurnUsage } from "@/types/token-usage";
 
 // 复用 axios 认证逻辑的辅助函数
 const getAuthHeaders = () => {
@@ -177,6 +178,7 @@ export function useChatSession() {
           reference?: unknown;
           segment_ids?: number[];
           detail_id?: number;
+          usage?: TurnUsage;
         }) => void;
         onError: (error: Error) => void;
         /**
@@ -274,6 +276,7 @@ export function useChatSession() {
           let reference: unknown = null;
           let segmentIds: number[] = [];
           let detailId: number | undefined;
+          let usage: TurnUsage | undefined;
           let currentEvent: string | null = null;
           let buffer = "";
 
@@ -360,6 +363,7 @@ export function useChatSession() {
                         reference,
                         segment_ids: segmentIds,
                         detail_id: detailId,
+                        usage,
                       });
                     }
                     return;
@@ -436,6 +440,10 @@ export function useChatSession() {
                       }
                       if (parsed.detail_id) {
                         detailId = parsed.detail_id;
+                      }
+                      if (parsed.usage) {
+                        // 后端随 finish 一起给，省一次为了显示「共消耗」的往返
+                        usage = normalizeTurnUsage(parsed.usage);
                       }
                       if (parsed.chat_id) {
                         setChatId(parsed.chat_id);
@@ -553,6 +561,10 @@ export function useChatSession() {
               reference,
               segment_ids: segmentIds,
               detail_id: detailId,
+              // 这条兜底路径同样要带 usage：流正常结束但没收到 [DONE] 时走这里。
+              // 漏了的话那一轮的「共消耗」凭空消失，而对话本身一切正常 ——
+              // 只在某些结束形态下缺失，最难被发现。
+              usage,
             });
           }
         } catch (error: unknown) {

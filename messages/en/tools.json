@@ -113,5 +113,7 @@
   "builtinWhy": "Rationale",
   "builtinDisabledByEnv": "Disabled by env",
   "builtinEnvHint": "Deployment switch: environment variable {envVar}.",
-  "workflowTool": "Long-task switch"
+  "workflowTool": "Long-task switch",
+  "footprintSummary": "{count} subtools · ~{tokens} tokens/turn",
+  "footprintUnavailable": "registration failed — not callable"
 }

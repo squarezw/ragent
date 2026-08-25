@@ -254,6 +254,10 @@ export default function ToolsPage() {
                         <ToolIcon tool={tool} />
                         <div>
                           <div>{tool.display_name}</div>
+                          {/* 提示词占用：绑定这个工具后每一轮对话要多付多少。
+                              放在工具名下方而不是另开一列 —— 这个数字是这个工具的属性，
+                              离开它就要靠人对行号，容易看串。 */}
+                          <ToolFootprintHint footprint={tool.footprint} />
                         </div>
                       </div>
                     </TableCell>
@@ -368,4 +372,37 @@ export default function ToolsPage() {
       />
     </div>
   );
+}
+
+/**
+ * 工具的提示词占用。
+ *
+ * 一个 MCP 工具在这张表里只是一行，运行时却可能展开成几十个子工具的完整
+ * JSON Schema，且每一轮对话都全量重发。2026-08-25 实测：一句「你好」耗
+ * 39,550 输入 token，其中约 92% 是工具定义，企查查那四个端点独占 86%。
+ * 这个提示的意义就是让绑定成本在勾选那一刻可见，而不是等看账单才发现。
+ */
+function ToolFootprintHint({ footprint }: { footprint?: Tool["footprint"] }) {
+  const t = useTranslations("tools");
+  // 缺席 = 这个工具不走 MCP 注册（native / workflow），不是"占用为 0"。
+  // 硬造一个 0 会让两种完全不同的情况看起来一样。
+  if (!footprint) return null;
+
+  if (footprint.status === "failed") {
+    // 连不上的服务器在这张表里和正常工具长得一模一样，而模型根本调不到它。
+    return <div className="text-xs text-destructive">{t("footprintUnavailable")}</div>;
+  }
+
+  return (
+    <div className="text-xs text-muted-foreground">
+      {t("footprintSummary", {
+        count: footprint.subtool_count,
+        tokens: formatTokens(footprint.estimated_tokens),
+      })}
+    </div>
+  );
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }

@@ -41,6 +41,23 @@ export interface Tool {
     avg_execution_time_ms: number;
   };
   app_tools?: ToolAppAssociation[];
+  /**
+   * 这个工具在 system prompt 里占多大。
+   *
+   * 界面上一个 MCP 工具只是一行地址（qcc-operation 的 default_config 才 140 字节），
+   * 运行时它从对方服务器拉回几十个子工具的完整 JSON Schema，且**每一轮对话都全量
+   * 重发**。2026-08-25 实测：一句「你好」耗 39,550 输入 token，其中约 92% 是工具定义。
+   *
+   * 缺席是正常的：native / workflow 类型不走 MCP 注册，本来就没有这个块。
+   */
+  footprint?: {
+    /** 展开成几个子工具；0 且 status=failed 表示服务器连不上 */
+    subtool_count: number;
+    schema_chars: number;
+    /** 粗估（len/2，与技能注入块同口径），不是精确值 */
+    estimated_tokens: number;
+    status: "ok" | "failed";
+  };
 }
 
 export interface ToolsResponse {

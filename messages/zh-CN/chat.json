@@ -100,5 +100,12 @@
   "dropFilesHere": "拖放文件到此处上传",
   "feedbackAlreadySubmitted": "您已经提交过反馈了，无需重复提交",
   "feedbackSubmitFailed": "反馈提交失败，请稍后重试",
-  "feedbackSubmitSuccess": "反馈提交成功"
+  "feedbackSubmitSuccess": "反馈提交成功",
+  "tokenTotal": "共消耗 {count}",
+  "tokenInput": "输入 {count}",
+  "tokenOutput": "输出 {count}",
+  "tokenCalls": "{count} 次模型调用",
+  "tokenPartialMark": "（部分）",
+  "tokenPartialHint": "本轮中断，仅为已知部分",
+  "tokenCached": "缓存命中 {count}"
 }
