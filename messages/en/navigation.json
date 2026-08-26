@@ -24,5 +24,7 @@
   "toolsManagement": "Tools",
   "processManagement": "Process",
   "skillsManagement": "Skills",
-  "reviewQueue": "Review Queue"
+  "reviewQueue": "Review Queue",
+  "billingUsage": "Usage",
+  "billingRates": "Billing rates"
 }

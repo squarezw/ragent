@@ -40,6 +40,8 @@ import {
   Smartphone,
   Sparkles,
   User,
+  Percent,
+  Wallet,
   Wrench,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -136,6 +138,22 @@ export default function AppSidebar() {
       visible: true,
       items: [
         { title: t("chatSessions"), icon: MessageSquareMore, path: "/chat-sessions" },
+        {
+          // 用量明细：租户管理员看本租户，超管看全部。
+          // 可见性只是导航层面的整理 —— 真正的租户隔离在后端按 tenant 收窄，
+          // 菜单藏起来不等于接口拦得住。
+          title: t("billingUsage"),
+          icon: Wallet,
+          path: "/billing",
+          visible: canManageOperation,
+        },
+        {
+          // 计费系数：仅超管。系数直接决定所有租户的账单
+          title: t("billingRates"),
+          icon: Percent,
+          path: "/billing/rates",
+          visible: isSuperAdmin,
+        },
         {
           // P5 开放自建：普通用户也可创建自己的 Skill（草稿走提交审核）
           title: t("skillsManagement"),

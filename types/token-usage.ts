@@ -34,6 +34,13 @@ export interface TurnUsage {
   cacheReadTokens?: number;
   /** 写入缓存的 token（Anthropic 系计费更高）；DeepSeek 无此概念 */
   cacheWriteTokens?: number;
+  /**
+   * 本轮折算的积分。由后端计费引擎算出并落流水，前端只显示不重算 ——
+   * 系数改过之后重算会让历史账单跟着变。
+   *
+   * 缺席 = 这一轮没有产生流水（无租户归属，或早于计费上线）。
+   */
+  credits?: string;
   /** true = 用户中途中断，这是当时已知的部分用量，不完整 */
   partial?: boolean;
 }
@@ -74,6 +81,10 @@ export function normalizeTurnUsage(raw: unknown): TurnUsage | undefined {
     totalTokens,
     llmCalls: num("llmCalls", "llm_calls"),
     cacheReadTokens: num("cacheReadTokens", "cache_read_tokens"),
+    credits:
+      typeof r.credits === "string" || typeof r.credits === "number"
+        ? String(r.credits)
+        : undefined,
     cacheWriteTokens: num("cacheWriteTokens", "cache_write_tokens"),
     modelName: typeof modelName === "string" ? modelName : undefined,
     partial: r.partial === true || r.usage_partial === true,

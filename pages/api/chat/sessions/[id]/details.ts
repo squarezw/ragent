@@ -127,6 +127,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         llm_calls,
         model_name,
         usage_partial,
+          -- 关联子查询要用**外层表名**（本查询没给 chat_session_detail 起别名）。
+          -- 写成 detail.id 是把下面 JS 映射里的行变量名当成了 SQL 别名，
+          -- PostgreSQL 报 missing FROM-clause entry for table "detail"。
+        (SELECT ct.amount FROM credit_transactions ct
+          WHERE ct.chat_session_detail_id = chat_session_detail.id
+            AND ct.tx_type = 'consume' LIMIT 1) AS credits,
         cache_read_tokens,
         cache_write_tokens
       FROM chat_session_detail
@@ -206,6 +212,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 modelName: detail.model_name,
                 partial: detail.usage_partial === true,
                 cacheReadTokens: detail.cache_read_tokens,
+                // 积分：没有流水就是 undefined（该轮无租户归属 / 早于计费上线），
+                // 不要补 0 —— 0 会被读成「这轮免费」
+                credits: detail.credits === null ? undefined : String(detail.credits),
                 cacheWriteTokens: detail.cache_write_tokens,
               },
       })),
