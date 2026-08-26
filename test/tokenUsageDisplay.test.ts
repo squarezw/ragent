@@ -30,7 +30,11 @@ test("接口在 total_tokens 为 NULL 时返回 undefined，而不是补 0", () 
 test("聊天区靠 typeof 判断而不是真值判断", () => {
   // `usage?.totalTokens ? ...` 会把真实的 0 也吃掉。0 是合法值（极短的一轮），
   // 判据必须是"有没有这个数"，不是"这个数是不是非零"。
-  assert.match(FEEDBACK_UI, /typeof totalTokens === ["']number["']/, "hasUsage 必须用 typeof 判断");
+  assert.match(
+    FEEDBACK_UI,
+    /typeof credits === ["']string["']/,
+    "hasCredits 必须用 typeof 判断 —— 真值判断会把空串当成有值",
+  );
 });
 
 test("接口 SELECT 了六列用量字段", () => {
@@ -76,13 +80,15 @@ test("**每一个** onComplete 调用点都带 usage", () => {
 test("FeedbackUI 收 usage 并渲染", () => {
   assert.match(FEEDBACK_UI, /usage\?: TurnUsage;/, "props 没有 usage");
   assert.ok(FEEDBACK_UI.includes("tokenTotal"), "没渲染「共消耗」");
-  assert.ok(FEEDBACK_UI.includes("tokenUsageDetail"), "没有 hover 明细");
+  assert.doesNotMatch(FEEDBACK_UI, /tokenUsageDetail/, "hover 明细应已移除");
 });
 
 test("hover 明细里带上模型调用次数", () => {
   // 一轮对话不等于一次调用：agent 每个工具轮次都重发完整上下文，输入量逐轮累积。
   // 没有这个数，看到很大的输入量无法区分「上下文长」还是「工具轮次多」。
-  assert.match(FEEDBACK_UI, /usage\.llmCalls/, "明细里没有模型调用次数");
+  // 聊天区不再展示细节，但算账的人需要：没有这个数，看到很大的输入量
+  // 无法区分「上下文长」还是「工具轮次多」。
+  assert.match(ADMIN_PAGE, /usage\.llmCalls/, "管理员页丢了模型调用次数");
 });
 
 test("管理员会话详情显示 input / output 而不是只有合计", () => {
@@ -189,6 +195,35 @@ test("接口 SELECT 与映射都带上缓存列", () => {
 test("两处显示都带缓存命中", () => {
   // 只显示总量会让人对成本产生完全错误的直觉：4 万 token 里三万多是缓存命中时，
   // 真实成本约为按全额算的六分之一。
-  assert.ok(FEEDBACK_UI.includes("cacheReadTokens"), "hover 明细里没有缓存命中");
   assert.ok(ADMIN_PAGE.includes("cacheReadTokens"), "管理员页没有缓存命中");
+});
+
+
+test("聊天区显示积分而非 token", () => {
+  // token 数对用户没有意义：他既不为 token 付钱，也控制不了那 4 万的工具定义。
+  // 积分才是账户里会少掉的东西。
+  assert.match(FEEDBACK_UI, /usage\?\.credits/, "没有读积分");
+  assert.doesNotMatch(FEEDBACK_UI, /formatTokenCount/, "还在格式化 token 数");
+});
+
+test("积分由后端算好，前端不重算", () => {
+  // 系数改过之后重算会让历史账单跟着变。前端只显示落库时的值。
+  assert.doesNotMatch(FEEDBACK_UI, /TOKENS_PER_CREDIT/, "前端在自己算积分");
+  assert.match(DETAILS_API, /credit_transactions/, "历史消息没取积分");
+});
+
+
+test("details 的关联子查询用外层表名，不是 JS 里的行变量名", () => {
+  // 2026-08-26 踩的：子查询写成 `ct.chat_session_detail_id = detail.id`，
+  // 而 `detail` 是下面 JS 映射里的行变量、不是 SQL 别名（FROM 子句没起别名）。
+  // PostgreSQL 报 missing FROM-clause entry，整个会话详情接口 500。
+  //
+  // 这类错 tsc 抓不到（SQL 是字符串）、单测也抓不到（不连库），只有真跑才炸。
+  const sub = DETAILS_API.slice(DETAILS_API.indexOf("credit_transactions ct"));
+  assert.doesNotMatch(
+    sub.slice(0, 200),
+    /=\s*detail\./,
+    "关联子查询引用了 detail.xxx —— 那是 JS 变量名，SQL 里不存在",
+  );
+  assert.match(sub.slice(0, 200), /chat_session_detail\.id/, "没有用外层表名");
 });

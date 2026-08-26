@@ -24,5 +24,7 @@
   "toolsManagement": "工具管理",
   "processManagement": "流程管理",
   "skillsManagement": "Skill 管理",
-  "reviewQueue": "审核队列"
+  "reviewQueue": "审核队列",
+  "billingUsage": "用量明细",
+  "billingRates": "计费系数"
 }
