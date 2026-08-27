@@ -15,7 +15,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Plus, Building2, Users, Settings, Trash2, Edit, Network } from "lucide-react";
+import { Plus, Building2, Users, Settings, Trash2, Edit, Network, Wallet } from "lucide-react";
+import TenantRechargeDialog from "./components/TenantRechargeDialog";
+import { useCreditAccounts } from "@/hooks/useBilling";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
 import DeptSelect from "@/components/DeptSelect";
@@ -50,6 +52,13 @@ export default function OrganizationPage() {
   const tc = useTranslations("common");
   const { user, loading: userLoading } = useCurrentUser();
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [rechargeTenant, setRechargeTenant] = useState<Tenant | null>(null);
+
+  // 余额由后端从流水现算；前端只显示，不做任何加减 —— 两边各算一次，
+  // 迟早有一次算得不一样，而不一样的那个数是钱。
+  const { accounts, recharge } = useCreditAccounts();
+  const balanceOf = (tenantId: number) =>
+    accounts.find((a) => a.tenant_id === tenantId)?.balance ?? 0;
   const [depts, setDepts] = useState<Dept[]>([]);
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [showCreateDept, setShowCreateDept] = useState(false);
@@ -663,6 +672,20 @@ export default function OrganizationPage() {
                     ) : (
                       <Badge className="bg-muted text-muted-foreground">{t("inactive")}</Badge>
                     )}
+                    <Badge variant="secondary" title={t("balanceTooltip")}>
+                      {t("balanceLabel", { balance: balanceOf(tenant.id) })}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRechargeTenant(tenant);
+                      }}
+                    >
+                      <Wallet className="mr-1 h-3 w-3" />
+                      {t("recharge")}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -791,6 +814,15 @@ export default function OrganizationPage() {
       {showOrgChart && selectedTenant && (
         <OrgChart depts={depts} tenant={selectedTenant} onClose={() => setShowOrgChart(false)} />
       )}
+
+      {/* 充值（仅超管；按钮本就只在超管区块里，后端另有 403 兜底） */}
+      <TenantRechargeDialog
+        open={rechargeTenant !== null}
+        onOpenChange={(o) => !o && setRechargeTenant(null)}
+        tenant={rechargeTenant}
+        balance={rechargeTenant ? balanceOf(rechargeTenant.id) : null}
+        onRecharge={recharge}
+      />
     </div>
   );
 }

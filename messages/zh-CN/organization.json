@@ -66,5 +66,22 @@
   "deleteDeptConfirm": "确定要删除这个部门吗？此操作不可撤销。",
   "deleteDeptFailed": "删除部门失败",
   "pleaseLogin": "请先登录",
-  "noPermission": "您没有权限访问此页面"
+  "noPermission": "您没有权限访问此页面",
+  "recharge": "充值",
+  "recharging": "充值中…",
+  "confirmRecharge": "确认充值",
+  "cancel": "取消",
+  "balanceLabel": "{balance} 积分",
+  "balanceTooltip": "由充值与消耗流水现算，非缓存值",
+  "rechargeTitle": "给「{name}」充值积分",
+  "rechargeDesc": "由超级管理员预充，充值后立即到账。",
+  "rechargeDescWithBalance": "当前余额 {balance} 积分。充值后立即到账。",
+  "rechargeAmount": "充值积分",
+  "rechargeAmountPlaceholder": "例如 1000",
+  "rechargeNote": "备注",
+  "rechargeNotePlaceholder": "打款单号 / 合同号 / 赠送理由",
+  "rechargeNoteHint": "对账时「这笔钱哪来的」全靠它，建议填写。",
+  "rechargeSuccess": "已充值 {amount} 积分，当前余额 {balance}",
+  "rechargeDuplicate": "该笔充值已提交过，未重复入账。当前余额 {balance}",
+  "rechargeFailed": "充值失败"
 }
