@@ -106,5 +106,6 @@
   "tokenOutput": "out {count}",
   "tokenCalls": "{count} model calls",
   "tokenPartialMark": " (partial)",
-  "tokenCached": "{count} cached"
+  "tokenCached": "{count} cached",
+  "insufficientBalance": "Insufficient balance. Ask an administrator to add credits to continue."
 }

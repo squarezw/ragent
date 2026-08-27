@@ -38,9 +38,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ); // 传递响应对象给 runQA，不传递回调函数
       } catch (error: any) {
         console.error("[QA API Stream] Error:", error);
-        // 发送错误信息
+        // 发送错误信息。
+        //
+        // 402 额外带一个 code：余额不足**不是故障**，是一个用户可以自己解决的状态
+        // （去充值）。靠文案匹配来识别它太脆 —— 文案改一个字就失效，而失效的表现是
+        // 用户重新看到「发生了错误」，没人会注意到。
+        const insufficient = error?.statusCode === 402;
         res.write(`event: error\n`);
-        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.write(
+          `data: ${JSON.stringify({
+            error: error.message,
+            ...(insufficient ? { code: "insufficient_balance" } : {}),
+          })}\n\n`
+        );
         res.end();
       }
     } else {
@@ -58,7 +68,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let errorMessage = "Internal server error";
     let statusCode = 500;
 
-    if (error.message?.includes("VALIDATION_ERROR:") || (error as any).statusCode === 422) {
+    if ((error as any).statusCode === 402) {
+      // 原样透出。落到下面的兜底会变成 500「Internal server error」——
+      // 一句本来写给用户的话（「余额不足」）被换成一句说明不了任何事的话，
+      // 而用户的下一步动作（充值 vs 报障）完全不同。
+      errorMessage = error.message;
+      statusCode = 402;
+    } else if (error.message?.includes("VALIDATION_ERROR:") || (error as any).statusCode === 422) {
       // 422 Unprocessable Entity - 从后端服务返回的验证错误
       errorMessage = "Request validation failed";
       statusCode = 422;

@@ -241,6 +241,8 @@ export interface CreditAccount {
   consumed: number;
   /** > 0 说明后端有未登记的 tx_type，余额算漏了。见 CREDIT_TX_SIGNS。 */
   unknown_tx: number;
+  /** 是否已纳入余额拦截。充过一次值即纳入；未纳入的租户余额为负也照用。 */
+  enforced?: boolean;
 }
 
 export interface RechargeRecord {

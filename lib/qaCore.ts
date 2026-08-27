@@ -1,5 +1,16 @@
 import axios from "@/lib/axios";
 
+/**
+ * 402 余额不足。两条路径（流式 fetch / 非流式 axios）把状态码放在不同位置，
+ * 所以两边都认 —— 只认一处的话，另一条路径上的用户会看到一句技术错误。
+ */
+function isInsufficientBalance(error: {
+  statusCode?: number;
+  response?: { status?: number };
+}): boolean {
+  return error?.statusCode === 402 || error?.response?.status === 402;
+}
+
 export async function runQA(
   params: any,
   req?: any,
@@ -141,7 +152,21 @@ export async function runQA(
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`External service error (${response.status}): ${errorText}`);
+        // 后端用 detail 承载给用户看的话（402 余额不足就是这条）。
+        // 不解出来的话，用户看到的是
+        // `External service error (402): {"detail":"余额不足 ..."}` ——
+        // 一句本来写给他看的话，被包在两层技术噪音里。
+        let detail = "";
+        try {
+          detail = JSON.parse(errorText)?.detail ?? "";
+        } catch {
+          /* 非 JSON 响应（网关错误页等）走下面的原文分支 */
+        }
+        const err = new Error(
+          detail || `External service error (${response.status}): ${errorText}`
+        );
+        (err as Error & { statusCode?: number }).statusCode = response.status;
+        throw err;
       }
 
       if (!response.body) {
@@ -271,6 +296,13 @@ export async function runQA(
         validateStatus: (status) => status < 500, // 只接受5xx以下的错误
       });
 
+      // 402 余额不足：把后端写给用户的那句话原样抛出，不加包装
+      if (completionRes.status === 402) {
+        const err = new Error(completionRes.data?.detail || "余额不足 (insufficient balance)");
+        (err as Error & { statusCode?: number }).statusCode = 402;
+        throw err;
+      }
+
       // 检查响应状态码
       if (completionRes.status === 422) {
         const error = new Error("VALIDATION_ERROR: Request validation failed");
@@ -315,7 +347,13 @@ export async function runQA(
     // 如果有回调函数，调用错误回调
     if (callbacks) {
       // 分类错误类型
-      if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {
+      //
+      // 402 排在最前且**原样透出**：这条是写给用户看的（「余额不足」），
+      // 不是给运维看的。下面每个分支都会给它套一层前缀，而任何一层前缀都会
+      // 把「你需要充值」变成「系统出错了」—— 用户的下一步动作完全不同。
+      if (isInsufficientBalance(error)) {
+        callbacks.onError(new Error(error.message));
+      } else if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {
         const errorMsg = `External service connection failed: ${error.message}. Please check if the Python backend service is running.`;
         callbacks.onError(new Error(errorMsg));
       } else if (error.code === "ETIMEDOUT" || error.message?.includes("timeout")) {
@@ -336,6 +374,9 @@ export async function runQA(
     }
 
     // 非流式请求的错误处理
+    if (isInsufficientBalance(error)) {
+      throw error;
+    }
     if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {
       throw new Error(
         `External service connection failed: ${error.message}. Please check if the Python backend service is running.`

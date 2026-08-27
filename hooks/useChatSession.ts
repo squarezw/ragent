@@ -417,7 +417,14 @@ export function useChatSession() {
                     else if (currentEvent === "error") {
                       currentEvent = null;
                       if (!isAborted) {
-                        callbacks?.onError(new Error(extractSseErrorMessage(parsed)));
+                        const err = new Error(extractSseErrorMessage(parsed));
+                        // 把服务端给的 code 带上（目前只有 insufficient_balance）。
+                        // 不带的话调用方只能靠文案匹配来区分「故障」和「余额不足」，
+                        // 而文案改一个字就失效 —— 失效的表现是用户重新看到
+                        // 「发生了错误」，没人会注意到。
+                        const code = (parsed as { code?: string })?.code;
+                        if (code) (err as Error & { code?: string }).code = code;
+                        callbacks?.onError(err);
                       }
                       return;
                     }

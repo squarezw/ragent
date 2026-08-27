@@ -266,12 +266,23 @@ export default function ChatPage() {
           abortControllerRef.current = null;
         },
         onError: (error: any) => {
-          console.error("Stream error:", error);
+          // 余额不足不是故障，是一个用户自己能解决的状态。套上「抱歉，发生了错误」
+          // 会把「去充值」读成「系统坏了」—— 用户会去找运维，而不是找管理员充值。
+          const insufficient = error?.code === "insufficient_balance";
+          // 余额不足是正常的业务状态，不是故障。用 console.error 打出来会带一条
+          // 红色堆栈（Error 记的是构造点，指向 streamPromise），看起来像崩溃 ——
+          // 用户和排查的人都会被它误导。
+          if (insufficient) console.info("[Chat] insufficient balance");
+          else console.error("Stream error:", error);
           setMessages((msgs) => [
             ...msgs,
             {
               role: "assistant",
-              content: t("errorOccurred", { message: error.message }),
+              // 余额不足这条**不插值后端文案**：后端不知道用户选的哪种语言，
+              // 拼进来就会在中文界面里出现英文（或反过来）。界面自己完整表达。
+              content: insufficient
+                ? t("insufficientBalance")
+                : t("errorOccurred", { message: error.message }),
               segment_ids: [],
               detail_id: undefined,
             },
