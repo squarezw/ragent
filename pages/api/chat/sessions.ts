@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { getUserPermissions, isSuperAdmin, isTenantAdmin, isDeptAdmin } from "@/lib/permissions";
+import { buildVisibilityScope, deptIdsAtOrBelow } from "@/lib/visibilityScope";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -15,16 +15,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // 获取当前用户权限信息
-    const userPerms = await getUserPermissions(currentUserId);
-    if (!userPerms) {
+    // 可见范围：全站唯一的一份阶梯在 lib/visibilityScope.ts。
+    // 这里原本自己写了一遍 tenant/dept/self 收窄，但**漏了排除更高权限角色**——
+    // 租户管理员因此读得到超管的会话内容，而同一个人在人员管理里连他都看不到。
+    const scope = await buildVisibilityScope(
+      currentUserId,
+      { userIdCol: "cs.user_id", userAlias: "u" },
+      1
+    );
+    if (!scope) {
       return res.status(404).json({ error: "用户不存在" });
     }
-
-    // 检查用户角色
-    const superAdmin = await isSuperAdmin(currentUserId);
-    const tenantAdmin = await isTenantAdmin(currentUserId);
-    const deptAdmin = await isDeptAdmin(currentUserId);
+    const { perms: userPerms, tier } = scope;
+    const superAdmin = tier === "super";
+    const tenantAdmin = tier === "tenant";
+    const deptAdmin = tier === "dept";
 
     const {
       page = 1,
@@ -41,30 +46,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const offset = (Number(page) - 1) * Number(limit);
 
     // 构建查询条件
-    const whereConditions = [];
-    const queryParams = [];
-    let paramIndex = 1;
-
-    // 权限过滤：根据角色添加相应的限制条件
-    if (!superAdmin) {
-      if (tenantAdmin && userPerms.tenantId) {
-        // 租户管理员：只能看到本租户下的会话
-        whereConditions.push(`u.tenant_id = $${paramIndex}`);
-        queryParams.push(userPerms.tenantId);
-        paramIndex++;
-      } else if (deptAdmin && userPerms.deptId) {
-        // 部门管理员：只能看到本部门下的会话
-        whereConditions.push(`u.dept_id = $${paramIndex}`);
-        queryParams.push(userPerms.deptId);
-        paramIndex++;
-      } else {
-        // 普通用户：只能看到自己的会话
-        whereConditions.push(`cs.user_id = $${paramIndex}`);
-        queryParams.push(currentUserId);
-        paramIndex++;
-      }
-    }
-    // 超级管理员：不添加任何限制，可以看到所有会话
+    const whereConditions = [...scope.conditions];
+    const queryParams = [...scope.params];
+    let paramIndex = scope.nextIndex;
 
     // 时间范围筛选
     if (startDate) {
@@ -97,13 +81,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(403).json({ error: "无权查看该用户的会话" });
           }
         } else if (deptAdmin && userPerms.deptId) {
-          // 验证目标用户是否在同一部门
+          // 验证目标用户是否在本部门**子树**内 —— 与 buildVisibilityScope 同一口径
           const targetUserRes = await pool.query("SELECT dept_id FROM users WHERE id = $1", [
             targetUserId,
           ]);
+          const scopeDepts = await deptIdsAtOrBelow(userPerms.deptId);
           if (
             targetUserRes.rows.length === 0 ||
-            targetUserRes.rows[0].dept_id !== userPerms.deptId
+            !scopeDepts.includes(targetUserRes.rows[0].dept_id)
           ) {
             return res.status(403).json({ error: "无权查看该用户的会话" });
           }
@@ -132,8 +117,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(403).json({ error: "无权查看该部门的会话" });
           }
         } else if (deptAdmin && userPerms.deptId) {
-          // 部门管理员只能查看自己的部门
-          if (targetDeptId !== userPerms.deptId) {
+          // 部门管理员可查看本部门及其下级
+          const scopeDepts = await deptIdsAtOrBelow(userPerms.deptId);
+          if (!scopeDepts.includes(targetDeptId)) {
             return res.status(403).json({ error: "无权查看该部门的会话" });
           }
         } else {

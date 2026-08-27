@@ -1,6 +1,6 @@
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
-import { getUserPermissions, isSuperAdmin } from "@/lib/permissions";
+import { buildVisibilityScope } from "@/lib/visibilityScope";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -14,12 +14,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: "未授权" });
     }
 
-    // 获取用户权限信息
-    const userPerms = await getUserPermissions(userId);
-    if (!userPerms) {
-      return res.status(404).json({ error: "用户不存在" });
-    }
-
     // 获取筛选参数
     const filterTenantId = req.query.tenant_id ? parseInt(req.query.tenant_id as string, 10) : null;
     const filterDeptId = req.query.dept_id ? parseInt(req.query.dept_id as string, 10) : null;
@@ -28,92 +22,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const client = await pool.connect();
     try {
       let query = "";
-      const params: any[] = [];
-      let paramIndex = 1;
 
-      // 根据用户角色确定可见的用户范围
-      const isSuper = await isSuperAdmin(userId);
+      // 可见范围：全站唯一的一份阶梯在 lib/visibilityScope.ts。
+      //
+      // 这个文件曾是**唯一**写全了阶梯的地方（含「排除更高权限角色」），
+      // 而 chat 会话族四个接口各自漏了它。收进共用件之后，漏掉一档不再是
+      // 「某个文件少写了两行」，而是根本没有别的地方可以写。
+      //
+      // 换过来还带一处行为变化：部门管理员从**精确部门**改为**部门子树**，
+      // 与后端 org_scope / Skill 管理对齐 —— 技术部的管理员本来就该看得到
+      // 开发组的人，原先看不到。
+      const scope = await buildVisibilityScope(
+        userId,
+        { userIdCol: "u.id", userAlias: "u" },
+        1
+      );
+      if (!scope) {
+        return res.status(404).json({ error: "用户不存在" });
+      }
 
-      // 构建WHERE条件
-      const whereConditions: string[] = [];
+      const whereConditions: string[] = [...scope.conditions];
+      const params: any[] = [...scope.params];
+      let paramIndex = scope.nextIndex;
 
-      if (isSuper) {
-        // 超级管理员可以看到所有用户，但需要应用筛选条件
-        if (filterTenantId !== null) {
-          whereConditions.push(`u.tenant_id = $${paramIndex}`);
-          params.push(filterTenantId);
-          paramIndex++;
-        }
-        if (filterDeptId !== null) {
-          whereConditions.push(`u.dept_id = $${paramIndex}`);
-          params.push(filterDeptId);
-          paramIndex++;
-        }
-        // 用户名或昵称搜索（模糊匹配）
-        if (filterUsername) {
-          whereConditions.push(
-            `(u.username ILIKE $${paramIndex} OR u.nickname ILIKE $${paramIndex})`
-          );
-          params.push(`%${filterUsername}%`);
-          paramIndex++;
-        }
-      } else {
-        // 检查当前用户是否是租户管理员
-        const isTenantAdmin = userPerms.roles.some((role) => role.name === "租户管理员");
-        const isDeptAdmin = userPerms.roles.some((role) => role.name === "部门管理员");
-
-        if (isTenantAdmin && userPerms.tenantId) {
-          // 租户管理员可以看到该租户下的所有用户，但不能看到超级管理员
-          whereConditions.push(`u.tenant_id = $${paramIndex}`);
-          params.push(userPerms.tenantId);
-          paramIndex++;
-
-          whereConditions.push(`NOT EXISTS (
-            SELECT 1 FROM user_roles ur2 
-            JOIN roles r2 ON ur2.role_id = r2.id 
-            WHERE ur2.user_id = u.id AND r2.name = '超级管理员'
-          )`);
-
-          // 应用部门筛选
-          if (filterDeptId !== null) {
-            whereConditions.push(`u.dept_id = $${paramIndex}`);
-            params.push(filterDeptId);
-            paramIndex++;
-          }
-          // 用户名或昵称搜索（模糊匹配）
-          if (filterUsername) {
-            whereConditions.push(
-              `(u.username ILIKE $${paramIndex} OR u.nickname ILIKE $${paramIndex})`
-            );
-            params.push(`%${filterUsername}%`);
-            paramIndex++;
-          }
-        } else if (isDeptAdmin && userPerms.deptId) {
-          // 部门管理员可以看到该部门下的所有用户，但不能看到超级管理员和租户管理员
-          whereConditions.push(`u.dept_id = $${paramIndex}`);
-          params.push(userPerms.deptId);
-          paramIndex++;
-
-          whereConditions.push(`NOT EXISTS (
-            SELECT 1 FROM user_roles ur2 
-            JOIN roles r2 ON ur2.role_id = r2.id 
-            WHERE ur2.user_id = u.id AND (r2.name = '超级管理员' OR r2.name = '租户管理员')
-          )`);
-
-          // 用户名或昵称搜索（模糊匹配）
-          if (filterUsername) {
-            whereConditions.push(
-              `(u.username ILIKE $${paramIndex} OR u.nickname ILIKE $${paramIndex})`
-            );
-            params.push(`%${filterUsername}%`);
-            paramIndex++;
-          }
-        } else {
-          // 普通用户只能看到自己
-          whereConditions.push(`u.id = $${paramIndex}`);
-          params.push(userId);
-          paramIndex++;
-        }
+      // 筛选参数。超管可按租户/部门任意筛；其余人的筛选只会在可见范围内
+      // 进一步收窄（上面的条件已经 AND 进同一个 WHERE），越权筛不出东西。
+      if (scope.tier === "super" && filterTenantId !== null) {
+        whereConditions.push(`u.tenant_id = $${paramIndex}`);
+        params.push(filterTenantId);
+        paramIndex++;
+      }
+      if (filterDeptId !== null) {
+        whereConditions.push(`u.dept_id = $${paramIndex}`);
+        params.push(filterDeptId);
+        paramIndex++;
+      }
+      if (filterUsername) {
+        whereConditions.push(
+          `(u.username ILIKE $${paramIndex} OR u.nickname ILIKE $${paramIndex})`
+        );
+        params.push(`%${filterUsername}%`);
+        paramIndex++;
       }
 
       // 构建完整查询

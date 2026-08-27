@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { getUserPermissions, isSuperAdmin, isTenantAdmin, isDeptAdmin } from "@/lib/permissions";
+import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -22,15 +22,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 获取当前用户权限信息
-    const userPerms = await getUserPermissions(currentUserId);
-    if (!userPerms) {
+    // 可见范围：与会话列表同一张梯子（lib/visibilityScope.ts）。
+    // 列表里看不到、详情却打得开，就是授权漏洞 —— 这里原先漏了排除更高权限角色，
+    // 于是部门管理员读得到同部门内超管/租户管理员的**完整问答记录**。
+    const scope = await buildVisibilityScope(
+      currentUserId,
+      { userIdCol: "cs.user_id", userAlias: "u" },
+      1
+    );
+    if (!scope) {
       return res.status(404).json({ error: "用户不存在" });
     }
-
-    // 检查用户角色
-    const superAdmin = await isSuperAdmin(currentUserId);
-    const tenantAdmin = await isTenantAdmin(currentUserId);
-    const deptAdmin = await isDeptAdmin(currentUserId);
 
     // 获取会话基本信息，同时获取知识库信息
     // owner_tenant_id / owner_dept_id 仅用于鉴权，不出现在响应体里
@@ -86,20 +88,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const session = sessionResult.rows[0];
 
     // 鉴权：先查到 session 再判 403，让"不存在"得到 404、"别人的"得到 403
-    if (!superAdmin) {
-      if (tenantAdmin && userPerms.tenantId) {
-        if (session.owner_tenant_id !== userPerms.tenantId) {
-          return res.status(403).json({ error: "无权查看该会话" });
-        }
-      } else if (deptAdmin && userPerms.deptId) {
-        if (session.owner_dept_id !== userPerms.deptId) {
-          return res.status(403).json({ error: "无权查看该会话" });
-        }
-      } else {
-        if (session.user_id !== currentUserId) {
-          return res.status(403).json({ error: "无权查看该会话" });
-        }
-      }
+    const allowed = await canViewOwner(scope, {
+      userId: session.user_id,
+      tenantId: session.owner_tenant_id,
+      deptId: session.owner_dept_id,
+    });
+    if (!allowed) {
+      return res.status(403).json({ error: "无权查看该会话" });
     }
 
     // 解析知识库数组，过滤掉 null 值

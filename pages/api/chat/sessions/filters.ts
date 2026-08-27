@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { getUserPermissions, isSuperAdmin, isTenantAdmin, isDeptAdmin } from "@/lib/permissions";
+import { buildVisibilityScope, deptIdsAtOrBelow } from "@/lib/visibilityScope";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -15,16 +15,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // 获取当前用户权限信息
-    const userPerms = await getUserPermissions(currentUserId);
-    if (!userPerms) {
+    // 可见范围：全站唯一的一份阶梯在 lib/visibilityScope.ts。
+    // 这个接口喂的是筛选器下拉框和统计数字，三套条件（用户 / 部门 / 统计）
+    // 原先各写各的，结果**部门那套在普通用户档下压根没条件** ——
+    // 任何登录用户都能拉到全部租户的组织架构。
+    const scopeUsers = await buildVisibilityScope(
+      currentUserId,
+      { userIdCol: "u.id", userAlias: "u" },
+      1
+    );
+    const scopeStats = await buildVisibilityScope(
+      currentUserId,
+      { userIdCol: "cs.user_id", userAlias: "u" },
+      1
+    );
+    if (!scopeUsers || !scopeStats) {
       return res.status(404).json({ error: "用户不存在" });
     }
-
-    // 检查用户角色
-    const superAdmin = await isSuperAdmin(currentUserId);
-    const tenantAdmin = await isTenantAdmin(currentUserId);
-    const deptAdmin = await isDeptAdmin(currentUserId);
+    const { tier, perms: userPerms } = scopeUsers;
+    const superAdmin = tier === "super";
 
     // 获取查询参数中的租户ID（用于过滤用户和部门）
     const filterTenantId = req.query.tenantId ? Number(req.query.tenantId) : null;
@@ -58,43 +67,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       statsWhereConditions.push(`u.tenant_id = $${statsParamIndex}`);
       statsQueryParams.push(filterTenantId);
       statsParamIndex++;
-    } else if (!superAdmin) {
-      // 根据角色添加权限过滤（仅在未指定租户时）
-      if (tenantAdmin && userPerms.tenantId) {
-        // 租户管理员：只能看到本租户下的数据
-        userWhereConditions.push(`u.tenant_id = $${userParamIndex}`);
-        userQueryParams.push(userPerms.tenantId);
-        userParamIndex++;
+    } else {
+      // 用户列表与统计：两套列名不同，但走同一张梯子
+      userWhereConditions.push(...scopeUsers.conditions);
+      userQueryParams.push(...scopeUsers.params);
+      userParamIndex = scopeUsers.nextIndex;
 
+      statsWhereConditions.push(...scopeStats.conditions);
+      statsQueryParams.push(...scopeStats.params);
+      statsParamIndex = scopeStats.nextIndex;
+
+      // 部门下拉框：查的是 dept 表本身，没有「归属人」可挂，所以不能复用
+      // buildVisibilityScope，只能按档位各写一句。**每一档都必须有条件** ——
+      // 原先普通用户这一档什么都没加，于是 deptWhereClause 只剩 status='active'，
+      // 把全库所有租户的部门树（含 path）返给了任何登录用户。
+      if (tier === "tenant") {
         deptWhereConditions.push(`tenant_id = $${deptParamIndex}`);
         deptQueryParams.push(userPerms.tenantId);
         deptParamIndex++;
-
-        statsWhereConditions.push(`u.tenant_id = $${statsParamIndex}`);
-        statsQueryParams.push(userPerms.tenantId);
-        statsParamIndex++;
-      } else if (deptAdmin && userPerms.deptId) {
-        // 部门管理员：只能看到本部门下的数据
-        userWhereConditions.push(`u.dept_id = $${userParamIndex}`);
-        userQueryParams.push(userPerms.deptId);
-        userParamIndex++;
-
+      } else if (tier === "dept") {
+        deptWhereConditions.push(`id = ANY($${deptParamIndex}::int[])`);
+        deptQueryParams.push(await deptIdsAtOrBelow(userPerms.deptId));
+        deptParamIndex++;
+      } else {
+        // 普通用户只认自己那个部门；没归属部门就是空列表（他本来也不能按部门筛）
         deptWhereConditions.push(`id = $${deptParamIndex}`);
         deptQueryParams.push(userPerms.deptId);
         deptParamIndex++;
-
-        statsWhereConditions.push(`u.dept_id = $${statsParamIndex}`);
-        statsQueryParams.push(userPerms.deptId);
-        statsParamIndex++;
-      } else {
-        // 普通用户：只能看到自己的数据
-        userWhereConditions.push(`u.id = $${userParamIndex}`);
-        userQueryParams.push(currentUserId);
-        userParamIndex++;
-
-        statsWhereConditions.push(`cs.user_id = $${statsParamIndex}`);
-        statsQueryParams.push(currentUserId);
-        statsParamIndex++;
       }
     }
 
