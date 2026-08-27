@@ -88,7 +88,11 @@ export default function BillingPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* 用 md: 而不是 sm:：项目里其他页面（monitoring / apps）都用 md:grid-cols-3，
+          而 sm:grid-cols-3 全项目仅此一处。Tailwind 只生成扫到的类，新建目录下
+          独一份的断点类容易在 JIT 增量构建里漏掉 —— 表现就是三块竖着排。
+          跟着已有写法走，不给自己造一个只在这里用的类。 */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Stat label="消耗积分" value={summary.totals.credits.toFixed(2)} />
         <Stat label="对话轮次" value={String(summary.totals.turns)} />
         <Stat
