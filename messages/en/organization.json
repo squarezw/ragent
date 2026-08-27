@@ -66,5 +66,22 @@
   "deleteDeptConfirm": "Are you sure you want to delete this department? This action cannot be undone.",
   "deleteDeptFailed": "Failed to delete department",
   "pleaseLogin": "Please login first",
-  "noPermission": "You do not have permission to access this page"
+  "noPermission": "You do not have permission to access this page",
+  "recharge": "Add credits",
+  "recharging": "Adding…",
+  "confirmRecharge": "Confirm",
+  "cancel": "Cancel",
+  "balanceLabel": "{balance} credits",
+  "balanceTooltip": "Derived from the transaction ledger, not a cached value",
+  "rechargeTitle": "Add credits to {name}",
+  "rechargeDesc": "Credited by a super admin; takes effect immediately.",
+  "rechargeDescWithBalance": "Current balance: {balance} credits. Takes effect immediately.",
+  "rechargeAmount": "Credits",
+  "rechargeAmountPlaceholder": "e.g. 1000",
+  "rechargeNote": "Note",
+  "rechargeNotePlaceholder": "Payment reference / contract no. / reason",
+  "rechargeNoteHint": "This is the only record of where the credits came from.",
+  "rechargeSuccess": "Added {amount} credits. Balance: {balance}",
+  "rechargeDuplicate": "Already submitted; not credited twice. Balance: {balance}",
+  "rechargeFailed": "Could not add credits"
 }

@@ -230,3 +230,107 @@ export function useRates() {
 
   return { defaults, explicit, usingDefault, loading, error, reload: load, save, remove };
 }
+
+// ── 积分账户与充值 ─────────────────────────────────────────────────────
+
+export interface CreditAccount {
+  tenant_id: number;
+  tenant_name: string | null;
+  balance: number;
+  recharged: number;
+  consumed: number;
+  /** > 0 说明后端有未登记的 tx_type，余额算漏了。见 CREDIT_TX_SIGNS。 */
+  unknown_tx: number;
+}
+
+export interface RechargeRecord {
+  id: number;
+  tenant_id: number;
+  tenant_name: string | null;
+  tx_type: string;
+  amount: number;
+  note: string | null;
+  created_at: string;
+  operator_id: number | null;
+  operator_name: string | null;
+  operator_username: string | null;
+}
+
+/**
+ * 租户积分账户。余额由后端从流水现算，前端不做任何加减 ——
+ * 两边各算一次，迟早有一次算得不一样，而不一样的那个数是钱。
+ */
+export function useCreditAccounts(tenantId?: number) {
+  const [accounts, setAccounts] = useState<CreditAccount[]>([]);
+  const [totalBalance, setTotalBalance] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url = tenantId ? `/api/v1/billing/accounts?tenant_id=${tenantId}` : "/api/v1/billing/accounts";
+      const res = await axios.get(url);
+      setAccounts(res.data?.items ?? []);
+      setTotalBalance(res.data?.total_balance ?? 0);
+    } catch {
+      // 没有组织账目知情范围的人拿到的是空集而不是错误（后端如此设计），
+      // 真出错时也降级成「不显示余额」，不该让整页挂掉。
+      setAccounts([]);
+      setTotalBalance(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  /**
+   * 充值。`idempotencyKey` 由调用方在**打开充值框时**生成，不是提交时 ——
+   * 提交时生成的话，双击会产生两个不同的 key，等于没有幂等。
+   */
+  const recharge = useCallback(
+    async (tenant_id: number, amount: number, note: string, idempotencyKey: string) => {
+      const res = await axios.post("/api/v1/billing/recharge", {
+        tenant_id,
+        amount,
+        note: note || null,
+        idempotency_key: idempotencyKey,
+      });
+      await load();
+      return res.data as { id: number; amount: number; balance: number; duplicate: boolean };
+    },
+    [load]
+  );
+
+  return { accounts, totalBalance, loading, reload: load, recharge };
+}
+
+export function useRecharges(tenantId?: number, page = 1, pageSize = 50) {
+  const [items, setItems] = useState<RechargeRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+      if (tenantId) qs.set("tenant_id", String(tenantId));
+      const res = await axios.get(`/api/v1/billing/recharges?${qs.toString()}`);
+      setItems(res.data?.items ?? []);
+      setTotal(res.data?.total ?? 0);
+    } catch {
+      setItems([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId, page, pageSize]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { items, total, loading, reload: load };
+}
