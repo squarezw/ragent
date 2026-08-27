@@ -36,7 +36,7 @@ const TYPE_UNIT: Record<string, string> = {
   tool: "每次调用的积分",
 };
 
-export default function RatesPage() {
+export function BillingRatesSection() {
   const { defaults, explicit, usingDefault, loading, error, save, remove } = useRates();
   const [editing, setEditing] = useState<{ type: string; key: string; name?: string } | null>(null);
   const [value, setValue] = useState("");
@@ -62,7 +62,7 @@ export default function RatesPage() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div>
         <div className="rounded-md border border-destructive/50 text-destructive px-3 py-2 text-sm">
           {error}
         </div>
@@ -71,9 +71,7 @@ export default function RatesPage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">计费系数</h1>
-
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">

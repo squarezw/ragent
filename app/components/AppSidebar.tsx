@@ -40,7 +40,6 @@ import {
   Smartphone,
   Sparkles,
   User,
-  Percent,
   Wallet,
   Wrench,
 } from "lucide-react";
@@ -105,11 +104,13 @@ export default function AppSidebar() {
       visible: true,
       items: [
         {
-          title: t("processManagement"),
-          icon: Network,
-          path: "/process-management",
-          visible: features.processManagement,
+          // P5 开放自建：普通用户也能创建自己的 Skill（草稿走提交审核），
+          // 所以这一项**不设 visible 门**，与同组其余项不同
+          title: t("skillsManagement"),
+          icon: Sparkles,
+          path: "/skills",
         },
+        { title: t("toolsManagement"), icon: Wrench, path: "/tools", visible: isSuperAdmin },
         { title: t("sopManagement"), icon: ShieldCheck, path: "/sop", visible: canManageOperation },
         {
           title: t("skuManagement"),
@@ -122,7 +123,10 @@ export default function AppSidebar() {
     },
     {
       label: t("organization"),
-      visible: canManageOrg || canManageStaff,
+      // 制度流程搬进本组后，组可见性必须把它的门也算上 —— 否则
+      // 「有 processManagement 但不管组织/人员」的用户会连整组一起丢掉，
+      // 而他原先在运维组（visible: true）下是看得到的。
+      visible: canManageOrg || canManageStaff || features.processManagement,
       items: [
         {
           title: t("orgManagement"),
@@ -131,6 +135,12 @@ export default function AppSidebar() {
           visible: canManageOrg,
         },
         { title: t("userManagement"), icon: User, path: "/user", visible: canManageStaff },
+        {
+          title: t("processManagement"),
+          icon: Network,
+          path: "/process-management",
+          visible: features.processManagement,
+        },
       ],
     },
     {
@@ -148,25 +158,11 @@ export default function AppSidebar() {
           visible: canManageOperation,
         },
         {
-          // 计费系数：仅超管。系数直接决定所有租户的账单
-          title: t("billingRates"),
-          icon: Percent,
-          path: "/billing/rates",
-          visible: isSuperAdmin,
-        },
-        {
-          // P5 开放自建：普通用户也可创建自己的 Skill（草稿走提交审核）
-          title: t("skillsManagement"),
-          icon: Sparkles,
-          path: "/skills",
-        },
-        {
           title: t("systemMonitoring"),
           icon: Monitor,
           path: "/monitoring",
           visible: isSuperAdmin,
         },
-        { title: t("toolsManagement"), icon: Wrench, path: "/tools", visible: isSuperAdmin },
         {
           title: t("systemSettings"),
           icon: Settings,
