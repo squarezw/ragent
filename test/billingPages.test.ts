@@ -9,7 +9,8 @@ const exists = (rel: string) => fs.existsSync(path.join(REPO, rel));
 
 const HOOK = read("hooks/useBilling.ts");
 const USAGE = read("app/billing/page.tsx");
-const RATES = read("app/billing/rates/page.tsx");
+// 计费系数不再是独立页面，收进了系统设置（2026-08-27）
+const RATES = read("app/system-settings/components/BillingRatesSection.tsx");
 const SIDEBAR = read("app/components/AppSidebar.tsx");
 
 /**
@@ -52,7 +53,7 @@ test("权限错误要显示出来，不能静默空列表", () => {
   assert.match(
     catchBlock.slice(0, 400),
     /setError\([^)]*detail/,
-    "catch 里没有把后端返回的原因写进 error 态",
+    "catch 里没有把后端返回的原因写进 error 态"
   );
   assert.match(USAGE, /summary\.error &&/, "用量页没有渲染错误");
   assert.match(RATES, /if \(error\)/, "系数页没有渲染错误");
@@ -76,22 +77,26 @@ test("导出 CSV 带 BOM", () => {
   assert.match(USAGE, /"\\uFEFF"|\uFEFF/, "CSV 没加 BOM");
 });
 
-test("侧边栏入口存在且按角色可见", () => {
+test("侧边栏有用量明细入口；系数不再单开菜单", () => {
   assert.ok(SIDEBAR.includes('t("billingUsage")'), "没有用量明细入口");
-  assert.ok(SIDEBAR.includes('t("billingRates")'), "没有系数管理入口");
-  assert.match(SIDEBAR, /path: "\/billing\/rates",\s*\n\s*visible: isSuperAdmin/, 
-    "系数页没有限制为超管");
+  // 计费系数收进系统设置页（它是全站唯一一份配置，不值得占一级菜单）。
+  // 权限由系统设置页本身把关：那一页就是 visible: isSuperAdmin。
+  assert.doesNotMatch(SIDEBAR, /path: "\/billing\/rates"/, "系数页又单开了菜单");
+});
+
+test("计费系数在系统设置页里", () => {
+  const settings = read("app/system-settings/page.tsx");
+  assert.match(settings, /BillingRatesSection/, "系统设置页没有引用计费系数区块");
 });
 
 test("两个语种的导航文案齐全", () => {
   const zh = JSON.parse(read("messages/zh-CN/navigation.json"));
   const en = JSON.parse(read("messages/en/navigation.json"));
-  for (const k of ["billingUsage", "billingRates"]) {
+  for (const k of ["billingUsage"]) {
     assert.ok(zh[k], `zh-CN 缺 ${k}`);
     assert.ok(en[k], `en 缺 ${k}`);
   }
 });
-
 
 test("改系数用 modal，不是页面底部的内联表单", () => {
   // 内联表单的问题：点不同行只是让下方那块内容变，用户要滚下去找。

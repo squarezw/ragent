@@ -115,5 +115,7 @@
   "htmlSyntaxErrorPrefix": "HTML syntax error:",
   "customHtmlPlaceholder": "Enter custom HTML (supports variables: '{{platformName}}', '{{platformLogo}}', '{{platformSubtitle}}')",
   "defaultPlatformName": "Platform Name",
-  "defaultPlatformSubtitle": "Platform Subtitle"
+  "defaultPlatformSubtitle": "Platform Subtitle",
+  "billingRatesTitle": "Billing rates",
+  "billingRatesDesc": "Entries without an explicit rate fall back to the global default; review them before enabling real deduction"
 }
