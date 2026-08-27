@@ -231,6 +231,17 @@ export default function BillingPage() {
                           {balanceOfTenant(row.key) === null
                             ? "—"
                             : balanceOfTenant(row.key)!.toFixed(2)}
+                          {/* 未纳入拦截的租户余额为负也照用。不标出来的话，
+                              「这个租户欠着钱为什么还能对话」无从解释。
+                              纳入的动作是充值 —— 所以这行提示同时也是操作指引。 */}
+                          {accounts.find((a) => a.tenant_id === row.key)?.enforced === false && (
+                            <span
+                              className="ml-2 text-xs font-normal text-muted-foreground"
+                              title="该租户尚未充值，未纳入余额拦截：余额为负也不会被拒绝。充一次值即纳入。"
+                            >
+                              未纳入
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
