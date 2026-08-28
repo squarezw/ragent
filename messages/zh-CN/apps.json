@@ -180,5 +180,10 @@
   "avatarBuiltinPick": "使用这个头像",
   "avatarMustBeImage": "请选择图片文件",
   "avatarTooLarge": "图片不能超过 5MB",
-  "avatarUploadFailed": "上传失败，请重试"
+  "avatarUploadFailed": "上传失败，请重试",
+  "filterByTenant": "按租户筛选",
+  "allTenants": "全部租户",
+  "unassignedTenant": "未归属租户",
+  "noAppsForTenant": "该租户下没有数字员工",
+  "clearTenantFilter": "清除筛选"
 }
