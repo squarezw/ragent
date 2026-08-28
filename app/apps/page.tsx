@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { triggerLabel } from "@/lib/appTrigger";
 import { canEditApp } from "@/lib/appPermissions";
@@ -141,6 +141,25 @@ export default function AppsPage() {
   const ts = useTranslations("skills");
 
   const [apps, setApps] = useState<App[]>([]);
+  /** 超管的租户筛选。"all" = 不筛。 */
+  const [tenantFilter, setTenantFilter] = useState<string>("all");
+  const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
+
+  /**
+   * 按租户筛选后的列表。
+   *
+   * **这是便利筛选，不是权限边界** —— 后端已经按角色收窄过 `/api/v1/apps`，
+   * 非超管本来就只拿得到自己看得见的那些。这里只是让超管在一堆租户里挑一个看，
+   * 前端过滤改变不了任何人能拿到什么。
+   */
+  const visibleApps = useMemo(() => {
+    if (!isSuperAdmin || tenantFilter === "all") return apps;
+    if (tenantFilter === "none") return apps.filter((a) => !a.owner_tenant_id);
+    return apps.filter((a) => String(a.owner_tenant_id) === tenantFilter);
+  }, [apps, isSuperAdmin, tenantFilter]);
+
+  /** 只在真的存在未归属应用时才给这个选项，免得挂一个永远为空的条目。 */
+  const hasUnassigned = useMemo(() => apps.some((a) => !a.owner_tenant_id), [apps]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -251,6 +270,13 @@ export default function AppsPage() {
     Promise.all([loadApps(), loadDatasets()]).catch(() => {
       dataLoadedRef.current = false;
     });
+
+    // 租户列表只给超管用（接口本身也只对超管返回全部）。失败就静默留空 ——
+    // 筛选器不出现、列表照常；一个可选的筛选控件不该让整页挂掉。
+    axios
+      .get("/api/organization/tenants")
+      .then((r) => setTenants(r.data?.tenants ?? []))
+      .catch(() => setTenants([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 不依赖 isSuperAdmin，所有人都可以加载数据
 
@@ -668,10 +694,31 @@ export default function AppsPage() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b">
                 <div className="flex items-center gap-4">
                   <span className="text-sm font-medium text-muted-foreground">
-                    {t("totalApps", { count: apps.length })}
+                    {t("totalApps", { count: visibleApps.length })}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* 租户筛选：仅超管可见。
+                      非超管本来就只拿得到自己租户的应用（后端收窄），给他一个
+                      只有一个选项的下拉是噪音。 */}
+                  {isSuperAdmin && tenants.length > 0 && (
+                    <Select value={tenantFilter} onValueChange={setTenantFilter}>
+                      <SelectTrigger className="h-9 w-[180px]">
+                        <SelectValue placeholder={t("filterByTenant")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("allTenants")}</SelectItem>
+                        {tenants.map((tn) => (
+                          <SelectItem key={tn.id} value={String(tn.id)}>
+                            {tn.name}
+                          </SelectItem>
+                        ))}
+                        {hasUnassigned && (
+                          <SelectItem value="none">{t("unassignedTenant")}</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Button
                     variant={viewMode === "table" ? "default" : "outline"}
                     size="sm"
@@ -688,7 +735,21 @@ export default function AppsPage() {
                   </Button>
                 </div>
               </div>
-              {viewMode === "table" ? (
+              {/* 筛完一个都不剩，要说清是筛没了、不是没有应用 ——
+                  否则用户会以为这个租户下的应用被删了。 */}
+              {visibleApps.length === 0 ? (
+                <div className="py-16 text-center">
+                  <p className="text-sm text-muted-foreground">{t("noAppsForTenant")}</p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-1"
+                    onClick={() => setTenantFilter("all")}
+                  >
+                    {t("clearTenantFilter")}
+                  </Button>
+                </div>
+              ) : viewMode === "table" ? (
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -710,7 +771,7 @@ export default function AppsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {apps.map((app) => {
+                      {visibleApps.map((app) => {
                         const PlatformIcon = platformIcons[app.platform] || Globe;
                         return (
                           <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
@@ -920,7 +981,7 @@ export default function AppsPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {apps.map((app) => {
+                  {visibleApps.map((app) => {
                     const PlatformIcon = platformIcons[app.platform] || Globe;
                     const isDefault = app.is_default;
                     return (

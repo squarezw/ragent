@@ -180,5 +180,10 @@
   "avatarBuiltinPick": "Use this avatar",
   "avatarMustBeImage": "Please choose an image file",
   "avatarTooLarge": "Image must be under 5MB",
-  "avatarUploadFailed": "Upload failed, please try again"
+  "avatarUploadFailed": "Upload failed, please try again",
+  "filterByTenant": "Filter by tenant",
+  "allTenants": "All tenants",
+  "unassignedTenant": "No tenant",
+  "noAppsForTenant": "No digital employees in this tenant",
+  "clearTenantFilter": "Clear filter"
 }
