@@ -3,6 +3,8 @@ import { usePathname } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Shield } from "lucide-react";
 import { useTranslations } from "next-intl";
+// 版本号取自 package.json，不再手抄一份。
+import pkg from "../../package.json";
 
 // 路由标题映射 - 使用翻译键
 const routeTitleKeys: { [key: string]: string } = {
@@ -70,7 +72,7 @@ export default function DynamicTitle() {
       <Badge variant="outline" className="text-xs hidden sm:inline-flex">
         <Shield className="mr-1 h-3 w-3" />
         <a href="/about" className="text-primary hover:underline">
-          v0.5.0
+          v{pkg.version}
         </a>
       </Badge>
     </div>
