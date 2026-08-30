@@ -1,4 +1,5 @@
 import React from "react";
+import ToolActivity, { type ToolStep } from "./ToolActivity";
 import { useTranslations } from "next-intl";
 import { Bot, FileSpreadsheet, FileText, FileType, User } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -57,10 +58,11 @@ interface MessageListProps {
   activeRuns?: Record<number, TaskState>;
   /** Cancel callback passed to running task cards. */
   onCancelRun?: (runId: number) => void;
-  /** In-flight tool indicator from `event: tool_status` SSE frames.
-   *  `label` is the skill name when present, else the tool name;
-   *  `failed: true` renders a lightweight failure hint instead. */
-  toolStatus?: { label: string; failed: boolean } | null;
+  /** This turn's tool calls, accumulated from `event: tool_status` frames.
+   *  Rendered as a collapsible list — expanded while running, collapsed after. */
+  toolSteps?: ToolStep[];
+  /** Whether the turn is still streaming; drives the spinner and the timer. */
+  toolsRunning?: boolean;
 }
 
 export default function MessageList({
@@ -77,24 +79,15 @@ export default function MessageList({
   messagesEndRef,
   activeRuns,
   onCancelRun,
-  toolStatus,
+  toolSteps,
+  toolsRunning,
 }: MessageListProps) {
   const t = useTranslations("chat");
 
-  const toolStatusText = toolStatus
-    ? t(toolStatus.failed ? "toolFailed" : "toolRunning", { name: toolStatus.label })
-    : null;
-
-  const toolStatusIndicator = toolStatusText ? (
-    <span
-      data-testid="tool-status-indicator"
-      className={`text-xs ${
-        toolStatus?.failed ? "text-destructive" : "text-muted-foreground animate-pulse"
-      }`}
-    >
-      {toolStatusText}
-    </span>
-  ) : null;
+  const toolStatusIndicator =
+    toolSteps && toolSteps.length > 0 ? (
+      <ToolActivity steps={toolSteps} running={Boolean(toolsRunning)} />
+    ) : null;
   // Long-task cards rendered at the top so users always see in-flight progress
   // when scrolled to the latest message (which auto-anchors to bottom).
   // Sort: running/queued first (most relevant), terminal last; within each
