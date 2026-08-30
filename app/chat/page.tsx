@@ -1,5 +1,6 @@
 "use client";
 import { useTranslations } from "next-intl";
+import type { ToolStep } from "./components/ToolActivity";
 import WelcomeView from "@/app/chat/components/WelcomeView";
 import ChatInputComposite from "@/app/chat/components/ChatInputComposite";
 import ChatHeader from "@/app/chat/components/ChatHeader";
@@ -60,7 +61,9 @@ export default function ChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   // In-flight tool indicator driven by `event: tool_status` SSE frames.
   // `label` prefers the skill name over the raw tool name.
-  const [toolStatus, setToolStatus] = useState<{ label: string; failed: boolean } | null>(null);
+  // 本轮的工具调用列表。此前每来一帧就整个替换 —— 一轮调了五个工具只看得到
+  // 第五个，前四个不留痕迹。帧一直都在，是界面把它们丢了。
+  const [toolSteps, setToolSteps] = useState<ToolStep[]>([]);
 
   const [referencesDialogOpen, setReferencesDialogOpen] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState<number>(-1);
@@ -177,7 +180,7 @@ export default function ChatPage() {
     setAttachments([]);
     setStreamingMessage("");
     setIsStreaming(false);
-    setToolStatus(null);
+    setToolSteps([]);
     setChatId(0);
   }, [setChatId, setAttachments]);
 
@@ -199,7 +202,7 @@ export default function ChatPage() {
     setLoading(true);
     setStreamingMessage("");
     setIsStreaming(true);
-    setToolStatus(null);
+    setToolSteps([]);
     abortControllerRef.current = null;
 
     try {
@@ -237,13 +240,23 @@ export default function ChatPage() {
         onToolStatus: (status) => {
           const label = status.display_name || status.skill || status.name;
           if (status.phase === "started") {
-            setToolStatus({ label, failed: false });
-          } else if (status.ok === false) {
-            // Keep a lightweight failure hint until the model's follow-up
-            // tokens explain it (cleared on complete/error/new send).
-            setToolStatus({ label, failed: true });
+            setToolSteps((prev) => [
+              ...prev,
+              { id: prev.length, label, startedAt: Date.now() },
+            ]);
           } else {
-            setToolStatus(null);
+            // finished：结掉**最后一个同名且未结束**的步骤。
+            //
+            // 这些帧没有携带 tool_call_id，所以只能按名字回填。从后往前找是因为
+            // 同一个工具可能被连调多次（模型轮询就是这样）—— 从前往后会把新的
+            // finished 记到早已结束的那一条上，表现是「有的步骤永远转圈」。
+            setToolSteps((prev) => {
+              const i = prev.map((x) => x.label).lastIndexOf(label);
+              if (i < 0 || prev[i].ok !== undefined) return prev;
+              const next = [...prev];
+              next[i] = { ...next[i], ok: status.ok !== false, endedAt: Date.now() };
+              return next;
+            });
           }
         },
         onComplete: (result: any) => {
@@ -261,7 +274,7 @@ export default function ChatPage() {
           ]);
           setIsStreaming(false);
           setStreamingMessage("");
-          setToolStatus(null);
+          setToolSteps([]);
           setLoading(false);
           abortControllerRef.current = null;
         },
@@ -289,7 +302,7 @@ export default function ChatPage() {
           ]);
           setIsStreaming(false);
           setStreamingMessage("");
-          setToolStatus(null);
+          setToolSteps([]);
           setLoading(false);
           abortControllerRef.current = null;
         },
@@ -311,7 +324,7 @@ export default function ChatPage() {
       ]);
       setIsStreaming(false);
       setStreamingMessage("");
-      setToolStatus(null);
+      setToolSteps([]);
       setLoading(false);
       abortControllerRef.current = null;
     }
@@ -345,7 +358,7 @@ export default function ChatPage() {
 
       setIsStreaming(false);
       setStreamingMessage("");
-      setToolStatus(null);
+      setToolSteps([]);
       setLoading(false);
     }
   };
@@ -470,7 +483,8 @@ export default function ChatPage() {
               messages={messages}
               streamingMessage={streamingMessage}
               isStreaming={isStreaming}
-              toolStatus={toolStatus}
+              toolSteps={toolSteps}
+              toolsRunning={isStreaming}
               segments={segments}
               segmentsLoading={segmentsLoading}
               onOpenReferences={openReferencesDialog}

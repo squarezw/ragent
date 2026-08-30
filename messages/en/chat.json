@@ -107,5 +107,7 @@
   "tokenCalls": "{count} model calls",
   "tokenPartialMark": " (partial)",
   "tokenCached": "{count} cached",
-  "insufficientBalance": "Insufficient balance. Ask an administrator to add credits to continue."
+  "insufficientBalance": "Insufficient balance. Ask an administrator to add credits to continue.",
+  "activityRunning": "Working",
+  "activityDone": "Done"
 }

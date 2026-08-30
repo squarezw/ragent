@@ -107,5 +107,7 @@
   "tokenCalls": "{count} 次模型调用",
   "tokenPartialMark": "（部分）",
   "tokenCached": "缓存命中 {count}",
-  "insufficientBalance": "余额不足，请联系管理员为本租户充值后继续。"
+  "insufficientBalance": "余额不足，请联系管理员为本租户充值后继续。",
+  "activityRunning": "执行中",
+  "activityDone": "已完成"
 }
