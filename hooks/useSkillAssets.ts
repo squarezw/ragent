@@ -95,6 +95,14 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     execConfigFetcher,
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  // 线上那份单独取：「skill 已发布」不等于「线上那份是可执行的」——先发布再配可执行、
+  // 或已经撤过线上配置，两种情况 status 都是 published 而 published 侧没有行。
+  // 「要不要停线上」只能由这份数据回答，拿 status 当判据会把停不掉的东西说成停掉了。
+  const execConfigPublished = useSWR(
+    key ? `/api/v1/skills/${key}/exec-config?stage=published` : null,
+    execConfigFetcher,
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
   const images = useSWR(key ? "/api/v1/sandbox-images" : null, imagesFetcher, {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
@@ -208,6 +216,35 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     [skillId, assets.mutate]
   );
 
+  /**
+   * 取消可执行。`stage` 决定影响面：
+   *   draft     — 只撤草稿，线上照跑（需要再发布一次才真正停掉）
+   *   published — 立刻停掉线上执行
+   *
+   * 返回后端那句 message 原样交给调用方 —— 两个 stage 的后果截然不同，
+   * 自己拼一句「已取消」会让用户以为停掉了线上，而实际上没有。
+   */
+  const deleteExecConfig = useCallback(
+    async (stage: "draft" | "published" = "draft"): Promise<{
+      ok: boolean; message?: string; detail?: string;
+    }> => {
+      if (!skillId) return { ok: false, detail: "no skill" };
+      try {
+        const res = await axios.delete(
+          `/api/v1/skills/${skillId}/exec-config?stage=${stage}`,
+          { suppressErrorToast: true } as never
+        );
+        // 撤 draft 后本地那份配置就没了；撤 published 不影响 draft 的展示，
+        // 但两种情况都重新拉一次最稳妥 —— 状态由服务端说了算。
+        await Promise.all([execConfig.mutate(), execConfigPublished.mutate()]);
+        return { ok: true, message: res.data?.message };
+      } catch (error) {
+        return { ok: false, detail: detailOf(error) };
+      }
+    },
+    [skillId, execConfig.mutate, execConfigPublished.mutate]
+  );
+
   const saveExecConfig = useCallback(
     async (payload: SkillExecConfigPayload): Promise<{ ok: boolean; detail?: string }> => {
       if (!skillId) return { ok: false, detail: "no skill" };
@@ -235,6 +272,7 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     assetsLoading: assets.isLoading,
     assetsError: assets.error,
     execConfig: execConfig.data ?? null,
+    execConfigPublished: execConfigPublished.data ?? null,
     execConfigLoading: execConfig.isLoading,
     images: images.data ?? [],
     imagesUnavailable: !images.isLoading && (images.data?.length ?? 0) === 0,
@@ -245,6 +283,7 @@ export function useSkillAssets(skillId: number | null, enabled: boolean) {
     replaceAssetFile,
     deleteAsset,
     saveExecConfig,
+    deleteExecConfig,
     refresh: assets.mutate,
   };
 }
