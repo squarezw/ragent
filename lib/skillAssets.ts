@@ -885,3 +885,43 @@ export function formatBytes(bytes: number | null | undefined): string {
   }
   return `${value.toFixed(1)} ${unit}`;
 }
+
+/** 取消可执行时，两个 stage 各自删不删 */
+export interface ExecCancelPlan {
+  /** 撤草稿的运行配置 */
+  deleteDraft: boolean;
+  /** 停掉线上正在跑的那份 */
+  deleteLive: boolean;
+  /** 界面上要不要给「同时停线上」的勾选框 */
+  offerChoice: boolean;
+}
+
+/**
+ * 取消可执行的动作规划。
+ *
+ * 三条不变量：
+ * - 不存在的 stage 不发删除请求。后端对不存在的行是幂等成功，发了会拿回一句
+ *   success，前端据此报「已取消」——一次什么都没做的成功，比失败更难查。
+ * - 草稿已经不可执行、只剩线上那份时，「停线上」就是本次操作的全部内容，
+ *   不给选择（可以取消勾选的话，按钮就成了空操作）。
+ * - 草稿和线上都在时才给勾选框：撤草稿要等重新过审发布才生效
+ *   （publish = 先删 published 再从 draft 复制），中间线上照跑。
+ */
+export function planExecCancel(input: {
+  hasDraftExec: boolean;
+  hasLiveExec: boolean;
+  alsoStopLive: boolean;
+}): ExecCancelPlan {
+  const { hasDraftExec, hasLiveExec, alsoStopLive } = input;
+  const offerChoice = hasDraftExec && hasLiveExec;
+  return {
+    deleteDraft: hasDraftExec,
+    deleteLive: hasLiveExec && (!hasDraftExec || alsoStopLive),
+    offerChoice,
+  };
+}
+
+/** 这次操作是不是完全没事可做——没事可做就不该弹确认框，更不该报成功 */
+export function isExecCancelNoop(plan: ExecCancelPlan): boolean {
+  return !plan.deleteDraft && !plan.deleteLive;
+}

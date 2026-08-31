@@ -247,7 +247,12 @@ export default function SkillsPage() {
                               {t("statusUnpublishedChanges")}
                             </Badge>
                           )}
-                          {!skill.is_active && <Badge variant="destructive">{t("inactive")}</Badge>}
+                          {skill.is_executable && (
+                          <Badge variant="outline" className="text-sky-600 border-sky-300">
+                            {t("badgeExecutable")}
+                          </Badge>
+                        )}
+                        {!skill.is_active && <Badge variant="destructive">{t("inactive")}</Badge>}
                         </div>
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>

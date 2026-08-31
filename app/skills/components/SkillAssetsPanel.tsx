@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import SkillAssetPreviewDialog from "./SkillAssetPreviewDialog";
+import { planExecCancel } from "@/lib/skillAssets";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -133,6 +135,7 @@ export default function SkillAssetsPanel({
     totalBytes,
     assetsLoading,
     execConfig,
+    execConfigPublished,
     execConfigLoading,
     images,
     imagesUnavailable,
@@ -143,6 +146,7 @@ export default function SkillAssetsPanel({
     replaceAssetFile,
     deleteAsset,
     saveExecConfig,
+    deleteExecConfig,
   } = useSkillAssets(skill.id, canEdit);
 
   const [staged, setStaged] = useState<StagedFile[]>([]);
@@ -184,6 +188,9 @@ export default function SkillAssetsPanel({
   };
   const [dragging, setDragging] = useState(false);
   const [execFormOpen, setExecFormOpen] = useState(false);
+  const [cancelExecOpen, setCancelExecOpen] = useState(false);
+  const [alsoStopLive, setAlsoStopLive] = useState(false);
+  const [cancelingExec, setCancelingExec] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -375,9 +382,46 @@ export default function SkillAssetsPanel({
     }
   };
 
+  const isExecutable = execConfig !== null;
+  /** 线上是否真的在跑：published 侧有配置才算，与 skill.status 无关 */
+  const hasLiveExec = execConfigPublished !== null;
+  /** 删哪个 stage 的判断在 lib/skillAssets 里（planExecCancel），那边有测试 */
+  const cancelPlan = planExecCancel({
+    hasDraftExec: isExecutable,
+    hasLiveExec,
+    alsoStopLive,
+  });
+
+  /**
+   * 取消可执行。默认只撤草稿 —— 与这个面板里其它写操作同一套语义（改草稿，发布才上线）。
+   * 已发布的 skill 额外给一个「立刻停线上」勾选：撤草稿要等重新过审发布才生效
+   * （publish 是「先删 published 再从 draft 复制」），中间这段时间线上照跑。
+   */
+  const runCancelExec = async () => {
+    setCancelingExec(true);
+    // 草稿本来就不可执行时不发这一枪：后端幂等会回 success，白白让人以为撤了什么。
+    const draft = cancelPlan.deleteDraft ? await deleteExecConfig("draft") : null;
+    // 两个 stage 各删各的，没有「删草稿顺带删线上」这种隐含行为。
+    const live = cancelPlan.deleteLive ? await deleteExecConfig("published") : null;
+    setCancelingExec(false);
+    if (draft && !draft.ok) {
+      toast.error(draft.detail || t("execCancelFailed"));
+      return;
+    }
+    if (live && !live.ok) {
+      // 草稿已经撤掉了，这里只报线上没停 —— 谎称全成功会让人以为线上已经安全了。
+      toast.error(live.detail || t("execCancelFailed"));
+      return;
+    }
+    toast.success(live ? t("execCancelledLive") : t("execCancelled"));
+    setCancelExecOpen(false);
+    setAlsoStopLive(false);
+    setExecFormOpen(false);
+    onSkillChanged();
+  };
+
   if (!canEdit) return null;
 
-  const isExecutable = execConfig !== null;
 
   return (
     <>
@@ -766,13 +810,23 @@ export default function SkillAssetsPanel({
             </div>
             {execConfigLoading ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : isExecutable || hasLiveExec ? (
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setCancelExecOpen(true)}
+              >
+                <X className="h-4 w-4 mr-1" />
+                {t("execCancel")}
+              </Button>
+            ) : execFormOpen ? (
+              <Button variant="ghost" onClick={() => setExecFormOpen(false)}>
+                {tc("cancel")}
+              </Button>
             ) : (
-              !isExecutable &&
-              !execFormOpen && (
-                <Button variant="outline" onClick={() => setExecFormOpen(true)}>
-                  {t("execMakeExecutable")}
-                </Button>
-              )
+              <Button variant="outline" onClick={() => setExecFormOpen(true)}>
+                {t("execMakeExecutable")}
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -863,6 +917,63 @@ export default function SkillAssetsPanel({
               }}
             >
               {t("assetRevertConfirmOk")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 取消可执行：草稿必撤，线上要不要一起停由用户勾 */}
+      <AlertDialog
+        open={cancelExecOpen}
+        onOpenChange={(open) => {
+          if (cancelingExec) return;
+          setCancelExecOpen(open);
+          if (!open) setAlsoStopLive(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("execCancelConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>{isExecutable ? t("execCancelConfirmDesc") : t("execCancelLiveOnlyDesc")}</p>
+                {cancelPlan.offerChoice && (
+                  <p className="text-amber-600 dark:text-amber-500">
+                    {t("execCancelRevertNote")}
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {cancelPlan.offerChoice && (
+            <div className="flex items-start gap-2 rounded-md border p-3">
+              <Checkbox
+                id="also-stop-live"
+                checked={alsoStopLive}
+                onCheckedChange={(v) => setAlsoStopLive(v === true)}
+              />
+              <div className="grid gap-1">
+                <label htmlFor="also-stop-live" className="text-sm font-medium leading-none">
+                  {t("execCancelAlsoLive")}
+                </label>
+                <p className="text-xs text-muted-foreground">{t("execCancelAlsoLiveHint")}</p>
+              </div>
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelingExec}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancelingExec}
+              onClick={(e) => {
+                // AlertDialogAction 默认点了就关；请求还没回来就关，用户看不到失败。
+                e.preventDefault();
+                runCancelExec();
+              }}
+            >
+              {cancelingExec && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              {t("execCancel")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

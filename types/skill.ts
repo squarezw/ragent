@@ -32,6 +32,8 @@ export interface Skill {
   author?: string | null;
   /** 平台维护的内置技能：随版本更新，任何人都不能改/删（绑定不受限） */
   is_managed?: boolean;
+  /** 线上能不能跑：published stage 有运行配置才为 true（草稿配好但未过审仍是 false） */
+  is_executable?: boolean;
   /** 所属租户。创建时按作者租户落定，之后**不跟着人事变动走**——
    *  作者被调到别的租户时这里不变，要靠超管显式迁移（见 SkillEditor 的租户下拉）。 */
   owner_tenant_id?: number | null;
