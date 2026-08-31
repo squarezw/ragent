@@ -38,7 +38,7 @@
   "statusRejected": "Rejected",
   "statusUnpublishedChanges": "Unpublished changes",
   "inactive": "Inactive",
-  "badgeExecutable": "Executable",
+  "executableHint": "This skill runs scripts inside a sandbox container",
   "saveDraft": "Save Draft",
   "publish": "Publish",
   "submitReview": "Submit for Review",

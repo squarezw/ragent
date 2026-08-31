@@ -38,7 +38,7 @@
   "statusRejected": "已驳回",
   "statusUnpublishedChanges": "有未发布修改",
   "inactive": "已停用",
-  "badgeExecutable": "可执行",
+  "executableHint": "这个 Skill 会在沙箱容器里执行脚本",
   "saveDraft": "保存草稿",
   "publish": "发布",
   "submitReview": "提交审核",
