@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Search, Sparkles, Upload } from "lucide-react";
+import { Loader2, Plus, Search, Sparkles, Terminal, Upload } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills } from "@/hooks/useSkills";
@@ -166,7 +166,6 @@ export default function SkillsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("name")}</TableHead>
                   <TableHead>{t("displayName")}</TableHead>
                   <TableHead className="max-w-md">{t("description")}</TableHead>
                   <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
@@ -190,11 +189,17 @@ export default function SkillsPage() {
                       className="cursor-pointer"
                       onClick={() => router.push(`/skills/${skill.id}`)}
                     >
-                      <TableCell className="font-mono text-sm">{skill.name}</TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           {/* 不换行：加了徽标后这一格更窄，中文显示名会被压成一列一个字 */}
                           <span className="whitespace-nowrap">{skill.display_name}</span>
+                        {/* 会在沙箱里跑代码的 skill：图标而非徽标，这一列还要放
+                            「平台维护」徽标，两个方块并排会把显示名挤掉 */}
+                        {skill.is_executable && (
+                          <Terminal className="h-3.5 w-3.5 shrink-0 text-sky-600">
+                            <title>{t("executableHint")}</title>
+                          </Terminal>
+                        )}
                           {/* 内置技能没有编辑/删除按钮，光藏起来用户不知道为什么。
                               徽标 + hover 说明，比一个凭空消失的按钮好懂。 */}
                           {skill.is_managed && (
@@ -247,12 +252,7 @@ export default function SkillsPage() {
                               {t("statusUnpublishedChanges")}
                             </Badge>
                           )}
-                          {skill.is_executable && (
-                          <Badge variant="outline" className="text-sky-600 border-sky-300">
-                            {t("badgeExecutable")}
-                          </Badge>
-                        )}
-                        {!skill.is_active && <Badge variant="destructive">{t("inactive")}</Badge>}
+                          {!skill.is_active && <Badge variant="destructive">{t("inactive")}</Badge>}
                         </div>
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
