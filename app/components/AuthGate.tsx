@@ -5,6 +5,7 @@ import { AxiosError } from "axios";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
+import { MOBILE_LANDING_PATH, shouldLandOnChat } from "@/lib/postLoginLanding";
 import type { SiteConfig } from "../layout";
 
 const LOGIN_KEY = "ragent_logged_in";
@@ -105,6 +106,18 @@ export default function AuthGate({
     setLoggedIn(true);
     if (typeof window !== "undefined") {
       localStorage.setItem(LOGIN_KEY, "true");
+      // 手机上登录完落到对话页：首页是桌面版仪表盘，窄屏上读不了。
+      // 判断只在这里做（登录成功那一下），不做成每次打开都判 ——
+      // 那样侧边栏的「首页」在手机上就永远点不进去了。
+      if (
+        shouldLandOnChat({
+          pathname: window.location.pathname,
+          search: window.location.search,
+          viewportWidth: window.innerWidth,
+        })
+      ) {
+        window.location.href = MOBILE_LANDING_PATH;
+      }
     }
   }, []);
 
