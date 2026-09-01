@@ -162,6 +162,8 @@ export interface RateRow {
   ref_key: string;
   coefficient: string | number;
   note: string | null;
+  /** 后端按 ref_key(=id) 翻出来的实体名。翻不出时为 null，界面回退显示 ref_key */
+  name?: string | null;
   updated_at: string | null;
 }
 

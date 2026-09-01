@@ -117,5 +117,5 @@
   "defaultPlatformName": "平台名称",
   "defaultPlatformSubtitle": "平台副标题",
   "billingRatesTitle": "计费系数",
-  "billingRatesDesc": "未显式设置系数的条目按全局默认值计费；开启真实扣费前请先把「在吃默认值」的条目过一遍"
+  "billingRatesDesc": "模型、Skill、工具各自的计费倍率。未单独设置的按全局默认值计费。"
 }
