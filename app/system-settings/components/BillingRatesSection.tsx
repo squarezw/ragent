@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -21,26 +20,43 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type UsingDefaultRow, useRates } from "@/hooks/useBilling";
+import { Pencil, Search } from "lucide-react";
+import { useRates } from "@/hooks/useBilling";
+import {
+  RATE_TYPE_LABEL,
+  RATE_TYPE_UNIT,
+  countByType,
+  describeCoefficient,
+  filterRates,
+  mergeRates,
+  type MergedRate,
+} from "@/lib/billingRates";
 import { toast } from "sonner";
 
-const TYPE_LABEL: Record<string, string> = {
-  model: "模型",
-  skill: "Skill",
-  tool: "工具",
-};
-
-const TYPE_UNIT: Record<string, string> = {
-  model: "相对基准模型的价格倍率",
-  skill: "每次调用的积分",
-  tool: "每次调用的积分",
-};
+interface EditTarget {
+  type: string;
+  key: string;
+  /** 弹窗标题里显示的名字，不写进库 */
+  label: string;
+  /** 库里原有的备注，原样带回去，避免一次改系数把别人写的备注冲掉 */
+  note: string | null;
+}
 
 export function BillingRatesSection() {
   const { defaults, explicit, usingDefault, loading, error, save, remove } = useRates();
-  const [editing, setEditing] = useState<{ type: string; key: string; name?: string } | null>(null);
+  const [editing, setEditing] = useState<EditTarget | null>(null);
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [query, setQuery] = useState("");
+
+  const rows = useMemo(
+    () => mergeRates(explicit, usingDefault, defaults),
+    [explicit, usingDefault, defaults]
+  );
+  const counts = useMemo(() => countByType(rows), [rows]);
+  const visible = useMemo(() => filterRates(rows, typeFilter, query), [rows, typeFilter, query]);
+  const pending = rows.filter((r) => !r.isExplicit).length;
 
   const submit = async () => {
     if (!editing) return;
@@ -50,7 +66,7 @@ export function BillingRatesSection() {
       return;
     }
     try {
-      await save(editing.type, editing.key, n, editing.name, reason);
+      await save(editing.type, editing.key, n, editing.note ?? undefined, reason);
       toast.success("已保存，变更已记入审计");
       setEditing(null);
       setValue("");
@@ -60,160 +76,149 @@ export function BillingRatesSection() {
     }
   };
 
+  const openEdit = (r: MergedRate) => {
+    setEditing({ type: r.rateType, key: r.refKey, label: r.label, note: r.note });
+    setValue(String(r.coefficient));
+    setReason("");
+  };
+
   if (error) {
     return (
-      <div>
-        <div className="rounded-md border border-destructive/50 text-destructive px-3 py-2 text-sm">
-          {error}
-        </div>
+      <div className="rounded-md border border-destructive/50 text-destructive px-3 py-2 text-sm">
+        {error}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-x-6 gap-y-2 flex-wrap">
-            <CardTitle className="text-base whitespace-nowrap">全局默认值</CardTitle>
-            {/* 三项横排。原先一项一张卡竖着排，三行卡片占掉整屏，
-                  而这里的信息量其实只有三个数字 —— 页面的主角是下面那两张表。
-                  单位说明收进 title，悬停可见，不再单独占一行。 */}
-            {(["model", "skill", "tool"] as const).map((t) => (
-              <div key={t} className="flex items-center gap-2" title={TYPE_UNIT[t]}>
-                <span className="text-sm text-muted-foreground">{TYPE_LABEL[t]}</span>
-                <span className="text-lg font-semibold tabular-nums">{defaults[t] ?? "—"}</span>
-                {/* outline 而不是 ghost：这一行是操作入口。无边框的按钮夹在一排
-                      数字中间，读起来像普通文字，看不出可以点 */}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={() => {
-                    setEditing({ type: t, key: "*", name: "全局默认" });
-                    setValue(String(defaults[t] ?? 1));
-                  }}
-                >
-                  修改
-                </Button>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            未显式设置系数的条目按这里的值计费。
-            <span className="text-amber-600">
-              开启真实扣费前，请先把下方「在吃默认值」的条目过一遍。
-            </span>
-          </p>
-        </CardHeader>
-      </Card>
+      {/* 全局默认值：三个数字，一行放完。原先单独占一张卡，
+          而它的信息量还不如下面表格的一行 */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+        <span className="text-muted-foreground">全局默认</span>
+        {(["model", "skill", "tool"] as const).map((t) => (
+          <span key={t} className="flex items-center gap-1.5" title={RATE_TYPE_UNIT[t]}>
+            <span className="text-muted-foreground">{RATE_TYPE_LABEL[t]}</span>
+            <span className="font-semibold tabular-nums">{defaults[t] ?? "—"}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0"
+              aria-label={`修改${RATE_TYPE_LABEL[t]}默认系数`}
+              onClick={() => {
+                setEditing({ type: t, key: "*", label: `${RATE_TYPE_LABEL[t]}全局默认`, note: null });
+                setValue(String(defaults[t] ?? 1));
+                setReason("");
+              }}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+          </span>
+        ))}
+        {pending > 0 && (
+          <span className="text-xs text-amber-600">
+            {pending} 项还在用默认值，开启真实扣费前请先过一遍
+          </span>
+        )}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            在吃默认值的条目
-            <Badge variant="outline" className="ml-2">
-              {usingDefault.length}
+      <div className="flex flex-wrap items-center gap-2">
+        {(["all", "model", "skill", "tool"] as const).map((t) => (
+          <Button
+            key={t}
+            size="sm"
+            variant={typeFilter === t ? "default" : "outline"}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setTypeFilter(t)}
+          >
+            {t === "all" ? "全部" : RATE_TYPE_LABEL[t]}
+            <Badge variant="secondary" className="ml-1.5 font-normal">
+              {counts[t] ?? 0}
             </Badge>
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            这些条目没有显式系数。
-            <strong>「明确判定免费（设 0）」与「新绑忘了设」在库里是两回事</strong>
-            —— 调高全局默认时，前者不该被误涨价。
-          </p>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground py-3">加载中…</p>
-          ) : usingDefault.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-3">全部条目都已显式设置。</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {usingDefault.map((r: UsingDefaultRow) => (
-                <Button
-                  key={`${r.rate_type}:${r.ref_key}`}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEditing({ type: r.rate_type, key: r.ref_key, name: r.name });
-                    setValue(String(defaults[r.rate_type] ?? 1));
-                  }}
-                >
-                  <Badge variant="secondary" className="mr-1.5 font-normal">
-                    {TYPE_LABEL[r.rate_type]}
-                  </Badge>
-                  {r.name}
-                </Button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </Button>
+        ))}
+        <div className="relative ml-auto">
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索名称"
+            className="h-7 w-48 pl-7 text-xs"
+          />
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">已显式设置</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {explicit.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-3">还没有显式系数。</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>类型</TableHead>
-                  <TableHead>标识</TableHead>
-                  <TableHead>系数</TableHead>
-                  <TableHead>备注</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {explicit.map((r) => (
-                  <TableRow key={`${r.rate_type}:${r.ref_key}`}>
-                    <TableCell>{TYPE_LABEL[r.rate_type] ?? r.rate_type}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.ref_key}</TableCell>
-                    <TableCell className="font-medium">{Number(r.coefficient)}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{r.note || "—"}</TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditing({ type: r.rate_type, key: r.ref_key, name: r.note ?? "" });
-                          setValue(String(Number(r.coefficient)));
-                        }}
+      {loading ? (
+        <p className="text-sm text-muted-foreground py-3">加载中…</p>
+      ) : visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-3">
+          {rows.length === 0 ? "还没有可计费的条目。" : "没有匹配的条目。"}
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-20">类型</TableHead>
+              <TableHead>名称</TableHead>
+              <TableHead className="w-32">系数</TableHead>
+              <TableHead>备注</TableHead>
+              <TableHead className="w-40 text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map((r) => {
+              const { value: shown, tag } = describeCoefficient(r);
+              return (
+                <TableRow key={`${r.rateType}:${r.refKey}`}>
+                  <TableCell className="text-muted-foreground">
+                    {RATE_TYPE_LABEL[r.rateType] ?? r.rateType}
+                  </TableCell>
+                  <TableCell className="font-medium">{r.label}</TableCell>
+                  <TableCell>
+                    <span className="tabular-nums font-medium">{shown}</span>
+                    {tag && (
+                      <Badge
+                        variant="outline"
+                        className={`ml-2 font-normal ${
+                          tag === "默认" ? "text-muted-foreground" : "text-amber-600 border-amber-300"
+                        }`}
                       >
-                        修改
-                      </Button>
+                        {tag}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{r.note || "—"}</TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                      {r.isExplicit ? "修改" : "设置"}
+                    </Button>
+                    {r.isExplicit && (
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-destructive"
+                        className="text-muted-foreground"
                         onClick={async () => {
                           try {
-                            await remove(r.rate_type, r.ref_key);
-                            // 删除 = 回落默认，不是免费。说清楚免得被误解
-                            toast.success("已删除，该条目回落到全局默认值");
+                            await remove(r.rateType, r.refKey);
+                            // 说清楚是回落默认，不是变免费 —— 两者算出的钱可能一样，含义完全不同
+                            toast.success("已恢复为全局默认值");
                           } catch {
-                            toast.error("删除失败");
+                            toast.error("操作失败");
                           }
                         }}
                       >
-                        删除
+                        恢复默认
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
 
-      {/* 编辑用 modal，不用页面底部的内联卡片。
-          内联的话，点不同行只是让下方那块内容变，用户还要滚下去找 ——
-          条目一多（当前「在吃默认值」有十几个）就完全失去位置感。 */}
+      {/* 编辑用 modal，不用内联卡片：条目多时内联会让用户失去位置感 */}
       <Dialog
         open={editing !== null}
         onOpenChange={(open) => {
@@ -226,17 +231,17 @@ export function BillingRatesSection() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              设置系数 — {editing ? TYPE_LABEL[editing.type] : ""} · {editing?.name || editing?.key}
-            </DialogTitle>
-            <DialogDescription>{editing ? TYPE_UNIT[editing.type] : ""}</DialogDescription>
+            <DialogTitle>{editing?.label}</DialogTitle>
+            <DialogDescription>
+              {editing ? RATE_TYPE_UNIT[editing.type] : ""}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <Input
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder="系数"
+              placeholder="系数，0 表示免费"
               autoFocus
               onKeyDown={(e) => {
                 // 回车提交：改系数是高频操作，每次都去够鼠标很烦

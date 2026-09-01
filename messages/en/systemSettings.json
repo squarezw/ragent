@@ -117,5 +117,5 @@
   "defaultPlatformName": "Platform Name",
   "defaultPlatformSubtitle": "Platform Subtitle",
   "billingRatesTitle": "Billing rates",
-  "billingRatesDesc": "Entries without an explicit rate fall back to the global default; review them before enabling real deduction"
+  "billingRatesDesc": "Per-model, per-skill and per-tool billing multipliers. Anything not set individually uses the global default."
 }

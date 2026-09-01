@@ -35,6 +35,7 @@ import {
   generateRecommendedSecondaryColors,
 } from "@/lib/theme";
 import { BillingRatesSection } from "./components/BillingRatesSection";
+import { CollapsibleCard } from "./components/CollapsibleCard";
 import { Badge } from "@/components/ui/badge";
 import { useTranslations } from "next-intl";
 
@@ -549,17 +550,12 @@ export default function SystemSettingsPage() {
         </Card>
 
         {/* SMTP 邮箱配置 */}
-        <Card className="break-inside-avoid">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Mail className="h-4 w-4" />
-              {t("smtpSettings")}
-            </CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              {t("smtpSettingsDesc")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <CollapsibleCard
+          icon={<Mail className="h-4 w-4" />}
+          title={t("smtpSettings")}
+          description={t("smtpSettingsDesc")}
+          defaultOpen={false}
+        >
             <div className="space-y-2">
               <Label htmlFor="smtp_host" className="text-xs">
                 {t("smtpHost")}
@@ -718,21 +714,15 @@ export default function SystemSettingsPage() {
             <Button onClick={handleSaveSmtp} disabled={smtpLoading} className="h-8 text-sm">
               {smtpLoading ? t("saving") : t("saveConfig")}
             </Button>
-          </CardContent>
-        </Card>
+        </CollapsibleCard>
 
         {/* 主题设置 */}
-        <Card className="break-inside-avoid">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Palette className="h-4 w-4" />
-              {t("themeSettings")}
-            </CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              {t("themeSettingsDesc")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <CollapsibleCard
+          icon={<Palette className="h-4 w-4" />}
+          title={t("themeSettings")}
+          description={t("themeSettingsDesc")}
+          defaultOpen={false}
+        >
             {/* 主色调选择 */}
             <div className="space-y-3 p-3 bg-muted rounded-lg">
               <Label className="text-xs font-medium">{t("primaryColor")}</Label>
@@ -1031,8 +1021,7 @@ export default function SystemSettingsPage() {
             >
               {themeLoading ? t("saving") : t("saveConfig")}
             </Button>
-          </CardContent>
-        </Card>
+        </CollapsibleCard>
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——
