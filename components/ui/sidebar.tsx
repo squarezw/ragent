@@ -10,13 +10,22 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
+// 只给读屏用。这个组件在 ui/ 下，不接 next-intl（它是无依赖的基础组件），
+// 所以是英文字面量 —— 与同文件里 "Toggle Sidebar" 的既有做法一致。
+const SIDEBAR_A11Y_TITLE = "Navigation";
+const SIDEBAR_A11Y_DESCRIPTION = "Main navigation menu";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
@@ -196,6 +205,13 @@ const Sidebar = React.forwardRef<
             }
             side={side}
           >
+            {/* Radix 的 Dialog 强制要求 title —— 抽屉打开时读屏软件要能念出
+                这是什么。视觉上不需要（导航自己就在下面），所以用 sr-only
+                而不是真的渲染一行标题。缺了它控制台每次开抽屉都报错。 */}
+            <SheetTitle className="sr-only">{SIDEBAR_A11Y_TITLE}</SheetTitle>
+            <SheetDescription className="sr-only">
+              {SIDEBAR_A11Y_DESCRIPTION}
+            </SheetDescription>
             <div className="flex h-full w-full flex-col">{children}</div>
           </SheetContent>
         </Sheet>
