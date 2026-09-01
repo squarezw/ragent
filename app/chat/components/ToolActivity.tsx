@@ -8,6 +8,11 @@ export interface ToolStep {
    *  so we mint one — two calls to the same tool must not collapse into one row. */
   id: number;
   label: string;
+  /** 模型自报的这一步目的。有就跟在名称后，让「一连串飞书套件」变得可读 */
+  purpose?: string;
+  /** 实际执行的命令行。与 purpose 并列显示——自报意图和实际行为可能不符，
+   *  只给前者就成了单方面的说法，用户没有地方能看出来 */
+  detail?: string;
   /** undefined while running; true/false once the finished frame arrives. */
   ok?: boolean;
   startedAt: number;
@@ -45,6 +50,9 @@ export default function ToolActivity({
   // Follows `running`, but only as the initial value per turn — a user who
   // collapses it mid-run should not have it spring open again on the next frame.
   const [expanded, setExpanded] = useState(true);
+  // 哪几步被点开看命令。默认全收 —— 命令行是给排查用的，
+  // 平时摊在行里既没人看，又把标签挤到换行（"飞书 套件" 断成两行）。
+  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set());
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -86,29 +94,74 @@ export default function ToolActivity({
         <div className="mt-1 space-y-1 border-l pl-3 ml-1.5">
           {steps.map((s) => {
             const dur = (s.endedAt ?? now) - s.startedAt;
-            return (
-              <div key={s.id} className="flex items-center gap-1.5">
-                {s.ok === undefined ? (
-                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-                ) : s.ok ? (
-                  <Check className="h-3 w-3 shrink-0 text-emerald-600" />
-                ) : (
-                  <X className="h-3 w-3 shrink-0 text-destructive" />
-                )}
-                <span
-                  className={
-                    s.ok === false ? "text-destructive" : "text-muted-foreground"
-                  }
-                >
-                  {s.label}
-                </span>
-                {/* A step that finishes instantly needs no duration; one that
-                    runs for minutes is exactly where the user is looking. */}
-                {dur >= 1000 && (
-                  <span className="tabular-nums text-muted-foreground/70">{fmt(dur)}</span>
-                )}
-              </div>
-            );
+              const open = openDetails.has(s.id);
+              const toggle = () =>
+                setOpenDetails((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(s.id)) next.delete(s.id);
+                  else next.add(s.id);
+                  return next;
+                });
+              return (
+                <div key={s.id}>
+                  {/* 有命令才做成按钮：没有可展开内容的行不该有点击反馈 */}
+                  {(() => {
+                    const row = (
+                      <>
+                        {s.ok === undefined ? (
+                          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                        ) : s.ok ? (
+                          <Check className="h-3 w-3 shrink-0 text-emerald-600" />
+                        ) : (
+                          <X className="h-3 w-3 shrink-0 text-destructive" />
+                        )}
+                        <span
+                          className={
+                            s.ok === false ? "text-destructive" : "text-muted-foreground"
+                          }
+                        >
+                          {s.label}
+                        </span>
+                        {s.purpose && (
+                          <span className="text-muted-foreground/80">（{s.purpose}）</span>
+                        )}
+                        {/* A step that finishes instantly needs no duration; one that
+                            runs for minutes is exactly where the user is looking. */}
+                        {dur >= 1000 && (
+                          <span className="tabular-nums text-muted-foreground/70">
+                            {fmt(dur)}
+                          </span>
+                        )}
+                        {s.detail && (
+                          <ChevronRight
+                            className={`h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform ${
+                              open ? "rotate-90" : ""
+                            }`}
+                          />
+                        )}
+                      </>
+                    );
+                    return s.detail ? (
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        aria-expanded={open}
+                        className="flex w-full items-center gap-1.5 text-left"
+                      >
+                        {row}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5">{row}</div>
+                    );
+                  })()}
+                  {open && s.detail && (
+                    // 独占一行并允许换行：命令可能很长，截断了就失去了排查价值
+                    <code className="mt-0.5 ml-[18px] block whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground/60">
+                      {s.detail}
+                    </code>
+                  )}
+                </div>
+              );
           })}
         </div>
       )}

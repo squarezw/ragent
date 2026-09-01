@@ -13,6 +13,10 @@ export interface ToolStatusEvent {
   name: string;
   skill?: string;
   display_name?: string;
+  /** 模型自报的这一步目的，一句短语。纯展示，可能缺席 */
+  purpose?: string;
+  /** 实际执行的命令行。只有 execute_skill 会带 */
+  detail?: string;
   phase: "started" | "finished";
   ok?: boolean;
 }
@@ -30,6 +34,12 @@ export function parseToolStatusPayload(parsed: unknown): ToolStatusEvent | null 
   }
   if (typeof obj.display_name === "string" && obj.display_name !== "") {
     event.display_name = obj.display_name;
+  }
+  if (typeof obj.purpose === "string" && obj.purpose !== "") {
+    event.purpose = obj.purpose;
+  }
+  if (typeof obj.detail === "string" && obj.detail !== "") {
+    event.detail = obj.detail;
   }
   if (typeof obj.ok === "boolean") {
     event.ok = obj.ok;

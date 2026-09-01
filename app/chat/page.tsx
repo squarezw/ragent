@@ -242,7 +242,13 @@ export default function ChatPage() {
           if (status.phase === "started") {
             setToolSteps((prev) => [
               ...prev,
-              { id: prev.length, label, startedAt: Date.now() },
+              {
+                id: prev.length,
+                label,
+                purpose: status.purpose,
+                detail: status.detail,
+                startedAt: Date.now(),
+              },
             ]);
           } else {
             // finished：结掉**最后一个同名且未结束**的步骤。
