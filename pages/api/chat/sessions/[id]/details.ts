@@ -137,6 +137,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const detailsResult = await pool.query(detailsQuery, [id]);
 
+    // 本会话显式调用过哪些 skill。
+    //
+    // 口径刻意窄：只统计 execute_skill / load_skill 两条**可观测**路径。
+    // 注入未降级时，绑定的 skill 正文每轮都在提示词里，模型有没有采纳不产生
+    // 任何信号；把它算作「使用过」是编造。所以叫 skillsInvoked 不叫 skillsUsed。
+    //
+    // execute 与 load 分开计数：前者在沙箱里跑了脚本并计费，后者只是把正文读进
+    // 上下文。合成一个数字，「跑了 5 次脚本」和「读了 5 次说明」就没法区分了。
+    const skillsQuery = `
+      SELECT r.skill_name, r.kind, COUNT(*)::int AS times,
+             MAX(s.display_name) AS display_name
+        FROM skill_runs r
+        LEFT JOIN skills s ON s.id = r.skill_id
+        JOIN chat_session_detail d ON d.id = r.chat_session_detail_id
+       WHERE d.session_id = $1
+       GROUP BY r.skill_name, r.kind
+       ORDER BY times DESC, r.skill_name
+    `;
+    const skillsResult = await pool.query(skillsQuery, [id]);
+
     // 获取所有引用的文件信息
     const allFileIds = detailsResult.rows
       .filter((detail) => detail.references && detail.references.length > 0)
@@ -212,6 +232,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 credits: detail.credits === null ? undefined : String(detail.credits),
                 cacheWriteTokens: detail.cache_write_tokens,
               },
+      })),
+      skillsInvoked: skillsResult.rows.map((r: any) => ({
+        skillName: r.skill_name,
+        displayName: r.display_name ?? undefined,
+        kind: r.kind,
+        times: r.times,
       })),
     };
 
