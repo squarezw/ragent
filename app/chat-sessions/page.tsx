@@ -109,9 +109,21 @@ interface SessionDetail {
   usage?: TurnUsage;
 }
 
+/** 本会话显式调用过的一个 skill。只有 execute_skill / load_skill 两条
+ *  可观测路径会产生记录——注入未降级时 skill 正文每轮都在提示词里，
+ *  是否被采纳没有信号，所以这里不代表「用过的全部 skill」 */
+interface SkillInvocation {
+  skillName: string;
+  displayName?: string;
+  /** execute = 在沙箱里跑了脚本（计费）；load = 只把正文读进上下文 */
+  kind: "execute" | "load";
+  times: number;
+}
+
 interface SessionWithDetails extends Session {
   details: SessionDetail[];
   datasets?: Array<{ id: string; name: string }>;
+  skillsInvoked?: SkillInvocation[];
 }
 
 interface Filters {
@@ -943,6 +955,36 @@ export default function ChatSessionsPage() {
                                           </div>
                                         </div>
                                       )}
+                                      {selectedSession.skillsInvoked &&
+                                        selectedSession.skillsInvoked.length > 0 && (
+                                          <div>
+                                            <div className="text-sm font-medium text-muted-foreground mb-2">
+                                              {t("invokedSkills")}:
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                              {selectedSession.skillsInvoked.map((sk) => (
+                                                <Badge
+                                                  key={`${sk.skillName}:${sk.kind}`}
+                                                  variant="outline"
+                                                  className="text-sm"
+                                                  title={
+                                                    sk.kind === "execute"
+                                                      ? t("skillKindExecute")
+                                                      : t("skillKindLoad")
+                                                  }
+                                                >
+                                                  {sk.displayName || sk.skillName}
+                                                  {/* 执行与读取不合并：跑脚本会计费、读正文不会，
+                                                      用不同记号而不是同一个 ×N */}
+                                                  <span className="ml-1.5 text-muted-foreground">
+                                                    {sk.kind === "execute" ? "×" : "阅"}
+                                                    {sk.times}
+                                                  </span>
+                                                </Badge>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
                                   </CardContent>
                                 </Card>
                               </TabsContent>
