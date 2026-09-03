@@ -168,20 +168,25 @@ export default function AppsPage() {
    *
    * 选了具体租户筛选时也不分组：那时列表里本来就只有一个租户，组头是多余的。
    */
-  const groupHeaders = useMemo(() => {
-    if (!isSuperAdmin || tenantFilter !== "all") return null;
+  /**
+   * 分组后的渲染顺序 + 组头位置。
+   *
+   * **renderApps 必须是按组重排后的数组，不能是原扁平列表。** 初版只算了组头
+   * 却照旧渲染 visibleApps，结果卡片挂在了错误的租户名下 —— 因为扁平列表按
+   * 更新时间排，同一租户的应用并不连续（新加坡分公司同时出现在第 2 和第 7 位），
+   * 第 7 位那张就落到了上一个组头底下。组头对了、归属错了，比不分组更糟。
+   */
+  const { renderApps, groupHeaders } = useMemo(() => {
+    if (!isSuperAdmin || tenantFilter !== "all") {
+      return { renderApps: visibleApps, groupHeaders: null };
+    }
     const names = new Map(tenants.map((tn) => [tn.id, tn.name]));
     const groups = groupAppsByTenant(visibleApps, names, t("unassignedTenant"));
-    // app.id → 组标题，只给每组第一个应用。
-    //
-    // 这样能在**不改动两处渲染结构**的前提下插组头：现有的 visibleApps.map
-    // 一行不动，只在循环里判断「这个是不是某组的第一个」。重排 JSX 层级要动
-    // 两百多行深层嵌套，收益一样、出错面大得多。
-    const m = new Map<number, { label: string; count: number }>();
+    const headers = new Map<number, { label: string; count: number }>();
     for (const g of groups) {
-      if (g.apps.length > 0) m.set(g.apps[0].id, { label: g.label, count: g.apps.length });
+      if (g.apps.length > 0) headers.set(g.apps[0].id, { label: g.label, count: g.apps.length });
     }
-    return m;
+    return { renderApps: groups.flatMap((g) => g.apps), groupHeaders: headers };
   }, [isSuperAdmin, tenantFilter, tenants, visibleApps, t]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
@@ -794,7 +799,7 @@ export default function AppsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visibleApps.map((app) => {
+                      {renderApps.map((app) => {
                         const PlatformIcon = platformIcons[app.platform] || Globe;
                         const header = groupHeaders?.get(app.id);
                         const row = (
@@ -874,7 +879,7 @@ export default function AppsPage() {
                             </TableCell>
                             <TableCell>
                               <span className="text-sm text-muted-foreground">
-                                {new Date(app.created_at).toLocaleDateString()}
+                                {new Date(app.updated_at || app.created_at).toLocaleDateString()}
                               </span>
                             </TableCell>
                             <TableCell className="text-right">
@@ -1019,7 +1024,7 @@ export default function AppsPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {visibleApps.map((app) => {
+                  {renderApps.map((app) => {
                     const PlatformIcon = platformIcons[app.platform] || Globe;
                     const isDefault = app.is_default;
                     const header = groupHeaders?.get(app.id);
@@ -1109,7 +1114,7 @@ export default function AppsPage() {
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t mt-auto">
                             <span className="text-xs text-muted-foreground">
-                              {new Date(app.created_at).toLocaleDateString()}
+                              {new Date(app.updated_at || app.created_at).toLocaleDateString()}
                             </span>
                             <div className="flex gap-1">
                               {isStreamApp(app) && (

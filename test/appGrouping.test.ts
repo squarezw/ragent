@@ -79,3 +79,44 @@ test("卡片组头横跨整行，且不依赖 Tailwind 生成的类", () => {
   assert.ok(!src.includes('className="col-span-full'),
     "又用回了 col-span-full——它依赖 Tailwind 扫描，失效时不报错");
 });
+
+test("同一租户的应用不连续时，分组结果仍把它们收在一起", () => {
+  // 真实数据就是这样：列表按更新时间排，某个租户的两个应用中间隔着别的租户。
+  // 初版只算组头、照旧渲染原扁平列表，于是后面那张卡挂在了上一个组头下面 ——
+  // 组头是对的、归属是错的，比不分组更糟，而且肉眼很难发现。
+  const apps = [
+    app(1, 2),   // 新加坡
+    app(2, 6),   // AI预审
+    app(3, 5),   // 测试中心
+    app(4, 2),   // 新加坡 —— 与 app(1) 中间隔了两个租户
+  ];
+  const g = groupAppsByTenant(apps, new Map([[2, "新加坡"], [5, "测试中心"], [6, "AI预审"]]), "未归属");
+  const sg = g.find((x) => x.tenantId === 2)!;
+  assert.deepEqual(sg.apps.map((a) => a.id), [1, 4], "同租户的两个应用没被收在一起");
+  // 展平后必须按组连续，否则渲染时又会挂错组头
+  const flat = g.flatMap((x) => x.apps.map((a) => a.id));
+  assert.deepEqual(flat, [1, 4, 2, 3], "展平顺序不是按组连续的");
+});
+
+test("渲染源是分组展平后的数组，不是原扁平列表", () => {
+  // 这是上面那个 bug 的接线侧：分组算对了，但渲染时用错数组一样会挂错组头
+  const src = readFileSync(new URL("../app/apps/page.tsx", import.meta.url), "utf-8");
+  assert.ok(!src.includes("{visibleApps.map((app) => {"),
+    "还在直接渲染 visibleApps —— 同租户不连续时卡片会挂到错误的组头下");
+  assert.equal((src.match(/\{renderApps\.map\(\(app\) => \{/g) ?? []).length, 2,
+    "两处渲染（表格 / 卡片）都要用 renderApps");
+  // 关键：分组分支必须把 groups 展平后交给渲染。只把 renderApps 指回原扁平
+  // 列表就退回了本次的 bug —— 组头位置算对了，卡片却挂在错误的租户名下。
+  assert.match(src, /renderApps: groups\.flatMap\(/,
+    "分组时渲染源必须是 groups 展平的结果，不能是原扁平列表");
+});
+
+test("列表显示的日期与排序依据是同一个字段", () => {
+  // 排序按 updated_at、卡片显示 created_at，用户就无法从界面判断排序对不对——
+  // 这次正是因此被误判成「排序坏了」。
+  const src = readFileSync(new URL("../app/apps/page.tsx", import.meta.url), "utf-8");
+  assert.ok(!/new Date\(app\.created_at\)\.toLocaleDateString\(\)/.test(src),
+    "列表还在显示创建时间，而排序按的是更新时间");
+  assert.match(src, /app\.updated_at \|\| app\.created_at/,
+    "显示更新时间时要对 null 兜底（updated_at 可空）");
+});
