@@ -55,9 +55,15 @@ test("内置头像必须自带颜色，否则就是一格看不见的空白", ()
   assert.ok(files.length > 0, "public/avatars 下一个 svg 都没有");
   for (const f of files) {
     const svg = fs.readFileSync(path.join(dir, f), "utf8");
-    assert.match(svg, /<rect[^>]*fill="#[0-9a-f]{3,6}"/i, `${f} 没有底色`);
-    assert.match(svg, /stroke="#[0-9a-f]{3,6}"/i, `${f} 字形没有颜色`);
+    // 判据是「颜色写死在文件里」，不是某一种画法。两组内置头像画法不同：
+    //   lucide 图标   <rect> 底 + stroke 字形
+    //   人物头像      <circle>/<path> 底 + fill 填充（DiceBear notionists）
+    // 原先只认 rect+stroke，加人物头像时会假红 —— 它们同样自带颜色。
+    const literalColors = (svg.match(/(?:fill|stroke)="#[0-9a-f]{3,8}"/gi) ?? []).length;
+    assert.ok(literalColors >= 2, `${f} 只有 ${literalColors} 处写死的颜色，几乎必然是一格白板`);
     assert.ok(!svg.includes("currentColor"), `${f} 用了 currentColor，经 <img> 加载时取不到颜色`);
+    // 外部引用同理取不到：<img> 里的 SVG 不发额外请求，也没有页面 CSS
+    assert.ok(!/url\(['"]?https?:/i.test(svg), `${f} 引了外部资源，离线/客户内网会空掉`);
   }
 });
 

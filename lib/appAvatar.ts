@@ -11,7 +11,17 @@
  * 得是同一个颜色，否则用户会以为看到的是两个不同的东西。
  */
 
-/** 内置头像。value 就是存进 avatar_url 的那截路径。 */
+/**
+ * 内置头像。value 就是存进 avatar_url 的那截路径。
+ *
+ * 两组，顺序即选择器里的显示顺序：
+ *   · 前 8 个 `<职能>.svg` —— lucide 线性字形，按职能命名
+ *   · 后 12 个 `p-*.svg`   —— 人物头像，DiceBear notionists（CC0 1.0）生成，
+ *     由 scripts/gen-avatars.mjs 产出。要改就改脚本再重跑，别手改 SVG。
+ *
+ * **不要删除或重命名任何一项**：这些路径已经写进 apps.avatar_url，
+ * 动了就是让选过它的数字员工变成裂图。
+ */
 export const BUILTIN_AVATARS = [
   "/avatars/bot.svg",
   "/avatars/support.svg",
@@ -21,6 +31,18 @@ export const BUILTIN_AVATARS = [
   "/avatars/engineer.svg",
   "/avatars/finance.svg",
   "/avatars/scheduler.svg",
+  "/avatars/p-alice.svg",
+  "/avatars/p-ben.svg",
+  "/avatars/p-dave.svg",
+  "/avatars/p-diana.svg",
+  "/avatars/p-elena.svg",
+  "/avatars/p-grace.svg",
+  "/avatars/p-ivan.svg",
+  "/avatars/p-jane.svg",
+  "/avatars/p-lily.svg",
+  "/avatars/p-mark.svg",
+  "/avatars/p-opal.svg",
+  "/avatars/p-wendy.svg",
 ] as const;
 
 /** 上传头像在 OSS 里的分类目录 */
