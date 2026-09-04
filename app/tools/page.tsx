@@ -246,6 +246,7 @@ export default function ToolsPage() {
                   <TableHead>{t("name")}</TableHead>
                   <TableHead>{t("category")}</TableHead>
                   <TableHead>{t("description")}</TableHead>
+                  <TableHead>{t("creator")}</TableHead>
                   <TableHead>{t("status")}</TableHead>
                   <TableHead className="text-right">{t("actions")}</TableHead>
                 </TableRow>
@@ -269,6 +270,10 @@ export default function ToolsPage() {
                       <Badge className={getCategoryBadge(tool.category)}>{tool.category}</Badge>
                     </TableCell>
                     <TableCell className="max-w-md truncate">{tool.description}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {tool.created_by_name ||
+                        (tool.created_by ? t("creatorDeleted") : t("creatorUnknown"))}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Switch
