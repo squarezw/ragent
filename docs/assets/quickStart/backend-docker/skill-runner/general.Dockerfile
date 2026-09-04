@@ -51,7 +51,23 @@ FROM ragent-skill-basic:latest
 
 # 版本钉死到具体小版本。这一档是别人 skill 的运行环境，让它跟着 "lts" 之类的
 # 浮动标签走，等于让某天的上游发布悄悄改变所有 Node 类 skill 的行为。
-ARG NODE_VERSION=22.11.0
+#
+# 22.11.0 → 22.23.2（2026-09-03）：`node:sqlite` 在 22.11 上必须带
+# `--experimental-sqlite` 才能 require，否则 ERR_UNKNOWN_BUILTIN_MODULE。
+# 三个版本都在生产机上实测过，不是查文档得来的：
+#
+#     22.11.0   不带标志 → ERR_UNKNOWN_BUILTIN_MODULE
+#     22.23.2   不带标志 → 建表读写通过（带 ExperimentalWarning）
+#     24.20.0   不带标志 → 通过，无警告
+#
+# 选 22.23.2 而不是 24：留在同一条 LTS 线内，不引入大版本变更面。
+#
+# 也**不**走 `ENV NODE_OPTIONS=--experimental-sqlite` 这条更省事的路。它等于把一个
+# 实验标志焊死在每次 node 启动上：将来 Node 不再认这个标志时，未知标志会让
+# **node 完全起不来** —— 不是某个特性降级，是这一档所有 Node skill 全挂，
+# 且报错跟 sqlite 毫无关系。升版本没有这个反噬。test_sandbox_image_tiers.py
+# 里有一条测试盯着这件事。
+ARG NODE_VERSION=22.23.2
 ARG NODE_DIST_BASE=https://mirrors.aliyun.com/nodejs-release
 
 # TARGETARCH 由 buildkit 自动填充（amd64 / arm64 / ...），声明即可用。

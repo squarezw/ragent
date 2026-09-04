@@ -14,12 +14,17 @@
 2. **开发 license**——需要先报 HWID（第 5 步会算出来，算完补发给他）
 3. **最新版 `schema.sql`**（⚠️ 必须是最新，旧版缺表会导致对话接口 500）
 
-在`ragent/docs/assets/quickStart`目录下有以下五个文件，都需要下载
-- docker.zip 各种类型的镜像文件
-- schema.sql 基础表结构SQL
-- seed.sql 种子数据的SQL
-- env.example 给ragent-service的配置
-- init-dev-env.sh 导入schema.sql和seed.sql
+在 `ragent/docs/assets/quickStart` 目录下有以下内容，都需要下载：
+- `backend-docker/` 后端的 compose 文件与三个 skill-runner Dockerfile
+- `schema.sql` 基础表结构 SQL
+- `seed.sql` 种子数据的 SQL
+- `env.example` 给 ragent-service 的配置
+- `init-dev-env.sh` 导入 schema.sql 和 seed.sql
+
+> ⚠️ 这些**都是从后端仓 `ragent-service` 复制过来的快照**，不是真源。
+> 后端改了不会自动同步到这里，也不会报错——照着旧副本搭出来的环境跟实际的
+> 不一样，而且看不出来。当前快照的版本、以及怎么刷新，见
+> [`assets/quickStart/SOURCE.md`](./assets/quickStart/SOURCE.md)。
 
 ---
 

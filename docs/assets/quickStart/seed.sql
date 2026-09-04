@@ -51,6 +51,17 @@ INSERT INTO public.sandbox_images (id, name, tag, digest, description, is_enable
 INSERT INTO public.sandbox_images (id, name, tag, digest, description, is_enabled, created_by, created_at, updated_at) VALUES (9, 'ragent-skill-docs', 'latest', NULL, '文档处理环境：通用档 + openpyxl / python-docx / pypdf / Pillow / openai / requests / pydantic。处理 Excel、Word、PDF、图像或调 LLM 时选它。', true, NULL, NOW(), NOW());
 INSERT INTO public.sandbox_images (id, name, tag, digest, description, is_enabled, created_by, created_at, updated_at) VALUES (10, 'ragent-skill-general', 'latest', NULL, 'basic + Node 22 运行时（node/npm/npx）。⚠️ 提供的是运行时，不是"任意 npm 包随取随用"：沙箱默认 --network none 且 /tmp 挂 noexec，`npx <包名>` 会卡在 registry 超时而非快速失败。要跑固定的 npm 工具请在镜像构建时 npm install -g。', true, NULL, NOW(), NOW());
 
+-- tools：两行基线 MCP 工具（原先由迁移 044 / 046 预置，迁移删除后移到这里）
+--
+-- ⚠️ **密钥与主机地址一律占位。** 活库里这两行带着真的 Tavily key、
+--    某台机器的家目录路径和一个局域网 IP —— 照抄进来就是把它们提交进版本库。
+--    test_native_tool_roster.py 与 test_workflow_dependency_gate.py 会检查这一点。
+INSERT INTO public.tools (name, display_name, description, tool_type, category, default_config, is_enabled, is_system, version, author, created_at, updated_at)
+VALUES ('mcp-search-tavily', 'Tavily 搜索', '联网搜索（Tavily）', 'mcp', 'search',
+        '{"transport": "stdio", "command": "npx", "args": ["-y", "tavily-mcp"], "env": {"TAVILY_API_KEY": "${TAVILY_API_KEY}"}}'::jsonb,
+        true, false, '1.0.0', NULL, NOW(), NOW());
+
+
 -- 唯一账号：超级管理员。另外 15 个真实用户一个都不导。
 INSERT INTO public.users (id, username, nickname, password, email, tenant_id, dept_id, status, created_at, updated_at, wechat_id, api_key)
 VALUES (1, 'admin', 'Admin', '$2b$12$S3PIBGgtX0KMh1IY8yvkouwEuyunWKC3LDjhSJaRM7dyuN67EERrS', 'admin@example.local', 1, 1, 'active', NOW(), NOW(), NULL, NULL);
