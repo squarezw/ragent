@@ -1,0 +1,7 @@
+services:
+  ragent-service:
+    environment:
+      EXPOSE_POSTGRES_PORT: "5432"
+    volumes:
+      - "C:/Users/hp/.ragent/machine-id:/etc/host-machine-id:ro"
+      - "C:/Users/hp/.ragent/license.lic:/app/license.lic:ro"

@@ -1,0 +1,109 @@
+# ============================================================
+# 默认 Docker Compose 配置（CPU 版本，镜像 ~5-6GB）
+# GPU 版本请使用：docker-compose -f docker-compose.gpu.yml up -d
+# ============================================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: always
+    container_name: postgres
+    env_file:
+      - .env
+    volumes:
+      - ${PGDATA_HOST_VOLUME}:/var/lib/postgresql/data
+    ports:
+      - "${EXPOSE_POSTGRES_PORT}:5432"
+    networks:
+      - ragent-service
+
+  # Redis 服务
+  redis:
+    image: redis:7-alpine
+    restart: always
+    container_name: redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory ${REDIS_MAX_MEMORY}
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --dir /data
+      --dbfilename dump.rdb
+    volumes:
+      - ${REDIS_DATA_VOLUME}:/data
+    ports:
+      - "${EXPOSE_REDIS_PORT}:6379"
+    networks:
+      - ragent-service
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Neo4j 图数据库服务
+  neo4j:
+    image: neo4j:5
+    restart: always
+    container_name: neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE}
+      NEO4J_dbms_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE}
+    ports:
+      - "${EXPOSE_NEO4J_HTTP_PORT}:7474"
+      - "${EXPOSE_NEO4J_BOLT_PORT}:7687"
+    volumes:
+      - ${NEO4J_DATA_VOLUME}:/data
+      - ${NEO4J_LOGS_VOLUME}:/logs
+      - ${NEO4J_IMPORT_VOLUME}:/import
+      - ${NEO4J_PLUGINS_VOLUME}:/plugins
+    networks:
+      - ragent-service
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USERNAME} -p ${NEO4J_PASSWORD} 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  # Ragent 应用服务
+  ragent-service:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: squarezw/ragent-service:latest
+    container_name: ragent-service
+    restart: always
+    ports:
+      - "8010:8010"
+
+    env_file:
+      - .env
+
+    volumes:
+      # 挂载上传文件目录
+      - ../uploads:${FILE_STORAGE_PREFIX}
+      # 挂载模型缓存目录
+      - ./data/models:/app/model_cache
+      # 挂载 HuggingFace 缓存（共享模型下载）
+      - ${HUGGINGFACE_CACHE_DIR}:/root/.cache/huggingface
+      # 挂载 ModelScope 缓存（Fun-ASR 等模型）
+      - ${MODELSCOPE_CACHE_DIR}:/root/.cache/modelscope
+      # 挂载企业微信配置文件
+      - ../${WECHAT_AGENTS_CONFIG_FILE}:/app/${WECHAT_AGENTS_CONFIG_FILE}:ro
+      # License (uncomment after installing license.lic — see LICENSE_INSTALL.md)
+      # - /etc/machine-id:/etc/host-machine-id:ro
+      # - /opt/ragent/license.lic:/app/license.lic:ro
+
+    networks:
+      - ragent-service
+
+    # CPU 版本不需要 GPU 资源预留
+
+networks:
+  ragent-service:
+    name: ragent-service
+    driver: bridge
