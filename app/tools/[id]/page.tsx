@@ -188,8 +188,15 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <div>
-            <div className="text-sm text-muted-foreground mb-1">{t("author")}</div>
-            <div>{tool.author || "-"}</div>
+            <div className="text-sm text-muted-foreground mb-1">{t("creator")}</div>
+            {/* 三种状态必须分得开，否则「查不到是谁建的」会被读成「没人建过」：
+                · created_by 为空   → 这一行建于该列存在之前（存量数据）
+                · 有 id 无名字      → 创建人账号已注销
+                · 都有              → 正常显示 */}
+            <div>
+              {tool.created_by_name ||
+                (tool.created_by ? t("creatorDeleted") : t("creatorUnknown"))}
+            </div>
           </div>
 
           <div>

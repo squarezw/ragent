@@ -54,7 +54,6 @@ export function ToolFormDialog({
     default_config: "{}",
     is_enabled: true,
     version: "1.0.0",
-    author: "",
     documentation_url: "",
   });
 
@@ -70,7 +69,6 @@ export function ToolFormDialog({
         default_config: JSON.stringify(tool.default_config, null, 2),
         is_enabled: tool.is_enabled,
         version: tool.version || "1.0.0",
-        author: tool.author || "",
         documentation_url: tool.documentation_url || "",
       });
     } else {
@@ -84,8 +82,7 @@ export function ToolFormDialog({
         default_config: "{}",
         is_enabled: true,
         version: "1.0.0",
-        author: "",
-        documentation_url: "",
+            documentation_url: "",
       });
     }
     setConfigError("");
@@ -117,7 +114,6 @@ export function ToolFormDialog({
         default_config: config,
         is_enabled: formData.is_enabled,
         version: formData.version || undefined,
-        author: formData.author || undefined,
         documentation_url: formData.documentation_url || undefined,
       };
 
@@ -264,16 +260,9 @@ export function ToolFormDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="author">{t("authorLabel")}</Label>
-              <Input
-                id="author"
-                value={formData.author}
-                onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                placeholder={t("authorPlaceholder")}
-              />
-            </div>
-
+            {/* 原来这里有个「作者」输入框。它是手填的，与真正的创建人无关，
+                后端已改为从请求边界记 created_by —— 留着两个会给出
+                「填了就算数」的错觉。 */}
             <div>
               <Label htmlFor="documentation_url">{t("documentationUrl")}</Label>
               <Input
