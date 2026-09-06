@@ -4,6 +4,7 @@ import React, { useRef, useCallback, useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { centerItemScrollLeft, isFullyVisible } from "@/lib/horizontalScroll";
 
 interface App {
   id: number;
@@ -53,6 +54,54 @@ export default function AppShortcuts({
       };
     }
   }, [checkScrollButtons, apps]);
+
+  // 首次渲染时把已选中的员工滚进视野。
+  //
+  // 不做这件事的表现不是"位置不对"：列表停在最左端，选中项在视野外，
+  // 可见的四个标签全是灰的——看起来像**谁都没选**，而用户上次明明选过。
+  //
+  // 只在挂载后做一次（`didInitialScrollRef`）。选择变化时不滚：那是用户自己点的，
+  // 本来就在视野里，再滚一下只是无谓的跳动。
+  const didInitialScrollRef = useRef(false);
+  useEffect(() => {
+    if (didInitialScrollRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!container || !selectedAppId || apps.length === 0) return;
+    if (!container.querySelector(`[data-app-id="${selectedAppId}"]`)) return;
+
+    didInitialScrollRef.current = true;
+
+    // 推迟一帧再量。容器的左右内边距取决于箭头是否显示（4px vs 32px），
+    // 而那两个状态由**另一个** effect 设置；同一轮里量到的可能还是箭头出现前的
+    // 4px，按它居中，等箭头一出来项就又被盖住 —— 就是"滚了但只露一半"。
+    const raf = requestAnimationFrame(() => {
+      const el = container.querySelector<HTMLElement>(`[data-app-id="${selectedAppId}"]`);
+      if (!el) return;
+
+      // 用 getBoundingClientRect 而不是 offsetLeft：按钮的 offsetParent 是外层那个
+      // `relative` 容器（滚动容器自身没有 position），offsetLeft 量的不是滚动内容
+      // 坐标系里的偏移。
+      const contRect = container.getBoundingClientRect();
+      const itemRect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(container);
+      const geometry = {
+        containerWidth: container.clientWidth,
+        contentWidth: container.scrollWidth,
+        itemOffset: itemRect.left - contRect.left + container.scrollLeft,
+        itemWidth: itemRect.width,
+        // 箭头按钮浮在容器两侧、盖住这两段，居中时要排除在可用宽度外
+        padStart: parseFloat(style.paddingLeft) || 0,
+        padEnd: parseFloat(style.paddingRight) || 0,
+      };
+      if (isFullyVisible(geometry, container.scrollLeft)) return;
+
+      // 瞬间到位而不是平滑滚动：这是"恢复上次的位置"，不是用户触发的动作，
+      // 从最左端一路滑过去像是界面自己在动
+      container.scrollLeft = centerItemScrollLeft(geometry);
+      checkScrollButtons();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [apps, selectedAppId, checkScrollButtons]);
 
   const scroll = useCallback((direction: "left" | "right") => {
     if (scrollContainerRef.current) {
@@ -108,6 +157,7 @@ export default function AppShortcuts({
           return (
             <button
               key={app.id}
+              data-app-id={app.id}
               type="button"
               onClick={() => onAppSelect(app.id.toString())}
               className={`
