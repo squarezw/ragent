@@ -33,6 +33,7 @@ public/uploads/
 public/sop-images/
 /logs/
 .cursor
+.workbuddy
 
 backup/
 *.xlsx
