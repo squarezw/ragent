@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const { title, body, to, is_html = false } = req.body || {};
+  const { title, body, to, is_html = false, attachments } = req.body || {};
 
   if (!title || typeof title !== "string") {
     return res.status(400).json({ error: "Missing title" });
@@ -30,7 +30,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const authorization = req.headers.authorization;
 
-    const response = await fetch(`${backendBaseUrl}/api/v1/email/send`, {
+    const safeAttachments = Array.isArray(attachments)
+      ? attachments
+          .filter((item: any) => item && typeof item.object_key === "string" && item.object_key.trim())
+          .slice(0, 10)
+      : [];
+    const endpoint = safeAttachments.length > 0 ? "/api/v1/email/send-attachments" : "/api/v1/email/send";
+
+    const response = await fetch(`${backendBaseUrl}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -41,6 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         body,
         to,
         is_html,
+        ...(safeAttachments.length > 0 ? { attachments: safeAttachments } : {}),
       }),
     });
 

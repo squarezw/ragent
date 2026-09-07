@@ -5,6 +5,7 @@ import {
   finalizeRunActions,
   getRunForUser,
   listRunActions,
+  prepareFailedRunActionsForRetry,
   runActionRowToApi,
   runRowToApi,
 } from "@/lib/automation/store";
@@ -40,7 +41,15 @@ async function executeEmailAction(params: {
         ].join("\n")
       : finalResult;
 
-  const response = await fetch(`${backendUrl}/api/v1/email/send`, {
+  const includeAttachments = params.action.config?.includeAttachments === true;
+  const attachments = includeAttachments && Array.isArray(params.run.result_attachments)
+    ? params.run.result_attachments
+        .filter((item: any) => item && typeof item.object_key === "string" && item.object_key.trim())
+        .slice(0, 10)
+    : [];
+  const endpoint = attachments.length > 0 ? "/api/v1/email/send-attachments" : "/api/v1/email/send";
+
+  const response = await fetch(`${backendUrl}${endpoint}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -52,6 +61,7 @@ async function executeEmailAction(params: {
       body,
       to,
       is_html: false,
+      ...(attachments.length > 0 ? { attachments } : {}),
     }),
   });
 
@@ -76,6 +86,8 @@ async function executeEmailAction(params: {
   return {
     target: to,
     status: response.status,
+    attachmentCount: attachments.length,
+    attachments: attachments.map((item: any) => item.filename),
   };
 }
 
@@ -199,3 +211,11 @@ export async function executeRunActions(params: { userId: number; runId: number 
     actions: actions.map(runActionRowToApi),
   };
 }
+
+export async function retryFailedRunActions(params: { userId: number; runId: number }) {
+  // 这里只重置并重跑失败的后续 Action。
+  // final_result 不变，也不会调用 executeAutomationAgent，因此不会重新生成或重新审核。
+  await prepareFailedRunActionsForRetry(params.userId, params.runId);
+  return executeRunActions(params);
+}
+

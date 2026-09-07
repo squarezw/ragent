@@ -71,6 +71,7 @@ export async function ensureAutomationTables() {
         ai_result TEXT,
         review_content TEXT,
         final_result TEXT,
+        result_attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
         ai_version INTEGER NOT NULL DEFAULT 0,
         review_status VARCHAR(20) NOT NULL DEFAULT 'not_required',
         reviewer_user_id INTEGER,
@@ -92,6 +93,7 @@ export async function ensureAutomationTables() {
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS ai_result TEXT;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS review_content TEXT;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS final_result TEXT;
+      ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS result_attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS ai_version INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'not_required';
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS reviewer_user_id INTEGER;
@@ -166,6 +168,77 @@ export async function ensureAutomationTables() {
 
       CREATE INDEX IF NOT EXISTS idx_automation_run_actions_pending
         ON automation_run_actions(run_id, status, id ASC);
+
+      CREATE TABLE IF NOT EXISTS automation_email_processed_messages (
+        id SERIAL PRIMARY KEY,
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        message_key VARCHAR(500) NOT NULL,
+        automation_id INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(created_by_user_id, mailbox_key, message_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_processed_owner
+        ON automation_email_processed_messages(created_by_user_id, created_at DESC);
+
+
+      CREATE TABLE IF NOT EXISTS automation_email_mailbox_cursors (
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        last_uid BIGINT NOT NULL DEFAULT 0,
+        initialized BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (created_by_user_id, mailbox_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_cursor_updated
+        ON automation_email_mailbox_cursors(updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS automation_email_rule_events (
+        id SERIAL PRIMARY KEY,
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        message_key VARCHAR(500) NOT NULL,
+        message_uid BIGINT,
+        automation_id INTEGER NOT NULL,
+        outcome VARCHAR(40) NOT NULL,
+        winner_automation_id INTEGER,
+        matched_rule TEXT,
+        priority INTEGER,
+        from_address TEXT,
+        to_address TEXT,
+        subject TEXT,
+        message_date TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(created_by_user_id, mailbox_key, message_key, automation_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_automation
+        ON automation_email_rule_events(created_by_user_id, automation_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_mailbox
+        ON automation_email_rule_events(created_by_user_id, mailbox_key, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS automation_notification_preferences (
+        user_id INTEGER PRIMARY KEY,
+        initialized_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        success_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS automation_notification_states (
+        user_id INTEGER NOT NULL,
+        event_key VARCHAR(255) NOT NULL,
+        read_at TIMESTAMPTZ,
+        dismissed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, event_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_notification_states_user
+        ON automation_notification_states(user_id, updated_at DESC);
     `);
   })().catch((error) => {
     initPromise = null;
@@ -176,8 +249,20 @@ export async function ensureAutomationTables() {
 }
 
 function cleanTimeZone(value?: string) {
-  const zone = (value || "Asia/Shanghai").replace(/（.*?）/g, "").trim();
-  return zone || "Asia/Shanghai";
+  const raw = String(value || "Asia/Shanghai").trim();
+  const zone = raw
+    .replace(/\s*（.*?）\s*/g, "")
+    .replace(/\s*\(.*?\)\s*/g, "")
+    .trim();
+
+  if (!zone) return "Asia/Shanghai";
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date());
+    return zone;
+  } catch {
+    return "Asia/Shanghai";
+  }
 }
 
 function validTime(value?: string) {
@@ -376,6 +461,57 @@ export async function resolveAppName(appId: number) {
   return result.rows[0]?.name ? String(result.rows[0].name) : null;
 }
 
+type EmailRuleMode = "all" | "any";
+
+type EmailTriggerRule = {
+  id?: string;
+  field: string;
+  operator: string;
+  value?: string;
+};
+
+function normalizeEmailRules(input: any): EmailTriggerRule[] {
+  if (!Array.isArray(input)) return [];
+
+  const allowedFields = new Set([
+    "发件人",
+    "发件人域名",
+    "收件人",
+    "邮件主题",
+    "邮件正文",
+    "是否包含附件",
+    "附件名称",
+    "附件类型",
+  ]);
+  const allowedOperators = new Set(["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"]);
+
+  return input
+    .map((rule: any, index: number) => ({
+      id: String(rule?.id || `rule-${index + 1}`),
+      field: String(rule?.field || "邮件主题"),
+      operator: String(rule?.operator || "包含"),
+      value: String(rule?.value ?? "").trim(),
+    }))
+    .filter((rule: EmailTriggerRule) => allowedFields.has(rule.field) && allowedOperators.has(rule.operator))
+    .slice(0, 20);
+}
+
+function normalizeEmailPriority(value: any) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function emailRuleSummary(config: Record<string, any>) {
+  const rules = Array.isArray(config.rules) ? config.rules : [];
+  if (rules.length === 0) return "收到新邮件即触发";
+
+  const first = rules[0] || {};
+  const firstText = `${first.field || "邮件"}${first.operator || "包含"}${first.value ? `“${first.value}”` : ""}`;
+  if (rules.length === 1) return firstText;
+  return `${firstText} 等 ${rules.length} 条`;
+}
+
 export async function createAutomation(userId: number, input: any) {
   await ensureAutomationTables();
   const tenantId = await getUserTenantId(userId);
@@ -410,6 +546,16 @@ export async function createAutomation(userId: number, input: any) {
     });
     Object.assign(triggerConfig, schedule);
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+  } else if (triggerType === "邮件触发") {
+    Object.assign(triggerConfig, {
+      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? "system"),
+      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? "系统邮箱"),
+      folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? "INBOX"),
+      ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode) === "any" ? "any" : "all",
+      rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules),
+      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority),
+    });
+    nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
     triggerConfig.upstreamAutomationId =
       input.upstreamAutomationId ?? input.triggerConfig?.upstreamAutomationId ?? null;
@@ -421,6 +567,7 @@ export async function createAutomation(userId: number, input: any) {
 
   const resultConfig = {
     resultEmail: input.resultEmail || null,
+    resultEmailIncludeAttachments: Boolean(input.resultEmailIncludeAttachments),
     callbackUrl: input.callbackUrl || null,
     callbackTiming: input.callbackTiming || "任务结束后（推荐）",
     callbackAuth: input.callbackAuth || "无需验证",
@@ -506,6 +653,16 @@ export async function updateAutomation(userId: number, id: number, input: any) {
     });
     triggerConfig = schedule;
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+  } else if (triggerType === "邮件触发") {
+    triggerConfig = {
+      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? triggerConfig.mailboxKey ?? "system"),
+      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? triggerConfig.mailboxLabel ?? "系统邮箱"),
+      folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? triggerConfig.folder ?? "INBOX"),
+      ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode ?? triggerConfig.ruleMode) === "any" ? "any" : "all",
+      rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules ?? triggerConfig.rules),
+      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority ?? triggerConfig.priority),
+    };
+    nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
     triggerConfig = {
       upstreamAutomationId:
@@ -536,6 +693,10 @@ export async function updateAutomation(userId: number, id: number, input: any) {
       input.resultEmail !== undefined
         ? input.resultEmail || null
         : existingResultConfig.resultEmail || null,
+    resultEmailIncludeAttachments:
+      input.resultEmailIncludeAttachments !== undefined
+        ? Boolean(input.resultEmailIncludeAttachments)
+        : Boolean(existingResultConfig.resultEmailIncludeAttachments),
     callbackUrl:
       input.callbackUrl !== undefined
         ? input.callbackUrl || null
@@ -674,7 +835,10 @@ function successActionSpecsForRun(run: any): RunActionSpec[] {
     specs.push({
       key: "result_email",
       type: "email",
-      config: { to: resultEmail },
+      config: {
+        to: resultEmail,
+        includeAttachments: config.resultEmailIncludeAttachments === true,
+      },
     });
   }
 
@@ -774,7 +938,7 @@ export async function prepareAutomaticRunActions(
     const hasActions = specs.length > 0;
     const updated = await client.query(
       `UPDATE automation_runs SET
-        status=$1,
+        status=$1::varchar,
         result=$2,
         ai_result=$2,
         review_content=$2,
@@ -790,7 +954,7 @@ export async function prepareAutomaticRunActions(
           ELSE 0
         END,
         processing_started_at=NULL,
-        finished_at=CASE WHEN $1='success' THEN NOW() ELSE NULL END,
+        finished_at=CASE WHEN $1::varchar='success' THEN NOW() ELSE NULL END,
         updated_at=NOW()
        WHERE id=$4
        RETURNING *`,
@@ -930,6 +1094,107 @@ export async function finalizeRunActions(userId: number, runId: number) {
   }
 }
 
+export async function prepareFailedRunActionsForRetry(
+  userId: number,
+  runId: number
+) {
+  await ensureAutomationTables();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const locked = await client.query(
+      `SELECT * FROM automation_runs
+       WHERE id=$1 AND created_by_user_id=$2
+       FOR UPDATE`,
+      [runId, userId]
+    );
+
+    const run = locked.rows[0];
+    if (!run) throw new Error("RUN_NOT_FOUND");
+
+    // 失败重试只允许发生在“后续操作已经执行失败”的 Run 上。
+    // final_result / result 在这里保持不变，因此不会重新运行 AI 或重新进入审核。
+    if (run.status !== "failed" || run.action_status !== "failed") {
+      throw new Error("RUN_STATE_CONFLICT");
+    }
+
+    const failedResult = await client.query(
+      `SELECT COUNT(*)::INTEGER AS failed_count
+       FROM automation_run_actions
+       WHERE run_id=$1 AND status='failed'`,
+      [runId]
+    );
+
+    if (Number(failedResult.rows[0]?.failed_count || 0) <= 0) {
+      throw new Error("NO_FAILED_ACTIONS");
+    }
+
+    // 只把失败 Action 放回等待队列。已经成功的 Action 保持 success，
+    // executeRunActions 后续只会 claim pending，因此不会重复发送成功操作。
+    await client.query(
+      `UPDATE automation_run_actions SET
+        status='pending',
+        error=NULL,
+        started_at=NULL,
+        finished_at=NULL,
+        updated_at=NOW()
+       WHERE run_id=$1 AND status='failed'`,
+      [runId]
+    );
+
+    const updated = await client.query(
+      `UPDATE automation_runs SET
+        status='action_running',
+        action_status='pending',
+        error=NULL,
+        finished_at=NULL,
+        updated_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [runId]
+    );
+
+    await client.query("COMMIT");
+    return updated.rows[0] || null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveRunExecutionArtifacts(
+  runId: number,
+  attachments: Array<Record<string, any>> = []
+) {
+  await ensureAutomationTables();
+
+  const safeAttachments = (Array.isArray(attachments) ? attachments : [])
+    .map((item) => ({
+      filename: String(item?.filename || "attachment").trim() || "attachment",
+      object_key: String(item?.object_key || "").trim(),
+      ...(item?.content_type ? { content_type: String(item.content_type) } : {}),
+      ...(Number.isFinite(Number(item?.size)) && Number(item.size) >= 0
+        ? { size: Number(item.size) }
+        : {}),
+    }))
+    .filter((item) => item.object_key)
+    .slice(0, 10);
+
+  const result = await pool.query(
+    `UPDATE automation_runs SET
+       result_attachments=$1::jsonb,
+       updated_at=NOW()
+     WHERE id=$2
+     RETURNING *`,
+    [JSON.stringify(safeAttachments), runId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function markRunPendingReview(
   runId: number,
   resultText: string,
@@ -1007,7 +1272,7 @@ export async function markRunPendingReview(
 
 export async function finishRun(
   runId: number,
-  status: "success" | "failed",
+  status: "success" | "failed" | "timed_out",
   resultText?: string,
   errorText?: string
 ) {
@@ -1015,11 +1280,11 @@ export async function finishRun(
 
   const result = await pool.query(
     `UPDATE automation_runs SET
-      status=$1,
+      status=$1::varchar,
       result=$2,
-      ai_result=CASE WHEN $1='success' AND $2 IS NOT NULL THEN COALESCE(ai_result, $2) ELSE ai_result END,
+      ai_result=CASE WHEN $1::varchar='success' AND $2 IS NOT NULL THEN COALESCE(ai_result, $2) ELSE ai_result END,
       final_result=CASE
-        WHEN $1='success' AND review_status='not_required' THEN $2
+        WHEN $1::varchar='success' AND review_status='not_required' THEN $2
         ELSE final_result
       END,
       error=$3,
@@ -1271,7 +1536,7 @@ export async function approveRunReview(
 
     const updated = await client.query(
       `UPDATE automation_runs SET
-        status=$1,
+        status=$1::varchar,
         result=$2,
         review_content=$2,
         final_result=$2,
@@ -1281,7 +1546,7 @@ export async function approveRunReview(
         reviewed_at=NOW(),
         rejection_reason=NULL,
         error=NULL,
-        finished_at=CASE WHEN $1='success' THEN NOW() ELSE NULL END,
+        finished_at=CASE WHEN $1::varchar='success' THEN NOW() ELSE NULL END,
         processing_started_at=NULL,
         updated_at=NOW()
        WHERE id=$5
@@ -1367,6 +1632,394 @@ export async function rejectRunReview(
   }
 }
 
+export async function claimAutomationEmailMessage(
+  userId: number,
+  mailboxKey: string,
+  messageKey: string,
+  automationId: number
+) {
+  await ensureAutomationTables();
+
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeMessageKey = String(messageKey || "").trim();
+  if (!safeMessageKey) throw new Error("EMAIL_MESSAGE_KEY_REQUIRED");
+
+  const result = await pool.query(
+    `INSERT INTO automation_email_processed_messages (
+      created_by_user_id, mailbox_key, message_key, automation_id
+    ) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (created_by_user_id, mailbox_key, message_key) DO NOTHING
+    RETURNING id`,
+    [userId, safeMailboxKey, safeMessageKey.slice(0, 500), automationId]
+  );
+
+  return result.rows.length > 0;
+}
+
+export type AutomationEmailRuleOutcome =
+  | "triggered"
+  | "suppressed_by_priority"
+  | "not_matched"
+  | "duplicate";
+
+export type AutomationEmailRuleEvaluationInput = {
+  userId: number;
+  mailboxKey: string;
+  messageKey: string;
+  messageUid?: number;
+  automationId: number;
+  outcome: AutomationEmailRuleOutcome;
+  winnerAutomationId?: number | null;
+  matchedRule?: string;
+  priority?: number;
+  from?: string;
+  to?: string;
+  subject?: string;
+  date?: string;
+};
+
+export async function recordAutomationEmailRuleEvaluations(
+  evaluations: AutomationEmailRuleEvaluationInput[]
+) {
+  await ensureAutomationTables();
+  const safe = evaluations
+    .filter((item) => Number.isInteger(Number(item.userId)) && Number.isInteger(Number(item.automationId)))
+    .map((item) => ({
+      ...item,
+      mailboxKey: String(item.mailboxKey || "system").trim() || "system",
+      messageKey: String(item.messageKey || "").trim().slice(0, 500),
+    }))
+    .filter((item) => item.messageKey);
+
+  if (safe.length === 0) return;
+
+  const values: string[] = [];
+  const params: any[] = [];
+  for (const item of safe) {
+    const start = params.length;
+    params.push(
+      item.userId,
+      item.mailboxKey,
+      item.messageKey,
+      Number.isFinite(Number(item.messageUid)) ? Number(item.messageUid) : null,
+      item.automationId,
+      item.outcome,
+      item.winnerAutomationId ?? null,
+      item.matchedRule || null,
+      Number.isFinite(Number(item.priority)) ? Number(item.priority) : null,
+      item.from || null,
+      item.to || null,
+      item.subject || null,
+      item.date || null,
+    );
+    const indexes = Array.from({ length: 13 }, (_, i) => `$${start + i + 1}`);
+    values.push(`(${indexes.join(",")},NOW())`);
+  }
+
+  await pool.query(
+    `INSERT INTO automation_email_rule_events (
+       created_by_user_id, mailbox_key, message_key, message_uid,
+       automation_id, outcome, winner_automation_id, matched_rule, priority,
+       from_address, to_address, subject, message_date, created_at
+     ) VALUES ${values.join(",")}
+     ON CONFLICT (created_by_user_id, mailbox_key, message_key, automation_id) DO NOTHING`,
+    params,
+  );
+}
+
+export async function getAutomationEmailRoutingStats(userId: number, automationId: number) {
+  await ensureAutomationTables();
+
+  const statsResult = await pool.query(
+    `SELECT
+       COUNT(*)::int AS scanned,
+       COUNT(*) FILTER (WHERE outcome <> 'not_matched')::int AS matched,
+       COUNT(*) FILTER (WHERE outcome = 'triggered')::int AS triggered,
+       COUNT(*) FILTER (WHERE outcome = 'suppressed_by_priority')::int AS suppressed,
+       COUNT(*) FILTER (WHERE outcome = 'not_matched')::int AS not_matched,
+       COUNT(*) FILTER (WHERE outcome = 'duplicate')::int AS duplicate
+     FROM automation_email_rule_events
+     WHERE created_by_user_id=$1 AND automation_id=$2`,
+    [userId, automationId],
+  );
+
+  const recentResult = await pool.query(
+    `SELECT
+       id, mailbox_key, message_key, message_uid, automation_id, outcome,
+       winner_automation_id, matched_rule, priority,
+       from_address, to_address, subject, message_date, created_at
+     FROM automation_email_rule_events
+     WHERE created_by_user_id=$1 AND automation_id=$2
+     ORDER BY created_at DESC, id DESC
+     LIMIT 20`,
+    [userId, automationId],
+  );
+
+  const row = statsResult.rows[0] || {};
+  return {
+    scanned: Number(row.scanned || 0),
+    matched: Number(row.matched || 0),
+    triggered: Number(row.triggered || 0),
+    suppressed: Number(row.suppressed || 0),
+    notMatched: Number(row.not_matched || 0),
+    duplicate: Number(row.duplicate || 0),
+    recent: recentResult.rows.map((item: any) => ({
+      id: Number(item.id),
+      mailboxKey: item.mailbox_key,
+      messageKey: item.message_key,
+      messageUid: item.message_uid == null ? undefined : Number(item.message_uid),
+      automationId: Number(item.automation_id),
+      outcome: item.outcome,
+      winnerAutomationId:
+        item.winner_automation_id == null ? undefined : Number(item.winner_automation_id),
+      matchedRule: item.matched_rule || undefined,
+      priority: item.priority == null ? undefined : Number(item.priority),
+      from: item.from_address || undefined,
+      to: item.to_address || undefined,
+      subject: item.subject || undefined,
+      date: item.message_date || undefined,
+      createdAt: item.created_at,
+    })),
+  };
+}
+
+export type AutomationNotificationKind =
+  | "pending_review"
+  | "run_failed"
+  | "run_timed_out"
+  | "run_success"
+  | "email_failed"
+  | "result_url_failed";
+
+export interface AutomationNotificationItem {
+  eventKey: string;
+  kind: AutomationNotificationKind;
+  level: "strong" | "normal";
+  title: string;
+  message: string;
+  automationId: number | null;
+  runId: number;
+  createdAt: string;
+  read: boolean;
+  readAt?: string;
+}
+
+async function getAutomationNotificationInitializedAt(userId: number) {
+  await ensureAutomationTables();
+  await pool.query(
+    `INSERT INTO automation_notification_preferences (user_id)
+     VALUES ($1)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId]
+  );
+
+  const result = await pool.query(
+    `SELECT initialized_at, success_enabled
+     FROM automation_notification_preferences
+     WHERE user_id=$1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return {
+    initializedAt: result.rows[0]?.initialized_at || new Date(),
+    successEnabled: result.rows[0]?.success_enabled !== false,
+  };
+}
+
+function notificationEventTime(row: any) {
+  const value = row.event_time || row.finished_at || row.updated_at || row.created_at || row.started_at;
+  return value ? new Date(value) : new Date();
+}
+
+function clipNotificationError(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+}
+
+export async function listAutomationNotifications(userId: number) {
+  const { initializedAt, successEnabled } = await getAutomationNotificationInitializedAt(userId);
+
+  const runResult = await pool.query(
+    `SELECT id, automation_id, automation_name, status, action_status, ai_version,
+            error, started_at, created_at, updated_at, finished_at,
+            COALESCE(updated_at, finished_at, created_at, started_at) AS event_time
+     FROM automation_runs
+     WHERE created_by_user_id=$1
+       AND (
+         status='pending'
+         OR (
+           COALESCE(updated_at, finished_at, created_at, started_at) >= $2
+           AND status IN ('failed', 'timed_out', 'success')
+         )
+       )
+     ORDER BY COALESCE(updated_at, finished_at, created_at, started_at) DESC, id DESC
+     LIMIT 160`,
+    [userId, initializedAt]
+  );
+
+  const actionResult = await pool.query(
+    `SELECT action.id, action.run_id, action.action_type, action.status,
+            action.attempt_count, action.error, action.created_at, action.updated_at,
+            action.finished_at, run.automation_id, run.automation_name,
+            COALESCE(action.finished_at, action.updated_at, action.created_at) AS event_time
+     FROM automation_run_actions AS action
+     JOIN automation_runs AS run ON run.id=action.run_id
+     WHERE run.created_by_user_id=$1
+       AND action.status='failed'
+       AND COALESCE(action.finished_at, action.updated_at, action.created_at) >= $2
+     ORDER BY COALESCE(action.finished_at, action.updated_at, action.created_at) DESC, action.id DESC
+     LIMIT 100`,
+    [userId, initializedAt]
+  );
+
+  const items: AutomationNotificationItem[] = [];
+
+  for (const row of runResult.rows) {
+    const runId = Number(row.id);
+    const automationId = row.automation_id ? Number(row.automation_id) : null;
+    const name = String(row.automation_name || "自动化");
+    const createdAt = notificationEventTime(row).toISOString();
+
+    if (row.status === "pending") {
+      const version = Math.max(1, Number(row.ai_version || 1));
+      items.push({
+        eventKey: `run:${runId}:pending:v${version}`,
+        kind: "pending_review",
+        level: "strong",
+        title: `【待处理】${name}需要审核`,
+        message: "AI 已生成结果，等待你审核后决定是否执行后续业务动作。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "failed") {
+      // 后续 Action 失败会生成更具体的邮件 / URL 失败提醒，避免重复提示。
+      if (row.action_status === "failed") continue;
+      const error = clipNotificationError(row.error);
+      items.push({
+        eventKey: `run:${runId}:failed:${new Date(createdAt).getTime()}`,
+        kind: "run_failed",
+        level: "strong",
+        title: `【失败】${name}执行失败`,
+        message: error ? `本次运行失败：${error}` : "本次自动化运行失败，请进入运行详情查看原因。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "timed_out") {
+      items.push({
+        eventKey: `run:${runId}:timed_out`,
+        kind: "run_timed_out",
+        level: "strong",
+        title: `【超时】${name}执行超时`,
+        message: "本次自动化超过允许执行时间，请进入运行详情处理。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "success" && successEnabled) {
+      items.push({
+        eventKey: `run:${runId}:success`,
+        kind: "run_success",
+        level: "normal",
+        title: `【成功】${name}已执行完成`,
+        message: "本次自动化已完成，可进入运行详情查看最终结果。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+    }
+  }
+
+  for (const row of actionResult.rows) {
+    const runId = Number(row.run_id);
+    const automationId = row.automation_id ? Number(row.automation_id) : null;
+    const name = String(row.automation_name || "自动化");
+    const attempt = Math.max(1, Number(row.attempt_count || 1));
+    const createdAt = notificationEventTime(row).toISOString();
+    const error = clipNotificationError(row.error);
+    const isEmail = row.action_type === "email";
+
+    items.push({
+      eventKey: `action:${Number(row.id)}:failed:attempt${attempt}`,
+      kind: isEmail ? "email_failed" : "result_url_failed",
+      level: "strong",
+      title: isEmail ? `【失败】${name}结果邮件发送失败` : `【失败】${name}结果 URL 发送失败`,
+      message: error
+        ? `${isEmail ? "结果邮件" : "结果 URL"}发送失败：${error}`
+        : `${isEmail ? "结果邮件" : "结果 URL"}发送失败，可进入运行详情重试失败操作。`,
+      automationId,
+      runId,
+      createdAt,
+      read: false,
+    });
+  }
+
+  const stateResult = await pool.query(
+    `SELECT event_key, read_at, dismissed_at
+     FROM automation_notification_states
+     WHERE user_id=$1`,
+    [userId]
+  );
+
+  const stateMap = new Map<string, any>(stateResult.rows.map((row) => [String(row.event_key), row]));
+  const merged = items
+    .filter((item) => !stateMap.get(item.eventKey)?.dismissed_at)
+    .map((item) => {
+      const state = stateMap.get(item.eventKey);
+      return {
+        ...item,
+        read: Boolean(state?.read_at),
+        readAt: state?.read_at ? new Date(state.read_at).toISOString() : undefined,
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 100);
+
+  return {
+    items: merged,
+    unreadCount: merged.filter((item) => !item.read).length,
+  };
+}
+
+export async function markAutomationNotificationsRead(userId: number, eventKeys: string[]) {
+  await ensureAutomationTables();
+  const keys = Array.from(
+    new Set(
+      (Array.isArray(eventKeys) ? eventKeys : [])
+        .map((value) => String(value || "").trim())
+        .filter((value) => value.length > 0 && value.length <= 255)
+    )
+  ).slice(0, 100);
+
+  if (keys.length === 0) return;
+
+  for (const eventKey of keys) {
+    await pool.query(
+      `INSERT INTO automation_notification_states (user_id, event_key, read_at, updated_at)
+       VALUES ($1, $2, NOW(), NOW())
+       ON CONFLICT (user_id, event_key)
+       DO UPDATE SET read_at=NOW(), updated_at=NOW()`,
+      [userId, eventKey]
+    );
+  }
+}
+
 export async function listRuns(userId: number, automationId?: number) {
   await ensureAutomationTables();
   const params: any[] = [userId];
@@ -1395,7 +2048,7 @@ export function automationRowToApi(row: any) {
     row.trigger_type === "定时触发"
       ? `${config.period || "每天"} ${config.time || "09:00"} · ${config.timezone || "Asia/Shanghai"}`
       : row.trigger_type === "邮件触发"
-        ? "系统邮箱 · 收到新邮件即触发"
+        ? `${config.mailboxLabel || "系统邮箱"} · ${emailRuleSummary(config)} · 优先级 ${normalizeEmailPriority(config.priority)}`
         : row.trigger_type === "Webhook / API"
           ? "由外部系统通过 Webhook / API 触发"
           : "上游自动化完成后触发";
@@ -1427,12 +2080,19 @@ export function automationRowToApi(row: any) {
       .filter(Boolean)
       .join(" + "),
     resultEmail: resultConfig.resultEmail || undefined,
+    resultEmailIncludeAttachments: Boolean(resultConfig.resultEmailIncludeAttachments),
     callbackUrl: resultConfig.callbackUrl || undefined,
     callbackTiming: resultConfig.callbackTiming || undefined,
     callbackAuth: resultConfig.callbackAuth || undefined,
     schedulePeriod: config.period,
     scheduleTime: config.time,
     scheduleTimezone: config.timezone,
+    mailboxKey: config.mailboxKey || "system",
+    mailboxLabel: config.mailboxLabel || "系统邮箱",
+    mailFolder: config.folder || "INBOX",
+    mailRuleMode: (config.ruleMode === "any" ? "any" : "all") as EmailRuleMode,
+    mailRules: normalizeEmailRules(config.rules),
+    mailPriority: normalizeEmailPriority(config.priority),
     upstreamAutomationId: config.upstreamAutomationId ?? undefined,
     upstreamCondition: config.upstreamCondition ?? undefined,
     passPreviousResult: config.passPreviousResult ?? undefined,
@@ -1481,6 +2141,7 @@ export function runRowToApi(row: any) {
     aiResult: row.ai_result || undefined,
     reviewContent: row.review_content || undefined,
     finalResult: row.final_result || undefined,
+    resultAttachments: Array.isArray(row.result_attachments) ? row.result_attachments : [],
     aiVersion: Number(row.ai_version || 0),
     reviewStatus: row.review_status || "not_required",
     reviewerUserId: row.reviewer_user_id || undefined,
@@ -1496,3 +2157,62 @@ export function runRowToApi(row: any) {
     updatedAt: row.updated_at || row.created_at,
   };
 }
+
+export async function listActiveEmailAutomationsForScheduler() {
+  await ensureAutomationTables();
+  const result = await pool.query(
+    `SELECT * FROM automation_tasks
+     WHERE trigger_type='邮件触发'
+       AND status='running'
+     ORDER BY created_by_user_id ASC, id ASC`
+  );
+  return result.rows;
+}
+
+export async function getAutomationEmailMailboxCursor(
+  userId: number,
+  mailboxKey: string
+) {
+  await ensureAutomationTables();
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const result = await pool.query(
+    `SELECT last_uid, initialized, updated_at
+     FROM automation_email_mailbox_cursors
+     WHERE created_by_user_id=$1 AND mailbox_key=$2
+     LIMIT 1`,
+    [userId, safeMailboxKey]
+  );
+
+  const row = result.rows[0];
+  return {
+    lastUid: Number(row?.last_uid || 0),
+    initialized: Boolean(row?.initialized),
+    updatedAt: row?.updated_at || null,
+  };
+}
+
+export async function saveAutomationEmailMailboxCursor(
+  userId: number,
+  mailboxKey: string,
+  lastUid: number,
+  initialized = true
+) {
+  await ensureAutomationTables();
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeUid = Number.isFinite(Number(lastUid)) ? Math.max(0, Math.floor(Number(lastUid))) : 0;
+
+  const result = await pool.query(
+    `INSERT INTO automation_email_mailbox_cursors (
+       created_by_user_id, mailbox_key, last_uid, initialized, updated_at
+     ) VALUES ($1,$2,$3,$4,NOW())
+     ON CONFLICT (created_by_user_id, mailbox_key) DO UPDATE SET
+       last_uid=GREATEST(automation_email_mailbox_cursors.last_uid, EXCLUDED.last_uid),
+       initialized=automation_email_mailbox_cursors.initialized OR EXCLUDED.initialized,
+       updated_at=NOW()
+     RETURNING *`,
+    [userId, safeMailboxKey, safeUid, initialized]
+  );
+
+  return result.rows[0] || null;
+}
+

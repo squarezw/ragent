@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { executeAutomationAgent } from "@/lib/automation/execute";
-import { executeRunActions } from "@/lib/automation/actions";
+import { executeRunActions, retryFailedRunActions } from "@/lib/automation/actions";
 import {
   approveRunReview,
   beginRunRegeneration,
@@ -14,6 +14,7 @@ import {
   runActionRowToApi,
   runRowToApi,
   saveRunReviewDraft,
+  saveRunExecutionArtifacts,
 } from "@/lib/automation/store";
 
 function parseId(value: string | string[] | undefined) {
@@ -48,6 +49,9 @@ function errorResponse(res: NextApiResponse, error: any) {
   }
   if (code === "EMPTY_REGENERATION_ADVICE") {
     return res.status(400).json({ detail: "请填写重新生成的修改建议" });
+  }
+  if (code === "NO_FAILED_ACTIONS") {
+    return res.status(409).json({ detail: "当前没有可重试的失败操作" });
   }
 
   console.error("[Automation Review API] error:", error);
@@ -123,6 +127,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    if (action === "retry_failed_actions") {
+      try {
+        // 只重试失败的后续操作；不会重新调用数字员工，也不会修改 final_result。
+        const retried = await retryFailedRunActions({ userId, runId });
+        return res.status(200).json(retried);
+      } catch (error: any) {
+        return errorResponse(res, error);
+      }
+    }
+
     if (action === "reject") {
       try {
         const reason =
@@ -183,6 +197,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
 
           const answer = result.answer || "任务已完成，未返回文本结果";
+          await saveRunExecutionArtifacts(runId, result.attachments);
           const updated = await markRunPendingReview(
             runId,
             answer,
