@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { triggerLabel } from "@/lib/appTrigger";
 import { canEditApp } from "@/lib/appPermissions";
 import AppAvatarPicker from "./components/AppAvatarPicker";
 import AppAvatar from "./components/AppAvatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { groupAppsByTenant } from "@/lib/appGrouping";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -160,6 +161,33 @@ export default function AppsPage() {
 
   /** 只在真的存在未归属应用时才给这个选项，免得挂一个永远为空的条目。 */
   const hasUnassigned = useMemo(() => apps.some((a) => !a.owner_tenant_id), [apps]);
+
+  /**
+   * 按租户分组，**只对超管生效**。其他人后端只返回本租户的应用，分组会得到
+   * 一个孤零零的组头，没有信息量。
+   *
+   * 选了具体租户筛选时也不分组：那时列表里本来就只有一个租户，组头是多余的。
+   */
+  /**
+   * 分组后的渲染顺序 + 组头位置。
+   *
+   * **renderApps 必须是按组重排后的数组，不能是原扁平列表。** 初版只算了组头
+   * 却照旧渲染 visibleApps，结果卡片挂在了错误的租户名下 —— 因为扁平列表按
+   * 更新时间排，同一租户的应用并不连续（新加坡分公司同时出现在第 2 和第 7 位），
+   * 第 7 位那张就落到了上一个组头底下。组头对了、归属错了，比不分组更糟。
+   */
+  const { renderApps, groupHeaders } = useMemo(() => {
+    if (!isSuperAdmin || tenantFilter !== "all") {
+      return { renderApps: visibleApps, groupHeaders: null };
+    }
+    const names = new Map(tenants.map((tn) => [tn.id, tn.name]));
+    const groups = groupAppsByTenant(visibleApps, names, t("unassignedTenant"));
+    const headers = new Map<number, { label: string; count: number }>();
+    for (const g of groups) {
+      if (g.apps.length > 0) headers.set(g.apps[0].id, { label: g.label, count: g.apps.length });
+    }
+    return { renderApps: groups.flatMap((g) => g.apps), groupHeaders: headers };
+  }, [isSuperAdmin, tenantFilter, tenants, visibleApps, t]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -771,9 +799,10 @@ export default function AppsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visibleApps.map((app) => {
+                      {renderApps.map((app) => {
                         const PlatformIcon = platformIcons[app.platform] || Globe;
-                        return (
+                        const header = groupHeaders?.get(app.id);
+                        const row = (
                           <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
                             <TableCell>
                               <div className="flex items-center gap-3">
@@ -850,7 +879,7 @@ export default function AppsPage() {
                             </TableCell>
                             <TableCell>
                               <span className="text-sm text-muted-foreground">
-                                {new Date(app.created_at).toLocaleDateString()}
+                                {new Date(app.updated_at || app.created_at).toLocaleDateString()}
                               </span>
                             </TableCell>
                             <TableCell className="text-right">
@@ -975,16 +1004,31 @@ export default function AppsPage() {
                             </TableCell>
                           </TableRow>
                         );
+                        if (!header) return row;
+                        // 组头是一行 colSpan 铺满的表格行。用 <tr> 而不是在表格外面套标题，
+                        // 是为了让它跟着表格一起横向滚动、也不破坏 <tbody> 的结构
+                        return (
+                          <Fragment key={`g-${app.id}`}>
+                            <TableRow className="bg-muted/30 hover:bg-muted/30">
+                              <TableCell colSpan={10} className="py-2">
+                                <span className="text-sm font-semibold">{header.label}</span>
+                                <span className="ml-2 text-xs text-muted-foreground">{header.count}</span>
+                              </TableCell>
+                            </TableRow>
+                            {row}
+                          </Fragment>
+                        );
                       })}
                     </TableBody>
                   </Table>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {visibleApps.map((app) => {
+                  {renderApps.map((app) => {
                     const PlatformIcon = platformIcons[app.platform] || Globe;
                     const isDefault = app.is_default;
-                    return (
+                    const header = groupHeaders?.get(app.id);
+                    const card = (
                       <Card
                         key={app.id}
                         onClick={() => router.push(`/apps/${app.id}`)}
@@ -1070,7 +1114,7 @@ export default function AppsPage() {
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t mt-auto">
                             <span className="text-xs text-muted-foreground">
-                              {new Date(app.created_at).toLocaleDateString()}
+                              {new Date(app.updated_at || app.created_at).toLocaleDateString()}
                             </span>
                             <div className="flex gap-1">
                               {isStreamApp(app) && (
@@ -1201,6 +1245,23 @@ export default function AppsPage() {
                           </div>
                         </CardContent>
                       </Card>
+                    );
+                    if (!header) return card;
+                    // 组头要横跨整行，否则会被当成一张卡片挤进第一格、右边留一大块空白。
+                    // 用内联 style 而不是 col-span-full：那个类全仓只此一处用到，Tailwind
+                    // 得扫到源码才生成；产物里一旦没有，表现是样式静默失效、布局错位，不报错。
+                    // grid-column 是 CSS 原生属性，不经过生成这一步。
+                    return (
+                      <Fragment key={`g-${app.id}`}>
+                        <div
+                          style={{ gridColumn: "1 / -1" }}
+                          className="flex items-baseline gap-2 pt-2 first:pt-0"
+                        >
+                          <h3 className="text-sm font-semibold">{header.label}</h3>
+                          <span className="text-xs text-muted-foreground">{header.count}</span>
+                        </div>
+                        {card}
+                      </Fragment>
                     );
                   })}
                 </div>

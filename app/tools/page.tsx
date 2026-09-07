@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import { useBuiltinTools } from "@/hooks/useBuiltinTools";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { BuiltinToolsTable } from "./components/BuiltinToolsTable";
@@ -94,6 +94,10 @@ export default function ToolsPage() {
 
   const { user } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
+  // 写操作的判据必须与后端 _require_tool_manager 逐字一致：超管或租户管理员。
+  // 这个页面此前对写操作**不设任何门**——只是侧边栏不给入口，直接敲 /tools
+  // 就能改能删。按钮留给点不动的人，等于把 403 当交互。
+  const canManageTools = isSuperAdmin || checkTenantAdmin(user);
 
   const { tools, total, loading, createTool, updateTool, deleteTool, toggleToolEnabled, refresh } =
     useTools({
@@ -164,7 +168,7 @@ export default function ToolsPage() {
           <h1 className="text-3xl font-bold">{t("pageTitle")}</h1>
           <p className="text-muted-foreground mt-1">{t("pageDescription")}</p>
         </div>
-        {tab === "managed" && (
+        {tab === "managed" && canManageTools && (
           <Button onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />
             {t("addTool")}
@@ -242,6 +246,7 @@ export default function ToolsPage() {
                   <TableHead>{t("name")}</TableHead>
                   <TableHead>{t("category")}</TableHead>
                   <TableHead>{t("description")}</TableHead>
+                  <TableHead>{t("creator")}</TableHead>
                   <TableHead>{t("status")}</TableHead>
                   <TableHead className="text-right">{t("actions")}</TableHead>
                 </TableRow>
@@ -265,10 +270,15 @@ export default function ToolsPage() {
                       <Badge className={getCategoryBadge(tool.category)}>{tool.category}</Badge>
                     </TableCell>
                     <TableCell className="max-w-md truncate">{tool.description}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {tool.created_by_name ||
+                        (tool.created_by ? t("creatorDeleted") : t("creatorUnknown"))}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={tool.is_enabled}
+                          disabled={!canManageTools}
                           onCheckedChange={() => handleToggleEnabled(tool)}
                         />
                         <span className="text-sm">
@@ -285,15 +295,17 @@ export default function ToolsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleEdit(tool)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        {canManageTools && (
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(tool)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
                         {/* 只有 workflow 行不可删：那一行是某个长任务 kind 的唯一
                             开关，删掉后 refresh_enabled_from_db 会走"注册表里有、DB
                             里没有"的分支，能力保持默认启用且界面上再也关不掉。
                             MCP 行一律可删——它们之间没有系统/非系统之分，`qcc-*` 和
                             `mcp-tally` 同一形态，删了只是少一个连接配置。 */}
-                        {tool.tool_type !== "workflow" && (
+                        {canManageTools && tool.tool_type !== "workflow" && (
                           <Button
                             variant="ghost"
                             size="sm"

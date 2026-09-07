@@ -31,7 +31,6 @@
   "back": "Back",
   "basicInfo": "Basic Information",
   "version": "Version",
-  "author": "Author",
   "yes": "Yes",
   "no": "No",
   "mcpToolName": "MCP Tool Name",
@@ -95,8 +94,6 @@
   "iconUrlPlaceholder": "/icons/search.svg",
   "versionLabel": "Version",
   "versionPlaceholder": "1.0.0",
-  "authorLabel": "Author",
-  "authorPlaceholder": "System",
   "documentationUrl": "Documentation URL",
   "documentationUrlPlaceholder": "https://...",
   "enableTool": "Enable Tool",
@@ -115,5 +112,8 @@
   "builtinEnvHint": "Deployment switch: environment variable {envVar}.",
   "workflowTool": "Long-task switch",
   "footprintSummary": "{count} subtools · ~{tokens} tokens/turn",
-  "footprintUnavailable": "registration failed — not callable"
+  "footprintUnavailable": "registration failed — not callable",
+  "creator": "Created by",
+  "creatorUnknown": "Not recorded",
+  "creatorDeleted": "User deleted"
 }

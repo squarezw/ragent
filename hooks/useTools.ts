@@ -28,8 +28,17 @@ export interface Tool {
   is_enabled: boolean;
   is_system: boolean;
   version?: string;
-  author?: string;
   documentation_url?: string;
+  /**
+   * 创建人。取代了原来的 `author` —— 那是表单上一个手填的文本框，回答不了
+   * 「谁建的」（线上 15 行里 14 行是 System 或 NULL）。这两个字段**只读**，
+   * 后端从请求边界落库，表单里没有对应输入。
+   *
+   * `created_by` 为空 = 这一行建于该列存在之前，不是「创建人被删了」；
+   * `created_by` 有值而 `created_by_name` 为空 = 用户已注销。
+   */
+  created_by?: number | null;
+  created_by_name?: string | null;
 
   created_at: string;
   updated_at: string;

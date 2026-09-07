@@ -4,6 +4,8 @@ import { use, useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { triggerLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAppSkills } from "@/hooks/useAppSkills";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CustomViewRenderer } from "./custom-views/registry";
@@ -113,6 +115,9 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const tr = useTranslations("reviews");
   const { id } = use(params);
   const appId = Number(id);
+  // 只为了 tab 与摘要上那个数字。与 AppSkillsSection 用同一个 SWR key，
+  // 请求被 dedupe，父子各调一次不会多打一轮。
+  const { appSkills } = useAppSkills(appId);
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [loadingApp, setLoadingApp] = useState(true);
@@ -211,7 +216,11 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleString("zh-CN");
+    // 到分钟即可。秒对「这个员工什么时候建的」没有意义，只是把一行撑长
+    return date.toLocaleString("zh-CN", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    });
   };
 
   if (loadingApp) {
@@ -263,89 +272,104 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         isCustom ? "container mx-auto px-6 pt-0 pb-6 space-y-3" : "container mx-auto p-6 space-y-6"
       }
     >
-      {/* 顶部导航。绑定工具的按钮已移到「已绑定工具」区的标题右侧，所以这里不再需要
-          justify-between 的两端布局。 */}
-      <div className="flex items-center gap-3">
+      {/* 顶部：只有一个返回图标 + 面包屑。
+          头像和描述都下沉到下面那张卡里 —— 同一个员工的身份信息散在两处，
+          页头和卡片会重复显示一遍名字和描述。 */}
+      <div className="flex items-center gap-2">
         <Button
-          variant="ghost"
-          size={isCustom ? "sm" : "default"}
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0"
           onClick={() => router.push("/apps")}
+          aria-label={t("back")}
+          title={t("back")}
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          {t("back")}
+          <ArrowLeft className="h-4 w-4" />
         </Button>
-        <AppAvatar
-          src={appInfo.avatar_url}
-          name={appInfo.name}
-          size={isCustom ? 32 : 44}
-        />
-        <div>
-          <h1 className={isCustom ? "text-xl font-bold leading-tight" : "text-3xl font-bold"}>
-            {appInfo.name}
-          </h1>
-          {(!isCustom || appInfo.description) && (
-            <p className="text-muted-foreground text-sm">{appInfo.description}</p>
-          )}
-        </div>
+        {/* 面包屑：两级同字号，靠颜色和字重分主次。
+            text-sm 太轻，压不住下面那张卡的标题，页面读起来没有层级 */}
+        <nav className="flex items-center gap-2 text-lg">
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => router.push("/apps")}
+          >
+            {t("title")}
+          </button>
+          <span className="text-muted-foreground">/</span>
+          <span className="font-semibold">{appInfo.name}</span>
+        </nav>
       </div>
 
       {/* 应用基本信息（Custom 应用直接进自定义视图，不展示这块元信息）*/}
       {appInfo.app_type !== "Custom" && (
         <Card>
-          <CardHeader>
-            {/* 动作按钮放标题右侧，与「已绑定工具」「已绑定 Skill」两区一致。
-                原先它单独占一行、下面还跟一句说明，把一屏里最靠上的位置让给了
-                一个大多数时候不需要点的按钮；说明文字改挂到按钮的 hover 上。 */}
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>{t("basicInfo")}</CardTitle>
-              {(status === "draft" || status === "rejected") && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSubmitReview}
-                  disabled={reviewActionPending}
-                  title={status === "draft" ? tr("draftOwnerOnlyHint") : undefined}
-                >
-                  <Send className="h-4 w-4 mr-1" />
-                  {ts("submitReview")}
-                </Button>
-              )}
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                {/* 头像放在卡内：页头只留面包屑，身份信息集中在这一处 */}
+                <AppAvatar src={appInfo.avatar_url} name={appInfo.name} size={44} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle className="text-base">{appInfo.name}</CardTitle>
+                    {statusBadge && (
+                      <Badge variant={statusBadge.variant} className={statusBadge.className}>
+                        {ts(statusBadge.labelKey)}
+                      </Badge>
+                    )}
+                    {(status === "draft" || status === "rejected") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        onClick={handleSubmitReview}
+                        disabled={reviewActionPending}
+                        title={status === "draft" ? tr("draftOwnerOnlyHint") : undefined}
+                      >
+                        <Send className="h-3.5 w-3.5 mr-1" />
+                        {ts("submitReview")}
+                      </Button>
+                    )}
+                  </div>
+                  {/* 副标题：说明 · 触发方式 · 平台。描述可能为空，空时不留下孤零零的分隔点 */}
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {[appInfo.description, triggerLabel(appInfo.app_type, t), appInfo.platform]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+              </div>
+              {/* 元信息三行，贴卡片右上角 */}
+              <div className="text-right text-xs text-muted-foreground shrink-0 space-y-0.5">
+                <div>
+                  {t("aiModel")} <span className="text-foreground">{appInfo.ai_model}</span>
+                </div>
+                {/* 作者可能为 null（用户已删）：给 — 而不是整行消失，
+                    否则「没有作者」和「没渲染这一行」看起来一样 */}
+                <div>
+                  {t("author")} <span className="text-foreground">{appInfo.author || "—"}</span>
+                </div>
+                <div>{formatDate(appInfo.created_at)}</div>
+              </div>
             </div>
           </CardHeader>
-          {/* 6 列：触发方式 / 平台 / AI 模型 / 作者 / 创建时间 / 状态。
-              加了作者之后是 6 格，留在 5 列会让最后一格独占一行。 */}
-          <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">{t("appType")}</div>
-              <Badge variant="outline">{triggerLabel(appInfo.app_type, t)}</Badge>
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 汇总在 summary 子对象里，不在顶层——取错层级会得到 undefined，
+                  再乘 100 就渲染成「成功率 NaN%」（改版初稿正是这个 bug） */}
+              {statistics?.summary && appTools.length > 0 && (
+                <>
+                  <Badge variant="secondary" className="font-normal">
+                    {t("calls")} {statistics.summary.total_calls}
+                  </Badge>
+                  <Badge variant="secondary" className="font-normal">
+                    {t("successRate")}{" "}
+                    {((statistics.summary.success_rate ?? 0) * 100).toFixed(1)}%
+                  </Badge>
+                </>
+              )}
             </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">{t("platform")}</div>
-              <Badge variant="outline">{appInfo.platform}</Badge>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">{t("aiModel")}</div>
-              <div className="text-sm">{appInfo.ai_model}</div>
-            </div>
-            {/* 作者。用户被删除时后端给 null——显示 — 而不是整格消失：
-                这是固定列的网格，少一格会让后面的列错位。 */}
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">{t("author")}</div>
-              <div className="text-sm">{appInfo.author || "—"}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">{tc("createdAt")}</div>
-              <div className="text-sm">{formatDate(appInfo.created_at)}</div>
-            </div>
-            {statusBadge && (
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">{tc("status")}</div>
-                <Badge variant={statusBadge.variant} className={statusBadge.className}>
-                  {ts(statusBadge.labelKey)}
-                </Badge>
-              </div>
-            )}
-            {/* 审核动作与状态提示：仅在确有内容时才占一行，已发布应用不留空带 */}
+
             {reviewFooterVisible && (
               <div className="col-span-2 md:col-span-3 lg:col-span-6 pt-2 border-t">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -413,181 +437,159 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       {appInfo.app_type === "Custom" && <CustomViewRenderer viewKey={appInfo.settings?.view_key} />}
 
       {/* 以下工具统计 / 绑定列表仅非 Custom 应用展示 */}
-      {appInfo.app_type !== "Custom" && (
-        <>
-          {/*
-            工具统计。没绑工具就整行不显示——三个 0 既不提供信息，还占掉一屏顶部
-            最显眼的位置。这么判是安全的：后端的统计就是遍历 app_tools 绑定关系算
-            出来的（tools.py get_app_tools_statistics），零绑定时三个数必然都是 0，
-            不存在"有历史调用但被藏起来"的情况。
-          */}
-          {statistics && appTools.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {t("boundToolsCount")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    <Wrench className="h-5 w-5 text-blue-500" />
-                    <div className="text-2xl font-bold">{appTools.length}</div>
-                  </div>
-                </CardContent>
-              </Card>
+        {appInfo.app_type !== "Custom" && (
+          /* 四个 tab 取代原先六块竖排。此前要看 Agent.md 得滚过工具表和
+             Skill 列表；分 tab 后每一块都在第一屏，切换成本一次点击。
+             每块内部的数据获取、权限判断、保存逻辑逐行原样搬，未改动。 */
+          <Tabs defaultValue="persona" className="w-full">
+            <TabsList>
+              <TabsTrigger value="persona">{t("tabPersona")}</TabsTrigger>
+              <TabsTrigger value="skills">
+                {t("tabSkills")}
+                <span className="ml-1.5 text-muted-foreground">{appSkills.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="tools">
+                {t("tabTools")}
+                <span className="ml-1.5 text-muted-foreground">{appTools.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="memory">{t("tabMemory")}</TabsTrigger>
+            </TabsList>
 
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {t("totalCalls")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-green-500" />
-                    <div className="text-2xl font-bold">{statistics.summary?.total_calls || 0}</div>
-                  </div>
-                </CardContent>
-              </Card>
+            <TabsContent value="persona" className="mt-4">
+            {/* Agent.md 编辑区块 */}
+            <AgentMdEditor
+              appId={appId}
+              ownerUserId={appInfo.user_id}
+              platform={appInfo.platform}
+              onChanged={loadAppInfo}
+            />
 
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {t("avgSuccessRate")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-orange-500" />
-                    <div className="text-2xl font-bold">
-                      {statistics.summary?.success_rate
-                        ? `${(statistics.summary.success_rate * 100).toFixed(1)}%`
-                        : "0%"}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+            </TabsContent>
 
-          {/* 已绑定工具列表。绑定入口放在本区标题右侧（与 AppSkillsSection 一致）：
-              操作和它作用的对象在一起，比留在页头更好找。 */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
-                {canEditThisApp && (
-                  <Button size="sm" onClick={() => setBindDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t("bindTools")}
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {appToolsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <TabsContent value="skills" className="mt-4 space-y-4">
+            {/* Skills 绑定区 */}
+            <AppSkillsSection appId={appId} ownerUserId={appInfo.user_id} />
+            {/* Skill 生效诊断（requires 门控去静默） */}
+            <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
+
+            </TabsContent>
+
+            <TabsContent value="tools" className="mt-4">
+            {/* 已绑定工具列表。绑定入口放在本区标题右侧（与 AppSkillsSection 一致）：
+                操作和它作用的对象在一起，比留在页头更好找。 */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>{t("boundTools", { count: appTools.length })}</CardTitle>
+                  {canEditThisApp && (
+                    <Button size="sm" onClick={() => setBindDialogOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {t("bindTools")}
+                    </Button>
+                  )}
                 </div>
-              ) : appTools.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">{t("noToolsBound")}</div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("toolName")}</TableHead>
-                      <TableHead>{t("type")}</TableHead>
-                      <TableHead>{t("category")}</TableHead>
-                      <TableHead>{tc("status")}</TableHead>
-                      <TableHead>{t("priority")}</TableHead>
-                      <TableHead>{t("statistics")}</TableHead>
-                      <TableHead className="text-right">{tc("actions")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {appTools.map((tool) => (
-                      <TableRow key={tool.id}>
-                        <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
-                        <TableCell>
-                          <Badge
-                            className={toolTypeClass(tool.tool_type)}
-                          >
-                            {t(toolTypeKey(tool.tool_type))}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{tool.category}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={tool.is_enabled ? "default" : "secondary"}>
-                            {tool.is_enabled ? t("enabled") : t("disabled")}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{tool.priority}</TableCell>
-                        <TableCell>
-                          {tool.statistics ? (
-                            <div className="text-sm">
-                              <div>
-                                {t("calls")}: {tool.statistics.total_calls}
-                              </div>
-                              <div className="text-muted-foreground">
-                                {t("successRate")}:{" "}
-                                {(tool.statistics.success_rate * 100).toFixed(1)}%
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {canEditThisApp && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => router.push(`/tools/${tool.tool_id}`)}
-                                >
-                                  <Settings className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedAppToolId(tool.id);
-                                    setUnbindDialogOpen(true);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
+              </CardHeader>
+              <CardContent>
+                {appToolsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : appTools.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">{t("noToolsBound")}</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("toolName")}</TableHead>
+                        <TableHead>{t("type")}</TableHead>
+                        <TableHead>{t("category")}</TableHead>
+                        <TableHead>{tc("status")}</TableHead>
+                        <TableHead>{t("priority")}</TableHead>
+                        <TableHead>{t("statistics")}</TableHead>
+                        <TableHead className="text-right">{tc("actions")}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {appTools.map((tool) => (
+                        <TableRow key={tool.id}>
+                          <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
+                          <TableCell>
+                            <Badge
+                              className={toolTypeClass(tool.tool_type)}
+                            >
+                              {t(toolTypeKey(tool.tool_type))}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{tool.category}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={tool.is_enabled ? "default" : "secondary"}>
+                              {tool.is_enabled ? t("enabled") : t("disabled")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{tool.priority}</TableCell>
+                          <TableCell>
+                            {tool.statistics ? (
+                              <div className="text-sm">
+                                <div>
+                                  {t("calls")}: {tool.statistics.total_calls}
+                                </div>
+                                <div className="text-muted-foreground">
+                                  {t("successRate")}:{" "}
+                                  {(tool.statistics.success_rate * 100).toFixed(1)}%
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {canEditThisApp && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => router.push(`/tools/${tool.tool_id}`)}
+                                  >
+                                    <Settings className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedAppToolId(tool.id);
+                                      setUnbindDialogOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-          {/* Skills 绑定区 */}
-          <AppSkillsSection appId={appId} ownerUserId={appInfo.user_id} />
+            </TabsContent>
 
-          {/* Skill 生效诊断（requires 门控去静默） */}
-          <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
-
-          {/* Agent.md 编辑区块 */}
-          <AgentMdEditor
-            appId={appId}
-            ownerUserId={appInfo.user_id}
-            platform={appInfo.platform}
-            onChanged={loadAppInfo}
-          />
-        </>
-      )}
+            <TabsContent value="memory" className="mt-4">
+              {/* 平台尚无「记忆」概念。占位而不是留白：让用户知道这一块
+                  是规划中的，而不是加载失败或权限不足 */}
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  {t("memoryNotEnabled")}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        )}
 
       {/* 绑定工具对话框 */}
       <BindToolsDialog

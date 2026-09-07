@@ -31,7 +31,6 @@
   "back": "返回",
   "basicInfo": "基本信息",
   "version": "版本",
-  "author": "作者",
   "yes": "是",
   "no": "否",
   "mcpToolName": "MCP 工具名",
@@ -95,8 +94,6 @@
   "iconUrlPlaceholder": "/icons/search.svg",
   "versionLabel": "版本",
   "versionPlaceholder": "1.0.0",
-  "authorLabel": "作者",
-  "authorPlaceholder": "System",
   "documentationUrl": "文档链接",
   "documentationUrlPlaceholder": "https://...",
   "enableTool": "启用工具",
@@ -115,5 +112,8 @@
   "builtinEnvHint": "部署级开关：环境变量 {envVar}。",
   "workflowTool": "长任务开关",
   "footprintSummary": "{count} 个子工具 · 约 {tokens} tokens/轮",
-  "footprintUnavailable": "未注册成功，模型调不到"
+  "footprintUnavailable": "未注册成功，模型调不到",
+  "creator": "创建人",
+  "creatorUnknown": "未记录",
+  "creatorDeleted": "用户已注销"
 }

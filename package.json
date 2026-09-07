@@ -80,6 +80,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "@types/formidable": "^3.4.5",
     "@types/node": "^22",
     "@types/node-cron": "^3.0.11",

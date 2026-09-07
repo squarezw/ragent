@@ -23,9 +23,17 @@ test("筛选控件只对超管渲染", () => {
 
 test("筛选作用于渲染列表，而不是只改了数字", () => {
   const src = read(PAGE);
-  // 两个视图都要用筛选后的列表；漏一个的表现是「切到表格视图筛选就失效」
-  assert.equal((src.match(/visibleApps\.map\(/g) || []).length, 2,
-    "表格视图与网格视图都要用 visibleApps");
+  // 两个视图都要用筛选后的列表；漏一个的表现是「切到表格视图筛选就失效」。
+  //
+  // 断言的是「渲染源派生自 visibleApps」而不是某个变量名：分组上线后渲染源
+  // 变成了 renderApps（由 visibleApps 分组展平而来），钉死名字会让这条在
+  // 语义没变时假红。要守的是「筛选进得了渲染」，不是叫什么。
+  assert.equal((src.match(/\{renderApps\.map\(/g) || []).length, 2,
+    "表格视图与网格视图都要用同一个渲染源");
+  assert.match(src, /renderApps: visibleApps/,
+    "不分组时渲染源必须就是 visibleApps —— 否则筛选进不了渲染");
+  assert.match(src, /groupAppsByTenant\(visibleApps/,
+    "分组也必须从 visibleApps 出发，不能拿未筛选的 apps");
   assert.match(src, /count: visibleApps\.length/, "统计数字要跟着筛选走");
 });
 

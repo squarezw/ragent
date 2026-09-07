@@ -1,0 +1,42 @@
+# 开发模式 Docker Compose 配置
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# 
+# 这个配置文件会覆盖 docker-compose.yml 中的 ragent-service 配置，
+# 通过 volume mount 挂载代码目录，实现代码热更新，无需重新构建镜像
+
+services:
+  ragent-service:
+    # 开发模式下挂载代码目录，实现热更新
+    # 注意：这里会完全覆盖 docker-compose.yml 中的 volumes 配置
+    volumes:
+      # 挂载应用代码（覆盖镜像中的代码）- 可写模式以支持 uvicorn reload
+      - ../app:/app/app
+      - ../main.py:/app/main.py
+      # 挂载上传文件目录（新上传文件存储，持久化存储）
+      - ../uploads:${FILE_STORAGE_PREFIX}
+      # 挂载模型缓存目录（可选，用于缓存下载的模型）
+      - ./data/models:/app/model_cache
+      # 挂载 HuggingFace 缓存（共享模型下载）
+      - ${HUGGINGFACE_CACHE_DIR}:/root/.cache/huggingface
+      # 挂载 ModelScope 缓存（Fun-ASR 等模型）
+      - ${MODELSCOPE_CACHE_DIR}:/root/.cache/modelscope
+      # 开发模式下可以挂载日志目录（可选）
+      - ../logs:/app/logs
+      # 挂载企业微信配置文件（通过 volume 挂载）
+      # 注意：如果文件不存在，请先创建：cp ../wechat_agents.json.example ../wechat_agents.json
+      # 如果不需要企微功能，可以注释掉下面这行（企微功能会被禁用）
+      - ../${WECHAT_AGENTS_CONFIG_FILE}:/app/${WECHAT_AGENTS_CONFIG_FILE}:ro
+    # 开发模式下使用 reload 模式（自动重载代码）
+    # --reload-dir 指定监控的目录，代码修改后自动重启
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8010", "--reload", "--reload-dir", "/app/app"]
+    
+    networks:
+      - ragent-service
+    
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
