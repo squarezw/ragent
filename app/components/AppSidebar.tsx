@@ -41,6 +41,7 @@ import {
   Sparkles,
   User,
   Wallet,
+  Workflow,
   Wrench,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -103,6 +104,7 @@ export default function AppSidebar() {
       label: t("operations"),
       visible: true,
       items: [
+        { title: t("automation"), icon: Workflow, path: "/automation" },
         {
           // P5 开放自建：普通用户也能创建自己的 Skill（草稿走提交审核），
           // 所以这一项**不设 visible 门**，与同组其余项不同

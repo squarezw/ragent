@@ -10,6 +10,7 @@ import pkg from "../../package.json";
 const routeTitleKeys: { [key: string]: string } = {
   "/": "home",
   "/chat": "chat",
+  "/automation": "automation",
   "/knowledge": "datasets",
   "/search": "search",
   "/graph": "knowledgeGraph",
