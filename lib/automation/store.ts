@@ -2420,12 +2420,12 @@ export function automationRowToApi(row: any) {
   const lastRunDisplay = row.last_run_at
     ? row.trigger_type === "定时触发"
       ? formatDateTimeInZone(row.last_run_at, scheduleTimezone)
-      : new Date(row.last_run_at).toLocaleString("zh-CN")
+      : formatDateTimeInZone(row.last_run_at, "Asia/Shanghai")
     : "";
   const nextRunDisplay = row.next_run_at
     ? row.trigger_type === "定时触发"
       ? formatDateTimeInZone(row.next_run_at, scheduleTimezone)
-      : new Date(row.next_run_at).toLocaleString("zh-CN")
+      : formatDateTimeInZone(row.next_run_at, "Asia/Shanghai")
     : "";
 
   return {
@@ -2509,7 +2509,7 @@ export function runRowToApi(row: any) {
   return {
     id: row.id,
     automationId: row.automation_id,
-    time: new Date(row.started_at).toLocaleString("zh-CN"),
+    time: formatDateTimeInZone(row.started_at, "Asia/Shanghai"),
     name: row.automation_name,
     trigger: row.trigger_type,
     agent: row.agent_name,
