@@ -42,6 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cs.created_at,
         cs.updated_at,
         cs.user_id,
+        cs.app_id,
         cs.summary,
         cs.dataset_ids,
         u.nickname as user_nickname,
@@ -75,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ) AS dataset_id ON true
       LEFT JOIN datasets ds ON ds.id::text = dataset_id
       WHERE cs.id = $1
-      GROUP BY cs.id, cs.created_at, cs.updated_at, cs.user_id, cs.summary, cs.dataset_ids,
+      GROUP BY cs.id, cs.created_at, cs.updated_at, cs.user_id, cs.app_id, cs.summary, cs.dataset_ids,
                u.nickname, u.username, u.email, u.tenant_id, u.dept_id, d.name, d.code
     `;
 
@@ -182,6 +183,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       createdAt: session.created_at,
       updatedAt: session.updated_at,
       userId: session.user_id,
+      // 这条会话属于哪个数字员工。前端加载历史会话时靠它把选择器切回去 ——
+      // 在此之前不返回它，于是停在上次选的员工上，继续提问跑在错误的
+      // skills / 工具上，而会话视图里那个选择器根本不渲染，用户看不见也改不了。
+      // 可能为 null：线上 44% 的会话没记 app_id（老数据 / 企微等入口）。
+      appId: session.app_id ?? null,
       summary: session.summary,
       datasetIds: session.dataset_ids || [],
       datasets: datasets.map((ds: any) => ({ id: ds.id, name: ds.name })),

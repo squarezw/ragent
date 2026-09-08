@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { executeAutomationAgent, isAutomationTimeoutError } from "@/lib/automation/execute";
+import { executeAutomationAgent } from "@/lib/automation/execute";
 import { executeRunActions } from "@/lib/automation/actions";
 import {
   createRun,
@@ -9,7 +9,6 @@ import {
   markRunPendingReview,
   prepareAutomaticRunActions,
   runRowToApi,
-  saveRunExecutionArtifacts,
 } from "@/lib/automation/store";
 
 function parseId(value: string | string[] | undefined) {
@@ -77,7 +76,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const answer = result.answer || "任务已完成，未返回文本结果";
-    await saveRunExecutionArtifacts(run.id, result.attachments);
     const needsReview = task.strategy === "需要确认后执行";
 
     if (needsReview) {
@@ -123,18 +121,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       detail_id: result.detail_id,
     });
   } catch (error: any) {
-    const timedOut = isAutomationTimeoutError(error);
     const message = error?.message || "Automation execution failed";
-    const partialResult = timedOut ? error.partialAnswer || undefined : undefined;
-    const finished = await finishRun(
-      run.id,
-      timedOut ? "timed_out" : "failed",
-      partialResult,
-      message,
-    );
+    const finished = await finishRun(run.id, "failed", undefined, message);
 
-    console.error(timedOut ? "[Automation Manual Run] timed out:" : "[Automation Manual Run] failed:", error);
-    return res.status(timedOut ? 504 : 500).json({
+    console.error("[Automation Manual Run] failed:", error);
+    return res.status(500).json({
       detail: message,
       run: runRowToApi(finished),
     });

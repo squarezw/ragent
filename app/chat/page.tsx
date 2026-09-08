@@ -417,6 +417,18 @@ export default function ChatPage() {
         }
       }
 
+      // 把数字员工切回这条会话原本用的那个。
+      //
+      // 不做这件事的后果不是"显示不对"——会话视图里根本不渲染员工选择器，
+      // 用户看不见当前是谁、也没法改。继续提问就带着上次选的员工跑，
+      // 于是找不到原来那条会话依赖的 skill，而界面上毫无提示。
+      //
+      // 老会话可能没记 app_id（线上 44%），那时保持当前选择不动 ——
+      // 强行清空会让它们连默认员工都没有，比不改更糟。
+      if (sessionData.appId != null) {
+        handleAppSelect(String(sessionData.appId));
+      }
+
       setMessages(historyMessages);
       setHistoryOpen(false);
       setChatId(sessionId);
