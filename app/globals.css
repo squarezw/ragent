@@ -42,6 +42,16 @@ body {
     }
 }
 
+@layer components {
+    /* 表单控件的基础样式。automation 页 29 处 input/select/textarea 直接引用
+       `input-base`，但该 class 历史上从未被定义（从 gitee 侧代码带入的幽灵
+       依赖），导致这些控件失去边框/背景/内边距。此处一次性补齐，与
+       components/ui/input.tsx 的样式保持一致。 */
+    .input-base {
+        @apply w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed;
+    }
+}
+
 @layer base {
     :root {
         --background: 0 0% 100%;
