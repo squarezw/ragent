@@ -98,6 +98,11 @@ interface Automation {
   schedulePeriod?: string;
   scheduleTime?: string;
   scheduleTimezone?: string;
+  scheduleWeekdays?: number[];
+  scheduleMonthlyMode?: "fixed_day" | "last_day";
+  scheduleDayOfMonth?: number;
+  scheduleMissingDayPolicy?: "last_day" | "skip";
+  scheduleDate?: string;
   mailboxKey?: string;
   mailboxLabel?: string;
   mailFolder?: string;
@@ -563,6 +568,30 @@ export default function AutomationPage() {
     return value || "";
   };
 
+  const weekdayOptions = [
+    { value: 1, zh: "周一", en: "Mon" },
+    { value: 2, zh: "周二", en: "Tue" },
+    { value: 3, zh: "周三", en: "Wed" },
+    { value: 4, zh: "周四", en: "Thu" },
+    { value: 5, zh: "周五", en: "Fri" },
+    { value: 6, zh: "周六", en: "Sat" },
+    { value: 0, zh: "周日", en: "Sun" },
+  ];
+
+  const weekdayText = (value: number) => {
+    const item = weekdayOptions.find((option) => option.value === value);
+    return item ? tt(item.zh, item.en) : String(value);
+  };
+
+  const timeZoneLabel = (value?: string) => {
+    if (value === "Asia/Shanghai") return "Asia/Shanghai (UTC+8)";
+    if (value === "Asia/Tokyo") return "Asia/Tokyo (UTC+9)";
+    if (value === "America/New_York") {
+      return tt("America/New_York（自动适配夏令时）", "America/New_York (DST aware)");
+    }
+    return value || "UTC";
+  };
+
   const conditionLabel = (value?: string) => {
     if (value === "执行成功") return tt("执行成功", "Succeeded");
     if (value === "执行失败") return tt("执行失败", "Failed");
@@ -607,7 +636,14 @@ export default function AutomationPage() {
 
   const [schedulePeriod, setSchedulePeriod] = useState("每天");
   const [scheduleTime, setScheduleTime] = useState("09:00");
-  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai（UTC+8）");
+  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>([]);
+  const [scheduleMonthlyMode, setScheduleMonthlyMode] =
+    useState<"fixed_day" | "last_day">("fixed_day");
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState<number | null>(null);
+  const [scheduleMissingDayPolicy, setScheduleMissingDayPolicy] =
+    useState<"last_day" | "skip">("last_day");
+  const [scheduleDate, setScheduleDate] = useState("");
 
   const [mailResultEmail, setMailResultEmail] = useState("");
   const [resultEmailIncludeAttachments, setResultEmailIncludeAttachments] = useState(true);
@@ -1193,10 +1229,34 @@ export default function AutomationPage() {
       return tt("由外部系统通过 Webhook / API 触发", "Triggered by an external system through Webhook / API");
     }
     if (item.trigger === "定时触发") {
-      const period = periodLabel(item.schedulePeriod || item.triggerDetail.split(" ")[0]);
-      const time = item.scheduleTime || item.triggerDetail.split(" ")[1] || "";
-      const timezone = item.scheduleTimezone || "Asia/Shanghai（UTC+8）";
-      return `${period} ${time} · ${timezone.replace("（UTC+8）", " (UTC+8)")}`.trim();
+      const period = item.schedulePeriod || "每天";
+      const time = item.scheduleTime || "09:00";
+      const timezone = timeZoneLabel(item.scheduleTimezone || "Asia/Shanghai");
+
+      if (period === "每周") {
+        const days = weekdayOptions
+          .filter((option) => (item.scheduleWeekdays || []).includes(option.value))
+          .map((option) => tt(option.zh, option.en))
+          .join(tt("、", ", "));
+        return `${periodLabel(period)} ${days || tt("未选择星期", "No weekday selected")} ${time} · ${timezone}`;
+      }
+
+      if (period === "每月") {
+        const day = item.scheduleDayOfMonth;
+        const missing =
+          Number(day) >= 29
+            ? item.scheduleMissingDayPolicy === "skip"
+              ? tt(" · 当月无该日期时跳过", " · skip months without this date")
+              : tt(" · 当月无该日期时按月末执行", " · use month end if unavailable")
+            : "";
+        return `${periodLabel(period)} ${day ? `${day}${tt("日", "")}` : tt("未选择日期", "No date selected")} ${time} · ${timezone}${missing}`;
+      }
+
+      if (period === "仅一次") {
+        return `${periodLabel(period)} ${item.scheduleDate || tt("未选择日期", "No date selected")} ${time} · ${timezone}`;
+      }
+
+      return `${periodLabel(period)} ${time} · ${timezone}`;
     }
 
     const upstream = automations.find((automation) => automation.id === item.upstreamAutomationId);
@@ -1237,7 +1297,12 @@ export default function AutomationPage() {
     setStrategy("需要确认后执行");
     setSchedulePeriod("每天");
     setScheduleTime("09:00");
-    setScheduleTimezone("Asia/Shanghai（UTC+8）");
+    setScheduleTimezone("Asia/Shanghai");
+    setScheduleWeekdays([]);
+    setScheduleMonthlyMode("fixed_day");
+    setScheduleDayOfMonth(null);
+    setScheduleMissingDayPolicy("last_day");
+    setScheduleDate("");
     setMailResultEmail("");
     setResultEmailIncludeAttachments(true);
     setMailboxKey("system");
@@ -1280,7 +1345,18 @@ export default function AutomationPage() {
     setStrategy(item.strategy);
     setSchedulePeriod(item.schedulePeriod || "每天");
     setScheduleTime(item.scheduleTime || "09:00");
-    setScheduleTimezone(item.scheduleTimezone || "Asia/Shanghai（UTC+8）");
+    setScheduleTimezone(item.scheduleTimezone || "Asia/Shanghai");
+    setScheduleWeekdays(Array.isArray(item.scheduleWeekdays) ? item.scheduleWeekdays : []);
+    setScheduleMonthlyMode(item.scheduleMonthlyMode === "last_day" ? "last_day" : "fixed_day");
+    setScheduleDayOfMonth(
+      Number.isInteger(Number(item.scheduleDayOfMonth))
+        ? Number(item.scheduleDayOfMonth)
+        : null,
+    );
+    setScheduleMissingDayPolicy(
+      item.scheduleMissingDayPolicy === "skip" ? "skip" : "last_day",
+    );
+    setScheduleDate(item.scheduleDate || "");
     setMailResultEmail(item.resultEmail || "");
     setResultEmailIncludeAttachments(item.resultEmailIncludeAttachments === true);
     setMailboxKey(item.mailboxKey || "system");
@@ -1316,7 +1392,29 @@ export default function AutomationPage() {
 
   function triggerDetail(): string {
     if (trigger === "定时触发") {
-      return `${schedulePeriod} ${scheduleTime} · ${scheduleTimezone.replace("（UTC+8）", "")}`;
+      if (schedulePeriod === "每周") {
+        const days = weekdayOptions
+          .filter((option) => scheduleWeekdays.includes(option.value))
+          .map((option) => option.zh)
+          .join("、");
+        return `每周 ${days || "未选择星期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+      }
+      if (schedulePeriod === "每月") {
+        if (scheduleMonthlyMode === "last_day") {
+          return `每月最后一天 ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+        }
+        const missing =
+          Number(scheduleDayOfMonth) >= 29
+            ? scheduleMissingDayPolicy === "skip"
+              ? " · 当月无该日期时跳过"
+              : " · 当月无该日期时按月末执行"
+            : "";
+        return `每月 ${scheduleDayOfMonth ? `${scheduleDayOfMonth}日` : "未选择日期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}${missing}`;
+      }
+      if (schedulePeriod === "仅一次") {
+        return `仅一次 ${scheduleDate || "未选择日期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+      }
+      return `每天 ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
     }
     if (trigger === "邮件触发") {
       const temp: Automation = {
@@ -1350,6 +1448,31 @@ export default function AutomationPage() {
       schedulePeriod: trigger === "定时触发" ? schedulePeriod : undefined,
       scheduleTime: trigger === "定时触发" ? scheduleTime : undefined,
       scheduleTimezone: trigger === "定时触发" ? scheduleTimezone : undefined,
+      scheduleWeekdays:
+        trigger === "定时触发" && schedulePeriod === "每周"
+          ? scheduleWeekdays
+          : undefined,
+      scheduleMonthlyMode:
+        trigger === "定时触发" && schedulePeriod === "每月"
+          ? scheduleMonthlyMode
+          : undefined,
+      scheduleDayOfMonth:
+        trigger === "定时触发" &&
+        schedulePeriod === "每月" &&
+        scheduleMonthlyMode === "fixed_day"
+          ? scheduleDayOfMonth ?? undefined
+          : undefined,
+      scheduleMissingDayPolicy:
+        trigger === "定时触发" &&
+        schedulePeriod === "每月" &&
+        scheduleMonthlyMode === "fixed_day" &&
+        Number(scheduleDayOfMonth) >= 29
+          ? scheduleMissingDayPolicy
+          : undefined,
+      scheduleDate:
+        trigger === "定时触发" && schedulePeriod === "仅一次"
+          ? scheduleDate || undefined
+          : undefined,
       mailboxKey: trigger === "邮件触发" ? mailboxKey : undefined,
       mailboxLabel: trigger === "邮件触发" ? mailboxLabel : undefined,
       mailFolder: trigger === "邮件触发" ? mailFolder : undefined,
@@ -1365,6 +1488,35 @@ export default function AutomationPage() {
     };
   }
 
+  function validateScheduleConfiguration() {
+    if (trigger !== "定时触发") return true;
+
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleTime)) {
+      toast.error(tt("请选择有效的执行时间", "Please choose a valid run time"));
+      return false;
+    }
+
+    if (schedulePeriod === "每周" && scheduleWeekdays.length === 0) {
+      toast.error(tt("请至少选择一个执行星期", "Please select at least one weekday"));
+      return false;
+    }
+
+    if (schedulePeriod === "每月" && scheduleMonthlyMode === "fixed_day") {
+      const day = Number(scheduleDayOfMonth);
+      if (!Number.isInteger(day) || day < 1 || day > 31) {
+        toast.error(tt("请选择每月执行日期", "Please choose a monthly run date"));
+        return false;
+      }
+    }
+
+    if (schedulePeriod === "仅一次" && !scheduleDate) {
+      toast.error(tt("请选择一次性任务的执行日期", "Please choose a date for the one-time run"));
+      return false;
+    }
+
+    return true;
+  }
+
   async function createAutomation() {
     if (!name.trim()) {
       toast.error("请填写自动化名称");
@@ -1374,6 +1526,11 @@ export default function AutomationPage() {
     if (!selectedApp) {
       toast.error("请选择数字员工");
       setStep(1);
+      return;
+    }
+
+    if (!validateScheduleConfiguration()) {
+      setStep(2);
       return;
     }
 
@@ -1419,6 +1576,11 @@ export default function AutomationPage() {
     if (!selectedApp) {
       toast.error(tt("请选择数字员工", "Please select a digital employee"));
       setStep(1);
+      return;
+    }
+
+    if (!validateScheduleConfiguration()) {
+      setStep(2);
       return;
     }
 
@@ -2798,16 +2960,195 @@ export default function AutomationPage() {
                             />
                           </Field>
                         </div>
+
+                        {schedulePeriod === "每周" && (
+                          <Field label={tt("执行星期", "Run on")} compact>
+                            <div className="flex flex-wrap gap-2">
+                              {weekdayOptions.map((option) => {
+                                const selected = scheduleWeekdays.includes(option.value);
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() =>
+                                      setScheduleWeekdays((current) =>
+                                        selected
+                                          ? current.filter((value) => value !== option.value)
+                                          : [...current, option.value],
+                                      )
+                                    }
+                                    className={`rounded-lg border px-3 py-2 text-sm transition ${
+                                      selected
+                                        ? "border-primary bg-primary/10 font-medium text-primary"
+                                        : "bg-background hover:bg-muted/40"
+                                    }`}
+                                  >
+                                    {tt(option.zh, option.en)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              {tt(
+                                "至少选择一个星期，可同时选择多个。",
+                                "Select at least one weekday; multiple days are supported.",
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
+                        {schedulePeriod === "每月" && (
+                          <Field label={tt("执行日期", "Run Date")} compact>
+                            <div className="space-y-3">
+                              <label
+                                className={`block cursor-pointer rounded-xl border p-4 transition ${
+                                  scheduleMonthlyMode === "fixed_day"
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary/10"
+                                    : "bg-background hover:bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="radio"
+                                    name="schedule-monthly-mode"
+                                    checked={scheduleMonthlyMode === "fixed_day"}
+                                    onChange={() => {
+                                      setScheduleMonthlyMode("fixed_day");
+                                      if (!scheduleDayOfMonth) setScheduleDayOfMonth(1);
+                                    }}
+                                  />
+                                  <span className="text-sm font-medium">
+                                    {tt("每月固定日期", "Fixed day each month")}
+                                  </span>
+                                  <select
+                                    value={scheduleDayOfMonth ?? ""}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      setScheduleMonthlyMode("fixed_day");
+                                      setScheduleDayOfMonth(Number(e.target.value));
+                                    }}
+                                    className="ml-auto min-w-28 rounded-lg border bg-background px-3 py-2 text-sm"
+                                  >
+                                    <option value="" disabled>
+                                      {tt("选择日期", "Choose day")}
+                                    </option>
+                                    {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                                      <option key={day} value={day}>
+                                        {tt(`${day}日`, `Day ${day}`)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </label>
+
+                              <label
+                                className={`block cursor-pointer rounded-xl border p-4 transition ${
+                                  scheduleMonthlyMode === "last_day"
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary/10"
+                                    : "bg-background hover:bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <input
+                                    type="radio"
+                                    name="schedule-monthly-mode"
+                                    checked={scheduleMonthlyMode === "last_day"}
+                                    onChange={() => setScheduleMonthlyMode("last_day")}
+                                    className="mt-0.5"
+                                  />
+                                  <div>
+                                    <div className="text-sm font-medium">
+                                      {tt("每月最后一天", "Last day of each month")}
+                                    </div>
+                                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                      {tt(
+                                        "自动按当月实际最后一天执行；2月会自动识别28日或闰年的29日。",
+                                        "Runs on the actual last day of each month; February automatically uses the 28th or the 29th in a leap year.",
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </label>
+
+                              {scheduleMonthlyMode === "fixed_day" && Number(scheduleDayOfMonth) >= 29 && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                                  <div className="text-sm font-medium text-amber-900">
+                                    {tt(
+                                      "提醒：当前日期并非每个月都存在",
+                                      "Reminder: this date does not exist in every month",
+                                    )}
+                                  </div>
+                                  <div className="mt-1 text-xs leading-5 text-amber-800">
+                                    {tt(
+                                      "请选择当月没有该日期时的处理方式。2月天数会按普通年份和闰年自动判断。",
+                                      "Choose what to do when that date does not exist. February is handled automatically for normal and leap years.",
+                                    )}
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    <label className="flex cursor-pointer items-start gap-2 text-sm">
+                                      <input
+                                        type="radio"
+                                        name="schedule-missing-day"
+                                        checked={scheduleMissingDayPolicy === "skip"}
+                                        onChange={() => setScheduleMissingDayPolicy("skip")}
+                                        className="mt-0.5"
+                                      />
+                                      <span>{tt("跳过该月", "Skip that month")}</span>
+                                    </label>
+                                    <label className="flex cursor-pointer items-start gap-2 text-sm">
+                                      <input
+                                        type="radio"
+                                        name="schedule-missing-day"
+                                        checked={scheduleMissingDayPolicy === "last_day"}
+                                        onChange={() => setScheduleMissingDayPolicy("last_day")}
+                                        className="mt-0.5"
+                                      />
+                                      <span>
+                                        {tt(
+                                          "改为当月最后一天执行",
+                                          "Run on the last day of that month instead",
+                                        )}
+                                      </span>
+                                    </label>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
+                        {schedulePeriod === "仅一次" && (
+                          <Field label={tt("执行日期", "Run Date")} compact>
+                            <input
+                              type="date"
+                              value={scheduleDate}
+                              onChange={(e) => setScheduleDate(e.target.value)}
+                              className="input-base"
+                            />
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              {tt(
+                                "请选择具体日期；任务执行完成后会自动暂停。",
+                                "Choose a specific date. The automation pauses after this run.",
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
                         <Field label={tt("时区", "Time Zone")} compact>
                           <select
                             value={scheduleTimezone}
                             onChange={(e) => setScheduleTimezone(e.target.value)}
                             className="input-base"
                           >
-                            <option>Asia/Shanghai（UTC+8）</option>
-                            <option>Asia/Tokyo（UTC+9）</option>
-                            <option>America/New_York</option>
-                            <option>UTC</option>
+                            <option value="Asia/Shanghai">Asia/Shanghai (UTC+8)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                            <option value="America/New_York">
+                              {tt(
+                                "America/New_York（自动适配夏令时）",
+                                "America/New_York (DST aware)",
+                              )}
+                            </option>
+                            <option value="UTC">UTC</option>
                           </select>
                         </Field>
                       </>

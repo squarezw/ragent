@@ -5,7 +5,7 @@ import { executeAutomationAgent, isAutomationTimeoutError } from "@/lib/automati
 import { executeRunActions } from "@/lib/automation/actions";
 import {
   claimAutomationEmailMessage,
-  computeNextRunAt,
+  claimDueScheduledRun,
   createRun,
   ensureAutomationTables,
   finishRun,
@@ -16,7 +16,6 @@ import {
   recordAutomationEmailRuleEvaluations,
   saveAutomationEmailMailboxCursor,
   saveRunExecutionArtifacts,
-  type ScheduleConfig,
 } from "@/lib/automation/store";
 import {
   getAutomationMailboxForUser,
@@ -55,79 +54,53 @@ type MailTriggerRule = {
   value?: string;
 };
 
-function nextScheduleState(task: any) {
-  const config = (task.trigger_config || {}) as ScheduleConfig;
-
-  if (config.period === "仅一次") {
-    return { nextRunAt: null, nextStatus: "paused" as const };
-  }
-
-  try {
-    return {
-      nextRunAt: computeNextRunAt(config, new Date(Date.now() + 1000)),
-      nextStatus: task.status,
-    };
-  } catch (error) {
-    console.error(
-      `[Automation Cron] invalid schedule for automation ${task.id}; pausing to prevent repeated execution`,
-      error,
-    );
-    return { nextRunAt: null, nextStatus: "paused" as const };
-  }
+function isScheduleConfigurationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return message.startsWith("SCHEDULE_");
 }
 
 async function executeDueAutomation(automationId: number) {
-  const client = await pool.connect();
+  const lockClient = await pool.connect();
   let locked = false;
 
   try {
-    const lockResult = await client.query("SELECT pg_try_advisory_lock($1, $2) AS locked", [
-      ADVISORY_LOCK_NAMESPACE,
-      automationId,
-    ]);
+    const lockResult = await lockClient.query(
+      "SELECT pg_try_advisory_lock($1, $2) AS locked",
+      [ADVISORY_LOCK_NAMESPACE, automationId],
+    );
     locked = Boolean(lockResult.rows[0]?.locked);
     if (!locked) return;
 
-    const taskResult = await client.query(
-      `SELECT * FROM automation_tasks
-       WHERE id=$1
-         AND status='running'
-         AND trigger_type='定时触发'
-         AND next_run_at IS NOT NULL
-         AND next_run_at <= NOW()
-       LIMIT 1`,
-      [automationId]
-    );
+    let claimed: Awaited<ReturnType<typeof claimDueScheduledRun>>;
+    try {
+      // Store 会在同一个数据库事务里完成：
+      // 锁定到期任务 -> 创建 Run -> 推进 next_run_at -> 提交。
+      // 只有事务提交成功后才开始执行 AI，避免重复触发和“已推进但没有 Run”的丢任务窗口。
+      claimed = await claimDueScheduledRun(automationId);
+    } catch (error) {
+      if (isScheduleConfigurationError(error)) {
+        // 历史数据如果存在无法解析的旧定时配置，直接暂停该任务，
+        // 避免 Scheduler 每分钟反复扫描同一个无效任务。
+        await lockClient.query(
+          `UPDATE automation_tasks SET
+             status='paused', next_run_at=NULL, last_run_status='failed', updated_at=NOW()
+           WHERE id=$1
+             AND status='running'
+             AND trigger_type='定时触发'`,
+          [automationId],
+        );
+        console.error(
+          `[Automation Cron] automation ${automationId}: invalid schedule; paused to prevent repeated execution`,
+          error,
+        );
+        return;
+      }
+      throw error;
+    }
 
-    const task = taskResult.rows[0];
-    if (!task) return;
+    if (!claimed) return;
 
-    // 先“消费”本次计划时间，再执行 AI。
-    // 这样即使后续 AI / Action / 进程异常，也不会因为 next_run_at 仍停留在过去
-    // 而被每分钟扫描再次触发。
-    const scheduledFor = task.next_run_at;
-    const { nextRunAt, nextStatus } = nextScheduleState(task);
-    const claimed = await client.query(
-      `UPDATE automation_tasks SET
-         next_run_at=$1, status=$2, updated_at=NOW()
-       WHERE id=$3
-         AND status='running'
-         AND trigger_type='定时触发'
-         AND next_run_at IS NOT NULL
-         AND next_run_at <= NOW()
-       RETURNING id`,
-      [nextRunAt, nextStatus, task.id],
-    );
-    if (claimed.rowCount !== 1) return;
-
-    const triggerContext = {
-      source: "server-cron",
-      scheduledFor,
-      firedAt: new Date().toISOString(),
-      schedule: task.trigger_config || {},
-    };
-
-    const run = await createRun(task, "running", triggerContext);
+    const { task, run, scheduledFor } = claimed;
 
     try {
       const result = await executeAutomationAgent({
@@ -148,7 +121,7 @@ async function executeDueAutomation(automationId: number) {
         const prepared = await prepareAutomaticRunActions(
           Number(task.created_by_user_id),
           run.id,
-          answer
+          answer,
         );
 
         if (prepared?.status === "action_running") {
@@ -161,17 +134,18 @@ async function executeDueAutomation(automationId: number) {
       } else {
         await finishRun(run.id, "success", answer);
       }
-      await client.query(
+
+      await lockClient.query(
         `UPDATE automation_tasks SET
-          last_run_at=NOW(), last_run_status=$1, updated_at=NOW()
+           last_run_at=NOW(), last_run_status=$1, updated_at=NOW()
          WHERE id=$2`,
-        [lastRunStatus, task.id]
+        [lastRunStatus, task.id],
       );
 
       console.log(
         needsReview
-          ? `[Automation Cron] ${task.id} ${task.name}: AI result ready, pending review`
-          : `[Automation Cron] ${task.id} ${task.name}: ${lastRunStatus}`
+          ? `[Automation Cron] ${task.id} ${task.name}: AI result ready, pending review · scheduled ${scheduledFor}`
+          : `[Automation Cron] ${task.id} ${task.name}: ${lastRunStatus} · scheduled ${scheduledFor}`,
       );
     } catch (error: any) {
       const timedOut = isAutomationTimeoutError(error);
@@ -180,22 +154,24 @@ async function executeDueAutomation(automationId: number) {
       const partialResult = timedOut ? error.partialAnswer || undefined : undefined;
       await finishRun(run.id, runStatus, partialResult, String(message));
 
-      await client.query(
+      await lockClient.query(
         `UPDATE automation_tasks SET
-          last_run_at=NOW(), last_run_status=$1, updated_at=NOW()
+           last_run_at=NOW(), last_run_status=$1, updated_at=NOW()
          WHERE id=$2`,
-        [runStatus, task.id]
+        [runStatus, task.id],
       );
 
       console.error(
-        `[Automation Cron] ${task.id} ${task.name}: ${timedOut ? "timed out" : "failed"}`,
+        `[Automation Cron] ${task.id} ${task.name}: ${timedOut ? "timed out" : "failed"} · scheduled ${scheduledFor}`,
         error,
       );
     }
+  } catch (error) {
+    console.error(`[Automation Cron] automation ${automationId}: execution claim failed`, error);
   } finally {
     if (locked) {
       try {
-        await client.query("SELECT pg_advisory_unlock($1, $2)", [
+        await lockClient.query("SELECT pg_advisory_unlock($1, $2)", [
           ADVISORY_LOCK_NAMESPACE,
           automationId,
         ]);
@@ -203,7 +179,7 @@ async function executeDueAutomation(automationId: number) {
         console.error("[Automation Cron] unlock failed:", unlockError);
       }
     }
-    client.release();
+    lockClient.release();
   }
 }
 

@@ -7,12 +7,19 @@ export type AutomationStrategy = "仅生成结果" | "需要确认后执行" | "
 
 export type AutomationStatus = "running" | "paused" | "error";
 
+export type MonthlyMissingDayPolicy = "last_day" | "skip";
+export type MonthlyMode = "fixed_day" | "last_day";
+
 export interface ScheduleConfig {
   period: "每天" | "每周" | "每月" | "仅一次";
   time: string;
   timezone: string;
-  weekday?: number;
+  weekdays?: number[];
+  weekday?: number; // 兼容历史单星期配置
+  monthlyMode?: MonthlyMode;
   dayOfMonth?: number;
+  missingDayPolicy?: MonthlyMissingDayPolicy;
+  date?: string;
   runAt?: string;
 }
 
@@ -248,25 +255,63 @@ export async function ensureAutomationTables() {
   return initPromise;
 }
 
-function cleanTimeZone(value?: string) {
-  const raw = String(value || "Asia/Shanghai").trim();
+function scheduleError(code: string): never {
+  throw new Error(code);
+}
+
+function cleanTimeZone(value?: string, strict = false) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    if (strict) scheduleError("SCHEDULE_TIMEZONE_REQUIRED");
+    return "Asia/Shanghai";
+  }
+
   const zone = raw
     .replace(/\s*（.*?）\s*/g, "")
     .replace(/\s*\(.*?\)\s*/g, "")
     .trim();
 
-  if (!zone) return "Asia/Shanghai";
+  if (!zone) {
+    if (strict) scheduleError("SCHEDULE_TIMEZONE_REQUIRED");
+    return "Asia/Shanghai";
+  }
 
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date());
     return zone;
   } catch {
-    return "Asia/Shanghai";
+    scheduleError("SCHEDULE_INVALID_TIMEZONE");
   }
 }
 
-function validTime(value?: string) {
-  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+function normalizedScheduleTime(value?: string, strict = false) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    if (strict) scheduleError("SCHEDULE_TIME_REQUIRED");
+    return "09:00";
+  }
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(raw)) {
+    scheduleError("SCHEDULE_INVALID_TIME");
+  }
+  return raw;
+}
+
+function validCalendarDate(value?: string) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function parseCalendarDate(value: string) {
+  if (!validCalendarDate(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() + 1 !== month ||
+    check.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -300,10 +345,25 @@ function zonedParts(date: Date, timeZone: string) {
   };
 }
 
-function zonedDateTimeToUtc(
+function sameLocalMinute(
+  date: Date,
   target: { year: number; month: number; day: number; hour: number; minute: number },
   timeZone: string
 ) {
+  const got = zonedParts(date, timeZone);
+  return (
+    got.year === target.year &&
+    got.month === target.month &&
+    got.day === target.day &&
+    got.hour === target.hour &&
+    got.minute === target.minute
+  );
+}
+
+function zonedDateTimeToUtc(
+  target: { year: number; month: number; day: number; hour: number; minute: number },
+  timeZone: string
+): Date | null {
   const wantedAsUtc = Date.UTC(
     target.year,
     target.month - 1,
@@ -315,8 +375,7 @@ function zonedDateTimeToUtc(
   );
 
   let guess = wantedAsUtc;
-
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     const got = zonedParts(new Date(guess), timeZone);
     const gotAsUtc = Date.UTC(got.year, got.month - 1, got.day, got.hour, got.minute, 0, 0);
     const delta = wantedAsUtc - gotAsUtc;
@@ -324,7 +383,21 @@ function zonedDateTimeToUtc(
     if (Math.abs(delta) < 1000) break;
   }
 
-  return new Date(guess);
+  const candidate = new Date(guess);
+  if (!sameLocalMinute(candidate, target, timeZone)) {
+    // 夏令时切换时某些当地时间不存在。周期任务会跳过该次，
+    // 一次性任务则在保存时提示用户重新选择时间。
+    return null;
+  }
+
+  // 夏令时结束时，同一个当地时间可能出现两次。固定选择第一次，
+  // Scheduler 后续只推进一次 next_run_at，避免同一当地时间重复执行。
+  let earliest = candidate;
+  for (let minutes = 1; minutes <= 180; minutes += 1) {
+    const probe = new Date(candidate.getTime() - minutes * 60_000);
+    if (sameLocalMinute(probe, target, timeZone)) earliest = probe;
+  }
+  return earliest;
 }
 
 function addCalendarDays(value: { year: number; month: number; day: number }, days: number) {
@@ -348,46 +421,125 @@ function addMonths(year: number, month: number, offset: number) {
   };
 }
 
+function normalizeWeekdays(input: unknown, legacyWeekday?: unknown) {
+  const values = Array.isArray(input)
+    ? input
+    : Number.isInteger(legacyWeekday)
+      ? [legacyWeekday]
+      : [];
+
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+    )
+  ).sort((left, right) => {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    return order.indexOf(left) - order.indexOf(right);
+  });
+}
+
+function formatCalendarDateInZone(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function formatDateTimeInZone(value: unknown, timeZone: string) {
+  const date = new Date(value as any);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}/${parts.month}/${parts.day} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+}
+
+type NormalizeScheduleOptions = {
+  strict?: boolean;
+};
+
 export function normalizeScheduleConfig(
   input: Partial<ScheduleConfig>,
-  now = new Date()
+  now = new Date(),
+  options: NormalizeScheduleOptions = {}
 ): ScheduleConfig {
-  const period =
-    input.period === "每周" || input.period === "每月" || input.period === "仅一次"
-      ? input.period
-      : "每天";
+  const strict = options.strict === true;
+  const rawPeriod = input.period;
+  const validPeriods = new Set(["每天", "每周", "每月", "仅一次"]);
 
-  const time = validTime(input.time) ? input.time! : "09:00";
-  const timezone = cleanTimeZone(input.timezone);
+  if (strict && !validPeriods.has(String(rawPeriod || ""))) {
+    scheduleError("SCHEDULE_PERIOD_REQUIRED");
+  }
 
-  const current = zonedParts(now, timezone);
+  const period = validPeriods.has(String(rawPeriod || ""))
+    ? (rawPeriod as ScheduleConfig["period"])
+    : "每天";
+  const time = normalizedScheduleTime(input.time, strict);
+  const timezone = cleanTimeZone(input.timezone, strict);
   const config: ScheduleConfig = { period, time, timezone };
 
   if (period === "每周") {
-    config.weekday =
-      Number.isInteger(input.weekday) && Number(input.weekday) >= 0 && Number(input.weekday) <= 6
-        ? Number(input.weekday)
-        : current.weekday;
+    const weekdays = normalizeWeekdays(input.weekdays, input.weekday);
+    if (weekdays.length === 0) scheduleError("SCHEDULE_WEEKDAY_REQUIRED");
+    config.weekdays = weekdays;
   }
 
   if (period === "每月") {
-    config.dayOfMonth =
-      Number.isInteger(input.dayOfMonth) &&
-      Number(input.dayOfMonth) >= 1 &&
-      Number(input.dayOfMonth) <= 31
-        ? Number(input.dayOfMonth)
-        : current.day;
+    const monthlyMode: MonthlyMode =
+      input.monthlyMode === "last_day" ? "last_day" : "fixed_day";
+    config.monthlyMode = monthlyMode;
+
+    if (monthlyMode === "last_day") {
+      // “每月最后一天”不等同于固定 31 日：2 月自动取 28/29 日，
+      // 其他月份自动取各自最后一天。
+      config.dayOfMonth = 31;
+      config.missingDayPolicy = "last_day";
+    } else {
+      const requestedDay = Number(input.dayOfMonth);
+      const validDay = Number.isInteger(requestedDay) && requestedDay >= 1 && requestedDay <= 31;
+      if (!validDay) scheduleError("SCHEDULE_MONTH_DAY_REQUIRED");
+      config.dayOfMonth = requestedDay;
+
+      const rawPolicy = input.missingDayPolicy;
+      if (
+        strict &&
+        Number(config.dayOfMonth) >= 29 &&
+        rawPolicy !== "last_day" &&
+        rawPolicy !== "skip"
+      ) {
+        scheduleError("SCHEDULE_MONTH_POLICY_REQUIRED");
+      }
+      config.missingDayPolicy = rawPolicy === "skip" ? "skip" : "last_day";
+    }
   }
 
-  if (period === "仅一次" && input.runAt) {
-    const parsed = new Date(input.runAt);
-    if (!Number.isNaN(parsed.getTime())) config.runAt = parsed.toISOString();
-  }
+  if (period === "仅一次") {
+    const explicitDate = String(input.date || "").trim();
+    let date = validCalendarDate(explicitDate) ? explicitDate : "";
 
-  if (period === "仅一次" && !config.runAt) {
-    const temp: ScheduleConfig = { ...config, period: "每天" };
-    const next = computeNextRunAt(temp, now);
-    if (next) config.runAt = next.toISOString();
+    if (!date && input.runAt) {
+      const parsed = new Date(input.runAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        date = formatCalendarDateInZone(parsed, timezone);
+      }
+    }
+
+    if (strict && !date) scheduleError("SCHEDULE_DATE_REQUIRED");
+
+    if (date) {
+      const parts = parseCalendarDate(date);
+      if (!parts) scheduleError("SCHEDULE_INVALID_DATE");
+      const [hour, minute] = time.split(":").map(Number);
+      const runAt = zonedDateTimeToUtc({ ...parts, hour, minute }, timezone);
+      if (!runAt) scheduleError("SCHEDULE_LOCAL_TIME_INVALID");
+      config.date = date;
+      config.runAt = runAt.toISOString();
+
+      if (strict && runAt.getTime() <= now.getTime()) {
+        scheduleError("SCHEDULE_ONCE_EXPIRED");
+      }
+    } else if (input.runAt) {
+      const parsed = new Date(input.runAt);
+      if (!Number.isNaN(parsed.getTime())) config.runAt = parsed.toISOString();
+    }
   }
 
   return config;
@@ -397,63 +549,76 @@ export function computeNextRunAt(
   configInput: Partial<ScheduleConfig>,
   after = new Date()
 ): Date | null {
-  const config = {
-    ...configInput,
-    timezone: cleanTimeZone(configInput.timezone),
-    time: validTime(configInput.time) ? configInput.time! : "09:00",
-  } as ScheduleConfig;
+  const timezone = cleanTimeZone(configInput.timezone);
+  const time = normalizedScheduleTime(configInput.time);
+  const period =
+    configInput.period === "每周" ||
+    configInput.period === "每月" ||
+    configInput.period === "仅一次"
+      ? configInput.period
+      : "每天";
 
-  if (config.period === "仅一次" && config.runAt) {
-    const runAt = new Date(config.runAt);
+  if (period === "仅一次") {
+    if (!configInput.runAt) return null;
+    const runAt = new Date(configInput.runAt);
     return !Number.isNaN(runAt.getTime()) && runAt.getTime() > after.getTime() ? runAt : null;
   }
 
-  const [hour, minute] = config.time.split(":").map(Number);
-  const localNow = zonedParts(after, config.timezone);
+  const [hour, minute] = time.split(":").map(Number);
+  const localNow = zonedParts(after, timezone);
   const makeCandidate = (year: number, month: number, day: number) =>
-    zonedDateTimeToUtc({ year, month, day, hour, minute }, config.timezone);
+    zonedDateTimeToUtc({ year, month, day, hour, minute }, timezone);
 
-  if (config.period === "每周") {
-    const targetWeekday = Number.isInteger(config.weekday)
-      ? Number(config.weekday)
-      : localNow.weekday;
-    const delta = (targetWeekday - localNow.weekday + 7) % 7;
-    let date = addCalendarDays(localNow, delta);
-    let candidate = makeCandidate(date.year, date.month, date.day);
+  if (period === "每周") {
+    const targets = normalizeWeekdays(configInput.weekdays, configInput.weekday);
+    if (targets.length === 0) return null;
 
-    if (candidate.getTime() <= after.getTime()) {
-      date = addCalendarDays(date, 7);
-      candidate = makeCandidate(date.year, date.month, date.day);
+    for (let offset = 0; offset <= 14; offset += 1) {
+      const date = addCalendarDays(localNow, offset);
+      const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+      if (!targets.includes(weekday)) continue;
+      const candidate = makeCandidate(date.year, date.month, date.day);
+      if (candidate && candidate.getTime() > after.getTime()) return candidate;
     }
-    return candidate;
+    return null;
   }
 
-  if (config.period === "每月") {
-    const requestedDay = Number.isInteger(config.dayOfMonth)
-      ? Number(config.dayOfMonth)
-      : localNow.day;
-
-    const buildForMonth = (year: number, month: number) => {
-      const day = Math.min(requestedDay, daysInMonth(year, month));
-      return makeCandidate(year, month, day);
-    };
-
-    let candidate = buildForMonth(localNow.year, localNow.month);
-    if (candidate.getTime() <= after.getTime()) {
-      const nextMonth = addMonths(localNow.year, localNow.month, 1);
-      candidate = buildForMonth(nextMonth.year, nextMonth.month);
+  if (period === "每月") {
+    const monthlyMode: MonthlyMode =
+      configInput.monthlyMode === "last_day" ? "last_day" : "fixed_day";
+    const requestedDay = Number(configInput.dayOfMonth);
+    if (monthlyMode === "fixed_day" && (!Number.isInteger(requestedDay) || requestedDay < 1 || requestedDay > 31)) {
+      return null;
     }
-    return candidate;
+    const policy: MonthlyMissingDayPolicy =
+      configInput.missingDayPolicy === "skip" ? "skip" : "last_day";
+
+    for (let offset = 0; offset <= 24; offset += 1) {
+      const targetMonth = addMonths(localNow.year, localNow.month, offset);
+      const maxDay = daysInMonth(targetMonth.year, targetMonth.month);
+
+      // Date.UTC(year, month, 0) 会正确计算闰年，因此 2 月最后一天
+      // 在闰年为 29 日，普通年份为 28 日。
+      if (monthlyMode === "last_day") {
+        const candidate = makeCandidate(targetMonth.year, targetMonth.month, maxDay);
+        if (candidate && candidate.getTime() > after.getTime()) return candidate;
+        continue;
+      }
+
+      if (requestedDay > maxDay && policy === "skip") continue;
+      const actualDay = requestedDay > maxDay ? maxDay : requestedDay;
+      const candidate = makeCandidate(targetMonth.year, targetMonth.month, actualDay);
+      if (candidate && candidate.getTime() > after.getTime()) return candidate;
+    }
+    return null;
   }
 
-  let date = { year: localNow.year, month: localNow.month, day: localNow.day };
-  let candidate = makeCandidate(date.year, date.month, date.day);
-
-  if (candidate.getTime() <= after.getTime()) {
-    date = addCalendarDays(date, 1);
-    candidate = makeCandidate(date.year, date.month, date.day);
+  for (let offset = 0; offset <= 2; offset += 1) {
+    const date = addCalendarDays(localNow, offset);
+    const candidate = makeCandidate(date.year, date.month, date.day);
+    if (candidate && candidate.getTime() > after.getTime()) return candidate;
   }
-  return candidate;
+  return null;
 }
 
 export async function resolveAppName(appId: number) {
@@ -536,14 +701,23 @@ export async function createAutomation(userId: number, input: any) {
   let nextRunAt: Date | null = null;
 
   if (triggerType === "定时触发") {
-    const schedule = normalizeScheduleConfig({
-      period: input.schedulePeriod ?? input.triggerConfig?.period,
-      time: input.scheduleTime ?? input.triggerConfig?.time,
-      timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone,
-      weekday: input.triggerConfig?.weekday,
-      dayOfMonth: input.triggerConfig?.dayOfMonth,
-      runAt: input.triggerConfig?.runAt,
-    });
+    const schedule = normalizeScheduleConfig(
+      {
+        period: input.schedulePeriod ?? input.triggerConfig?.period,
+        time: input.scheduleTime ?? input.triggerConfig?.time,
+        timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone,
+        weekdays: input.scheduleWeekdays ?? input.triggerConfig?.weekdays,
+        weekday: input.triggerConfig?.weekday,
+        monthlyMode: input.scheduleMonthlyMode ?? input.triggerConfig?.monthlyMode,
+        dayOfMonth: input.scheduleDayOfMonth ?? input.triggerConfig?.dayOfMonth,
+        missingDayPolicy:
+          input.scheduleMissingDayPolicy ?? input.triggerConfig?.missingDayPolicy,
+        date: input.scheduleDate ?? input.triggerConfig?.date,
+        runAt: input.triggerConfig?.runAt,
+      },
+      new Date(),
+      { strict: true }
+    );
     Object.assign(triggerConfig, schedule);
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
   } else if (triggerType === "邮件触发") {
@@ -643,16 +817,59 @@ export async function updateAutomation(userId: number, id: number, input: any) {
   let nextRunAt: Date | null = current.next_run_at ? new Date(current.next_run_at) : null;
 
   if (triggerType === "定时触发") {
-    const schedule = normalizeScheduleConfig({
-      period: input.schedulePeriod ?? input.triggerConfig?.period ?? triggerConfig.period,
-      time: input.scheduleTime ?? input.triggerConfig?.time ?? triggerConfig.time,
-      timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone ?? triggerConfig.timezone,
-      weekday: input.triggerConfig?.weekday ?? triggerConfig.weekday,
-      dayOfMonth: input.triggerConfig?.dayOfMonth ?? triggerConfig.dayOfMonth,
-      runAt: input.triggerConfig?.runAt ?? triggerConfig.runAt,
-    });
+    const scheduleFieldsTouched =
+      current.trigger_type !== "定时触发" ||
+      input.schedulePeriod !== undefined ||
+      input.scheduleTime !== undefined ||
+      input.scheduleTimezone !== undefined ||
+      input.scheduleWeekdays !== undefined ||
+      input.scheduleMonthlyMode !== undefined ||
+      input.scheduleDayOfMonth !== undefined ||
+      input.scheduleMissingDayPolicy !== undefined ||
+      input.scheduleDate !== undefined ||
+      input.triggerConfig !== undefined;
+
+    const schedule = normalizeScheduleConfig(
+      {
+        period: input.schedulePeriod ?? input.triggerConfig?.period ?? triggerConfig.period,
+        time: input.scheduleTime ?? input.triggerConfig?.time ?? triggerConfig.time,
+        timezone:
+          input.scheduleTimezone ?? input.triggerConfig?.timezone ?? triggerConfig.timezone,
+        weekdays:
+          input.scheduleWeekdays ??
+          input.triggerConfig?.weekdays ??
+          triggerConfig.weekdays,
+        weekday: input.triggerConfig?.weekday ?? triggerConfig.weekday,
+        monthlyMode:
+          input.scheduleMonthlyMode ??
+          input.triggerConfig?.monthlyMode ??
+          triggerConfig.monthlyMode,
+        dayOfMonth:
+          input.scheduleDayOfMonth ??
+          input.triggerConfig?.dayOfMonth ??
+          triggerConfig.dayOfMonth,
+        missingDayPolicy:
+          input.scheduleMissingDayPolicy ??
+          input.triggerConfig?.missingDayPolicy ??
+          triggerConfig.missingDayPolicy,
+        date:
+          input.scheduleDate ??
+          input.triggerConfig?.date ??
+          triggerConfig.date,
+        runAt: input.triggerConfig?.runAt ?? triggerConfig.runAt,
+      },
+      new Date(),
+      { strict: scheduleFieldsTouched }
+    );
+
+    if (status === "running" && schedule.period === "仅一次") {
+      const next = computeNextRunAt(schedule);
+      if (!next) scheduleError("SCHEDULE_ONCE_EXPIRED");
+      nextRunAt = next;
+    } else {
+      nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+    }
     triggerConfig = schedule;
-    nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
   } else if (triggerType === "邮件触发") {
     triggerConfig = {
       mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? triggerConfig.mailboxKey ?? "system"),
@@ -758,15 +975,14 @@ export async function deleteAutomation(userId: number, id: number) {
   return { deleted: result.rows.length > 0, dependents: [] };
 }
 
-export async function createRun(
+async function insertRunRow(
+  queryable: { query: (text: string, values?: any[]) => Promise<any> },
   task: any,
   status: "running" | "pending",
   triggerContext: Record<string, any> = {}
 ) {
-  await ensureAutomationTables();
-
   const needsReview = task.strategy === "需要确认后执行";
-  const result = await pool.query(
+  const result = await queryable.query(
     `INSERT INTO automation_runs (
       automation_id, tenant_id, created_by_user_id, automation_name,
       app_id, agent_name, trigger_type, trigger_context,
@@ -790,7 +1006,109 @@ export async function createRun(
       needsReview ? "not_started" : "not_required",
     ]
   );
-  return result.rows[0];
+  return result.rows[0] || null;
+}
+
+export async function createRun(
+  task: any,
+  status: "running" | "pending",
+  triggerContext: Record<string, any> = {}
+) {
+  await ensureAutomationTables();
+  return insertRunRow(pool, task, status, triggerContext);
+}
+
+/**
+ * 原子认领一个到期的定时任务：
+ * 1. 在同一数据库事务里锁住任务；
+ * 2. 创建本次 Run；
+ * 3. 推进 next_run_at（仅一次任务则暂停）；
+ * 4. 提交后再由 Scheduler 执行 AI。
+ *
+ * 这样可以避免“next_run_at 已推进但 Run 尚未创建”时进程异常导致的丢任务窗口。
+ */
+export async function claimDueScheduledRun(automationId: number) {
+  await ensureAutomationTables();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const taskResult = await client.query(
+      `SELECT * FROM automation_tasks
+       WHERE id=$1
+         AND status='running'
+         AND trigger_type='定时触发'
+         AND next_run_at IS NOT NULL
+         AND next_run_at <= NOW()
+       FOR UPDATE`,
+      [automationId]
+    );
+
+    const task = taskResult.rows[0];
+    if (!task) {
+      await client.query("COMMIT");
+      return null;
+    }
+
+    const scheduledFor = new Date(task.next_run_at);
+    let nextRunAt: Date | null = null;
+    let nextStatus: AutomationStatus = task.status;
+
+    if (task.trigger_config?.period === "仅一次") {
+      nextStatus = "paused";
+    } else {
+      // 服务短暂中断后只补执行当前这一条过期计划，不逐条追赶历史周期。
+      // 下一次执行时间直接从“当前时间”和“本次计划时间之后”两者较晚者开始计算。
+      const nextAfter = new Date(Math.max(Date.now(), scheduledFor.getTime() + 1000));
+      nextRunAt = computeNextRunAt(task.trigger_config || {}, nextAfter);
+      if (!nextRunAt) {
+        await client.query("ROLLBACK");
+        scheduleError("SCHEDULE_NO_NEXT_RUN");
+      }
+    }
+
+    const triggerContext = {
+      source: "server-cron",
+      scheduledFor: scheduledFor.toISOString(),
+      firedAt: new Date().toISOString(),
+      schedule: task.trigger_config || {},
+    };
+
+    const run = await insertRunRow(client, task, "running", triggerContext);
+    if (!run) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `UPDATE automation_tasks SET
+         next_run_at=$1,
+         status=$2,
+         updated_at=NOW()
+       WHERE id=$3`,
+      [nextRunAt, nextStatus, task.id]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      task,
+      run,
+      scheduledFor: scheduledFor.toISOString(),
+      nextRunAt,
+      nextStatus,
+    };
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback error
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function insertReviewHistory(
@@ -2044,9 +2362,48 @@ export function automationRowToApi(row: any) {
   const config = row.trigger_config || {};
   const resultConfig = row.result_config || {};
 
+  let scheduleTimezone = "Asia/Shanghai";
+  try {
+    scheduleTimezone = cleanTimeZone(config.timezone);
+  } catch {
+    scheduleTimezone = "Asia/Shanghai";
+  }
+
+  const scheduleWeekdays = normalizeWeekdays(config.weekdays, config.weekday);
+  const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  const scheduleDate =
+    config.date ||
+    (config.runAt
+      ? (() => {
+          const parsed = new Date(config.runAt);
+          return Number.isNaN(parsed.getTime())
+            ? undefined
+            : formatCalendarDateInZone(parsed, scheduleTimezone);
+        })()
+      : undefined);
+
+  let scheduleSummary = `${config.period || "每天"} ${config.time || "09:00"}`;
+  if (config.period === "每周" && scheduleWeekdays.length > 0) {
+    scheduleSummary = `每周 ${scheduleWeekdays.map((day) => weekdayNames[day]).join("、")} ${config.time || "09:00"}`;
+  } else if (config.period === "每月") {
+    if (config.monthlyMode === "last_day") {
+      scheduleSummary = `每月最后一天 ${config.time || "09:00"}`;
+    } else if (Number(config.dayOfMonth)) {
+      const missingText =
+        Number(config.dayOfMonth) >= 29
+          ? config.missingDayPolicy === "skip"
+            ? " · 无该日期时跳过"
+            : " · 无该日期时按月末执行"
+          : "";
+      scheduleSummary = `每月 ${Number(config.dayOfMonth)}日 ${config.time || "09:00"}${missingText}`;
+    }
+  } else if (config.period === "仅一次") {
+    scheduleSummary = `仅一次 ${scheduleDate || "未指定日期"} ${config.time || "09:00"}`;
+  }
+
   const triggerDetail =
     row.trigger_type === "定时触发"
-      ? `${config.period || "每天"} ${config.time || "09:00"} · ${config.timezone || "Asia/Shanghai"}`
+      ? `${scheduleSummary} · ${scheduleTimezone}`
       : row.trigger_type === "邮件触发"
         ? `${config.mailboxLabel || "系统邮箱"} · ${emailRuleSummary(config)} · 优先级 ${normalizeEmailPriority(config.priority)}`
         : row.trigger_type === "Webhook / API"
@@ -2055,6 +2412,17 @@ export function automationRowToApi(row: any) {
 
   const statusText =
     row.status === "paused" ? "已暂停" : row.status === "error" ? "异常" : "运行中";
+
+  const lastRunDisplay = row.last_run_at
+    ? row.trigger_type === "定时触发"
+      ? formatDateTimeInZone(row.last_run_at, scheduleTimezone)
+      : new Date(row.last_run_at).toLocaleString("zh-CN")
+    : "";
+  const nextRunDisplay = row.next_run_at
+    ? row.trigger_type === "定时触发"
+      ? formatDateTimeInZone(row.next_run_at, scheduleTimezone)
+      : new Date(row.next_run_at).toLocaleString("zh-CN")
+    : "";
 
   return {
     id: row.id,
@@ -2066,10 +2434,10 @@ export function automationRowToApi(row: any) {
     strategy: row.strategy,
     status: row.status,
     statusText,
-    time: row.last_run_at
-      ? new Date(row.last_run_at).toLocaleString("zh-CN")
-      : row.next_run_at
-        ? `下次 ${new Date(row.next_run_at).toLocaleString("zh-CN")}`
+    time: lastRunDisplay
+      ? lastRunDisplay
+      : nextRunDisplay
+        ? `下次 ${nextRunDisplay}`
         : "尚未运行",
     task: row.task,
     returnDetail: [
@@ -2086,7 +2454,14 @@ export function automationRowToApi(row: any) {
     callbackAuth: resultConfig.callbackAuth || undefined,
     schedulePeriod: config.period,
     scheduleTime: config.time,
-    scheduleTimezone: config.timezone,
+    scheduleTimezone: row.trigger_type === "定时触发" ? scheduleTimezone : config.timezone,
+    scheduleWeekdays,
+    scheduleMonthlyMode: config.monthlyMode === "last_day" ? "last_day" : "fixed_day",
+    scheduleDayOfMonth:
+      Number.isInteger(Number(config.dayOfMonth)) ? Number(config.dayOfMonth) : undefined,
+    scheduleMissingDayPolicy:
+      config.missingDayPolicy === "skip" ? "skip" : "last_day",
+    scheduleDate,
     mailboxKey: config.mailboxKey || "system",
     mailboxLabel: config.mailboxLabel || "系统邮箱",
     mailFolder: config.folder || "INBOX",
