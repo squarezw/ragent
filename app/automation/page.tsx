@@ -1312,7 +1312,7 @@ export default function AutomationPage() {
       task: prompt.trim() || "暂未填写任务说明",
       trigger,
       strategy,
-      resultEmail: mailResultEmail.trim() || undefined,
+      resultEmail: mailResultEmail.trim(),
       resultEmailIncludeAttachments: mailResultEmail.trim() ? resultEmailIncludeAttachments : false,
       callbackUrl: callbackUrl.trim() || undefined,
       callbackTiming,
@@ -2663,15 +2663,6 @@ export default function AutomationPage() {
                     {tt("数字员工将直接使用其已绑定的 Skill 执行任务，无需在自动化中重复配置 Skill。", "The digital employee will use its bound Skills directly; no need to configure Skills again in the automation.")}
                   </div>
 
-                  <Field label={tt("任务说明", "Task Description")}>
-                    <textarea
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      className="input-base min-h-28 resize-y"
-                      placeholder={tt("描述数字员工需要完成的任务", "Describe what the digital employee should do")}
-                    />
-                  </Field>
-
                   <Field label={tt("结果发送", "Result Delivery")}>
                     <div className="rounded-xl border bg-muted/30 p-4">
                       <div className="mb-4 text-xs leading-6 text-muted-foreground">
@@ -3341,10 +3332,16 @@ export default function AutomationPage() {
                   </div>
 
                   <div className="mt-4 rounded-xl border bg-muted/30 p-4">
-                    <div className="mb-2 text-xs text-muted-foreground">
-                      {tt("当前触发方式可用变量（点击可插入任务说明）", "Available variables for this trigger (click to insert into the task description)")}
+                    <div className="text-sm font-medium text-foreground">
+                      {tt("当前触发方式可用变量", "Available variables for this trigger")}
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {tt(
+                        "点击变量会自动插入下方任务说明，运行时系统会将变量替换为本次触发的实际内容。",
+                        "Click a variable to insert it into the task description below. At runtime, the system replaces it with the actual trigger value.",
+                      )}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
                       {variables.map((variable) => (
                         <button
                           key={variable.value}
@@ -3360,6 +3357,18 @@ export default function AutomationPage() {
                       ))}
                     </div>
                   </div>
+
+                  <Field label={tt("任务说明", "Task Description")}>
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      className="input-base min-h-32 resize-y"
+                      placeholder={tt(
+                        "描述数字员工需要完成的任务，也可以点击上方变量插入动态内容",
+                        "Describe what the digital employee should do. You can also insert dynamic values using the variables above.",
+                      )}
+                    />
+                  </Field>
                 </div>
               )}
 
