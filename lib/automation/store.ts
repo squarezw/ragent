@@ -7,12 +7,19 @@ export type AutomationStrategy = "仅生成结果" | "需要确认后执行" | "
 
 export type AutomationStatus = "running" | "paused" | "error";
 
+export type MonthlyMissingDayPolicy = "last_day" | "skip";
+export type MonthlyMode = "fixed_day" | "last_day";
+
 export interface ScheduleConfig {
   period: "每天" | "每周" | "每月" | "仅一次";
   time: string;
   timezone: string;
-  weekday?: number;
+  weekdays?: number[];
+  weekday?: number; // 兼容历史单星期配置
+  monthlyMode?: MonthlyMode;
   dayOfMonth?: number;
+  missingDayPolicy?: MonthlyMissingDayPolicy;
+  date?: string;
   runAt?: string;
 }
 
@@ -71,6 +78,7 @@ export async function ensureAutomationTables() {
         ai_result TEXT,
         review_content TEXT,
         final_result TEXT,
+        result_attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
         ai_version INTEGER NOT NULL DEFAULT 0,
         review_status VARCHAR(20) NOT NULL DEFAULT 'not_required',
         reviewer_user_id INTEGER,
@@ -92,6 +100,7 @@ export async function ensureAutomationTables() {
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS ai_result TEXT;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS review_content TEXT;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS final_result TEXT;
+      ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS result_attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS ai_version INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS review_status VARCHAR(20) NOT NULL DEFAULT 'not_required';
       ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS reviewer_user_id INTEGER;
@@ -166,6 +175,77 @@ export async function ensureAutomationTables() {
 
       CREATE INDEX IF NOT EXISTS idx_automation_run_actions_pending
         ON automation_run_actions(run_id, status, id ASC);
+
+      CREATE TABLE IF NOT EXISTS automation_email_processed_messages (
+        id SERIAL PRIMARY KEY,
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        message_key VARCHAR(500) NOT NULL,
+        automation_id INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(created_by_user_id, mailbox_key, message_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_processed_owner
+        ON automation_email_processed_messages(created_by_user_id, created_at DESC);
+
+
+      CREATE TABLE IF NOT EXISTS automation_email_mailbox_cursors (
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        last_uid BIGINT NOT NULL DEFAULT 0,
+        initialized BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (created_by_user_id, mailbox_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_cursor_updated
+        ON automation_email_mailbox_cursors(updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS automation_email_rule_events (
+        id SERIAL PRIMARY KEY,
+        created_by_user_id INTEGER NOT NULL,
+        mailbox_key VARCHAR(128) NOT NULL,
+        message_key VARCHAR(500) NOT NULL,
+        message_uid BIGINT,
+        automation_id INTEGER NOT NULL,
+        outcome VARCHAR(40) NOT NULL,
+        winner_automation_id INTEGER,
+        matched_rule TEXT,
+        priority INTEGER,
+        from_address TEXT,
+        to_address TEXT,
+        subject TEXT,
+        message_date TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(created_by_user_id, mailbox_key, message_key, automation_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_automation
+        ON automation_email_rule_events(created_by_user_id, automation_id, created_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_mailbox
+        ON automation_email_rule_events(created_by_user_id, mailbox_key, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS automation_notification_preferences (
+        user_id INTEGER PRIMARY KEY,
+        initialized_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        success_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS automation_notification_states (
+        user_id INTEGER NOT NULL,
+        event_key VARCHAR(255) NOT NULL,
+        read_at TIMESTAMPTZ,
+        dismissed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, event_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_automation_notification_states_user
+        ON automation_notification_states(user_id, updated_at DESC);
     `);
   })().catch((error) => {
     initPromise = null;
@@ -175,13 +255,63 @@ export async function ensureAutomationTables() {
   return initPromise;
 }
 
-function cleanTimeZone(value?: string) {
-  const zone = (value || "Asia/Shanghai").replace(/（.*?）/g, "").trim();
-  return zone || "Asia/Shanghai";
+function scheduleError(code: string): never {
+  throw new Error(code);
 }
 
-function validTime(value?: string) {
-  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+function cleanTimeZone(value?: string, strict = false) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    if (strict) scheduleError("SCHEDULE_TIMEZONE_REQUIRED");
+    return "Asia/Shanghai";
+  }
+
+  const zone = raw
+    .replace(/\s*（.*?）\s*/g, "")
+    .replace(/\s*\(.*?\)\s*/g, "")
+    .trim();
+
+  if (!zone) {
+    if (strict) scheduleError("SCHEDULE_TIMEZONE_REQUIRED");
+    return "Asia/Shanghai";
+  }
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date());
+    return zone;
+  } catch {
+    scheduleError("SCHEDULE_INVALID_TIMEZONE");
+  }
+}
+
+function normalizedScheduleTime(value?: string, strict = false) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    if (strict) scheduleError("SCHEDULE_TIME_REQUIRED");
+    return "09:00";
+  }
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(raw)) {
+    scheduleError("SCHEDULE_INVALID_TIME");
+  }
+  return raw;
+}
+
+function validCalendarDate(value?: string) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function parseCalendarDate(value: string) {
+  if (!validCalendarDate(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() + 1 !== month ||
+    check.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -215,10 +345,25 @@ function zonedParts(date: Date, timeZone: string) {
   };
 }
 
-function zonedDateTimeToUtc(
+function sameLocalMinute(
+  date: Date,
   target: { year: number; month: number; day: number; hour: number; minute: number },
   timeZone: string
 ) {
+  const got = zonedParts(date, timeZone);
+  return (
+    got.year === target.year &&
+    got.month === target.month &&
+    got.day === target.day &&
+    got.hour === target.hour &&
+    got.minute === target.minute
+  );
+}
+
+function zonedDateTimeToUtc(
+  target: { year: number; month: number; day: number; hour: number; minute: number },
+  timeZone: string
+): Date | null {
   const wantedAsUtc = Date.UTC(
     target.year,
     target.month - 1,
@@ -230,8 +375,7 @@ function zonedDateTimeToUtc(
   );
 
   let guess = wantedAsUtc;
-
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     const got = zonedParts(new Date(guess), timeZone);
     const gotAsUtc = Date.UTC(got.year, got.month - 1, got.day, got.hour, got.minute, 0, 0);
     const delta = wantedAsUtc - gotAsUtc;
@@ -239,7 +383,21 @@ function zonedDateTimeToUtc(
     if (Math.abs(delta) < 1000) break;
   }
 
-  return new Date(guess);
+  const candidate = new Date(guess);
+  if (!sameLocalMinute(candidate, target, timeZone)) {
+    // 夏令时切换时某些当地时间不存在。周期任务会跳过该次，
+    // 一次性任务则在保存时提示用户重新选择时间。
+    return null;
+  }
+
+  // 夏令时结束时，同一个当地时间可能出现两次。固定选择第一次，
+  // Scheduler 后续只推进一次 next_run_at，避免同一当地时间重复执行。
+  let earliest = candidate;
+  for (let minutes = 1; minutes <= 180; minutes += 1) {
+    const probe = new Date(candidate.getTime() - minutes * 60_000);
+    if (sameLocalMinute(probe, target, timeZone)) earliest = probe;
+  }
+  return earliest;
 }
 
 function addCalendarDays(value: { year: number; month: number; day: number }, days: number) {
@@ -263,46 +421,125 @@ function addMonths(year: number, month: number, offset: number) {
   };
 }
 
+function normalizeWeekdays(input: unknown, legacyWeekday?: unknown) {
+  const values = Array.isArray(input)
+    ? input
+    : Number.isInteger(legacyWeekday)
+      ? [legacyWeekday]
+      : [];
+
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+    )
+  ).sort((left, right) => {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    return order.indexOf(left) - order.indexOf(right);
+  });
+}
+
+function formatCalendarDateInZone(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function formatDateTimeInZone(value: unknown, timeZone: string) {
+  const date = new Date(value as any);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}/${parts.month}/${parts.day} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+}
+
+type NormalizeScheduleOptions = {
+  strict?: boolean;
+};
+
 export function normalizeScheduleConfig(
   input: Partial<ScheduleConfig>,
-  now = new Date()
+  now = new Date(),
+  options: NormalizeScheduleOptions = {}
 ): ScheduleConfig {
-  const period =
-    input.period === "每周" || input.period === "每月" || input.period === "仅一次"
-      ? input.period
-      : "每天";
+  const strict = options.strict === true;
+  const rawPeriod = input.period;
+  const validPeriods = new Set(["每天", "每周", "每月", "仅一次"]);
 
-  const time = validTime(input.time) ? input.time! : "09:00";
-  const timezone = cleanTimeZone(input.timezone);
+  if (strict && !validPeriods.has(String(rawPeriod || ""))) {
+    scheduleError("SCHEDULE_PERIOD_REQUIRED");
+  }
 
-  const current = zonedParts(now, timezone);
+  const period = validPeriods.has(String(rawPeriod || ""))
+    ? (rawPeriod as ScheduleConfig["period"])
+    : "每天";
+  const time = normalizedScheduleTime(input.time, strict);
+  const timezone = cleanTimeZone(input.timezone, strict);
   const config: ScheduleConfig = { period, time, timezone };
 
   if (period === "每周") {
-    config.weekday =
-      Number.isInteger(input.weekday) && Number(input.weekday) >= 0 && Number(input.weekday) <= 6
-        ? Number(input.weekday)
-        : current.weekday;
+    const weekdays = normalizeWeekdays(input.weekdays, input.weekday);
+    if (weekdays.length === 0) scheduleError("SCHEDULE_WEEKDAY_REQUIRED");
+    config.weekdays = weekdays;
   }
 
   if (period === "每月") {
-    config.dayOfMonth =
-      Number.isInteger(input.dayOfMonth) &&
-      Number(input.dayOfMonth) >= 1 &&
-      Number(input.dayOfMonth) <= 31
-        ? Number(input.dayOfMonth)
-        : current.day;
+    const monthlyMode: MonthlyMode =
+      input.monthlyMode === "last_day" ? "last_day" : "fixed_day";
+    config.monthlyMode = monthlyMode;
+
+    if (monthlyMode === "last_day") {
+      // “每月最后一天”不等同于固定 31 日：2 月自动取 28/29 日，
+      // 其他月份自动取各自最后一天。
+      config.dayOfMonth = 31;
+      config.missingDayPolicy = "last_day";
+    } else {
+      const requestedDay = Number(input.dayOfMonth);
+      const validDay = Number.isInteger(requestedDay) && requestedDay >= 1 && requestedDay <= 31;
+      if (!validDay) scheduleError("SCHEDULE_MONTH_DAY_REQUIRED");
+      config.dayOfMonth = requestedDay;
+
+      const rawPolicy = input.missingDayPolicy;
+      if (
+        strict &&
+        Number(config.dayOfMonth) >= 29 &&
+        rawPolicy !== "last_day" &&
+        rawPolicy !== "skip"
+      ) {
+        scheduleError("SCHEDULE_MONTH_POLICY_REQUIRED");
+      }
+      config.missingDayPolicy = rawPolicy === "skip" ? "skip" : "last_day";
+    }
   }
 
-  if (period === "仅一次" && input.runAt) {
-    const parsed = new Date(input.runAt);
-    if (!Number.isNaN(parsed.getTime())) config.runAt = parsed.toISOString();
-  }
+  if (period === "仅一次") {
+    const explicitDate = String(input.date || "").trim();
+    let date = validCalendarDate(explicitDate) ? explicitDate : "";
 
-  if (period === "仅一次" && !config.runAt) {
-    const temp: ScheduleConfig = { ...config, period: "每天" };
-    const next = computeNextRunAt(temp, now);
-    if (next) config.runAt = next.toISOString();
+    if (!date && input.runAt) {
+      const parsed = new Date(input.runAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        date = formatCalendarDateInZone(parsed, timezone);
+      }
+    }
+
+    if (strict && !date) scheduleError("SCHEDULE_DATE_REQUIRED");
+
+    if (date) {
+      const parts = parseCalendarDate(date);
+      if (!parts) scheduleError("SCHEDULE_INVALID_DATE");
+      const [hour, minute] = time.split(":").map(Number);
+      const runAt = zonedDateTimeToUtc({ ...parts, hour, minute }, timezone);
+      if (!runAt) scheduleError("SCHEDULE_LOCAL_TIME_INVALID");
+      config.date = date;
+      config.runAt = runAt.toISOString();
+
+      if (strict && runAt.getTime() <= now.getTime()) {
+        scheduleError("SCHEDULE_ONCE_EXPIRED");
+      }
+    } else if (input.runAt) {
+      const parsed = new Date(input.runAt);
+      if (!Number.isNaN(parsed.getTime())) config.runAt = parsed.toISOString();
+    }
   }
 
   return config;
@@ -312,68 +549,132 @@ export function computeNextRunAt(
   configInput: Partial<ScheduleConfig>,
   after = new Date()
 ): Date | null {
-  const config = {
-    ...configInput,
-    timezone: cleanTimeZone(configInput.timezone),
-    time: validTime(configInput.time) ? configInput.time! : "09:00",
-  } as ScheduleConfig;
+  const timezone = cleanTimeZone(configInput.timezone);
+  const time = normalizedScheduleTime(configInput.time);
+  const period =
+    configInput.period === "每周" ||
+    configInput.period === "每月" ||
+    configInput.period === "仅一次"
+      ? configInput.period
+      : "每天";
 
-  if (config.period === "仅一次" && config.runAt) {
-    const runAt = new Date(config.runAt);
+  if (period === "仅一次") {
+    if (!configInput.runAt) return null;
+    const runAt = new Date(configInput.runAt);
     return !Number.isNaN(runAt.getTime()) && runAt.getTime() > after.getTime() ? runAt : null;
   }
 
-  const [hour, minute] = config.time.split(":").map(Number);
-  const localNow = zonedParts(after, config.timezone);
+  const [hour, minute] = time.split(":").map(Number);
+  const localNow = zonedParts(after, timezone);
   const makeCandidate = (year: number, month: number, day: number) =>
-    zonedDateTimeToUtc({ year, month, day, hour, minute }, config.timezone);
+    zonedDateTimeToUtc({ year, month, day, hour, minute }, timezone);
 
-  if (config.period === "每周") {
-    const targetWeekday = Number.isInteger(config.weekday)
-      ? Number(config.weekday)
-      : localNow.weekday;
-    const delta = (targetWeekday - localNow.weekday + 7) % 7;
-    let date = addCalendarDays(localNow, delta);
-    let candidate = makeCandidate(date.year, date.month, date.day);
+  if (period === "每周") {
+    const targets = normalizeWeekdays(configInput.weekdays, configInput.weekday);
+    if (targets.length === 0) return null;
 
-    if (candidate.getTime() <= after.getTime()) {
-      date = addCalendarDays(date, 7);
-      candidate = makeCandidate(date.year, date.month, date.day);
+    for (let offset = 0; offset <= 14; offset += 1) {
+      const date = addCalendarDays(localNow, offset);
+      const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+      if (!targets.includes(weekday)) continue;
+      const candidate = makeCandidate(date.year, date.month, date.day);
+      if (candidate && candidate.getTime() > after.getTime()) return candidate;
     }
-    return candidate;
+    return null;
   }
 
-  if (config.period === "每月") {
-    const requestedDay = Number.isInteger(config.dayOfMonth)
-      ? Number(config.dayOfMonth)
-      : localNow.day;
-
-    const buildForMonth = (year: number, month: number) => {
-      const day = Math.min(requestedDay, daysInMonth(year, month));
-      return makeCandidate(year, month, day);
-    };
-
-    let candidate = buildForMonth(localNow.year, localNow.month);
-    if (candidate.getTime() <= after.getTime()) {
-      const nextMonth = addMonths(localNow.year, localNow.month, 1);
-      candidate = buildForMonth(nextMonth.year, nextMonth.month);
+  if (period === "每月") {
+    const monthlyMode: MonthlyMode =
+      configInput.monthlyMode === "last_day" ? "last_day" : "fixed_day";
+    const requestedDay = Number(configInput.dayOfMonth);
+    if (monthlyMode === "fixed_day" && (!Number.isInteger(requestedDay) || requestedDay < 1 || requestedDay > 31)) {
+      return null;
     }
-    return candidate;
+    const policy: MonthlyMissingDayPolicy =
+      configInput.missingDayPolicy === "skip" ? "skip" : "last_day";
+
+    for (let offset = 0; offset <= 24; offset += 1) {
+      const targetMonth = addMonths(localNow.year, localNow.month, offset);
+      const maxDay = daysInMonth(targetMonth.year, targetMonth.month);
+
+      // Date.UTC(year, month, 0) 会正确计算闰年，因此 2 月最后一天
+      // 在闰年为 29 日，普通年份为 28 日。
+      if (monthlyMode === "last_day") {
+        const candidate = makeCandidate(targetMonth.year, targetMonth.month, maxDay);
+        if (candidate && candidate.getTime() > after.getTime()) return candidate;
+        continue;
+      }
+
+      if (requestedDay > maxDay && policy === "skip") continue;
+      const actualDay = requestedDay > maxDay ? maxDay : requestedDay;
+      const candidate = makeCandidate(targetMonth.year, targetMonth.month, actualDay);
+      if (candidate && candidate.getTime() > after.getTime()) return candidate;
+    }
+    return null;
   }
 
-  let date = { year: localNow.year, month: localNow.month, day: localNow.day };
-  let candidate = makeCandidate(date.year, date.month, date.day);
-
-  if (candidate.getTime() <= after.getTime()) {
-    date = addCalendarDays(date, 1);
-    candidate = makeCandidate(date.year, date.month, date.day);
+  for (let offset = 0; offset <= 2; offset += 1) {
+    const date = addCalendarDays(localNow, offset);
+    const candidate = makeCandidate(date.year, date.month, date.day);
+    if (candidate && candidate.getTime() > after.getTime()) return candidate;
   }
-  return candidate;
+  return null;
 }
 
 export async function resolveAppName(appId: number) {
   const result = await pool.query("SELECT name FROM apps WHERE id = $1", [appId]);
   return result.rows[0]?.name ? String(result.rows[0].name) : null;
+}
+
+type EmailRuleMode = "all" | "any";
+
+type EmailTriggerRule = {
+  id?: string;
+  field: string;
+  operator: string;
+  value?: string;
+};
+
+function normalizeEmailRules(input: any): EmailTriggerRule[] {
+  if (!Array.isArray(input)) return [];
+
+  const allowedFields = new Set([
+    "发件人",
+    "发件人域名",
+    "收件人",
+    "邮件主题",
+    "邮件正文",
+    "是否包含附件",
+    "附件名称",
+    "附件类型",
+  ]);
+  const allowedOperators = new Set(["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"]);
+
+  return input
+    .map((rule: any, index: number) => ({
+      id: String(rule?.id || `rule-${index + 1}`),
+      field: String(rule?.field || "邮件主题"),
+      operator: String(rule?.operator || "包含"),
+      value: String(rule?.value ?? "").trim(),
+    }))
+    .filter((rule: EmailTriggerRule) => allowedFields.has(rule.field) && allowedOperators.has(rule.operator))
+    .slice(0, 20);
+}
+
+function normalizeEmailPriority(value: any) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function emailRuleSummary(config: Record<string, any>) {
+  const rules = Array.isArray(config.rules) ? config.rules : [];
+  if (rules.length === 0) return "收到新邮件即触发";
+
+  const first = rules[0] || {};
+  const firstText = `${first.field || "邮件"}${first.operator || "包含"}${first.value ? `“${first.value}”` : ""}`;
+  if (rules.length === 1) return firstText;
+  return `${firstText} 等 ${rules.length} 条`;
 }
 
 export async function createAutomation(userId: number, input: any) {
@@ -400,16 +701,35 @@ export async function createAutomation(userId: number, input: any) {
   let nextRunAt: Date | null = null;
 
   if (triggerType === "定时触发") {
-    const schedule = normalizeScheduleConfig({
-      period: input.schedulePeriod ?? input.triggerConfig?.period,
-      time: input.scheduleTime ?? input.triggerConfig?.time,
-      timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone,
-      weekday: input.triggerConfig?.weekday,
-      dayOfMonth: input.triggerConfig?.dayOfMonth,
-      runAt: input.triggerConfig?.runAt,
-    });
+    const schedule = normalizeScheduleConfig(
+      {
+        period: input.schedulePeriod ?? input.triggerConfig?.period,
+        time: input.scheduleTime ?? input.triggerConfig?.time,
+        timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone,
+        weekdays: input.scheduleWeekdays ?? input.triggerConfig?.weekdays,
+        weekday: input.triggerConfig?.weekday,
+        monthlyMode: input.scheduleMonthlyMode ?? input.triggerConfig?.monthlyMode,
+        dayOfMonth: input.scheduleDayOfMonth ?? input.triggerConfig?.dayOfMonth,
+        missingDayPolicy:
+          input.scheduleMissingDayPolicy ?? input.triggerConfig?.missingDayPolicy,
+        date: input.scheduleDate ?? input.triggerConfig?.date,
+        runAt: input.triggerConfig?.runAt,
+      },
+      new Date(),
+      { strict: true }
+    );
     Object.assign(triggerConfig, schedule);
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+  } else if (triggerType === "邮件触发") {
+    Object.assign(triggerConfig, {
+      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? "system"),
+      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? "系统邮箱"),
+      folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? "INBOX"),
+      ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode) === "any" ? "any" : "all",
+      rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules),
+      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority),
+    });
+    nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
     triggerConfig.upstreamAutomationId =
       input.upstreamAutomationId ?? input.triggerConfig?.upstreamAutomationId ?? null;
@@ -421,6 +741,7 @@ export async function createAutomation(userId: number, input: any) {
 
   const resultConfig = {
     resultEmail: input.resultEmail || null,
+    resultEmailIncludeAttachments: Boolean(input.resultEmailIncludeAttachments),
     callbackUrl: input.callbackUrl || null,
     callbackTiming: input.callbackTiming || "任务结束后（推荐）",
     callbackAuth: input.callbackAuth || "无需验证",
@@ -496,16 +817,69 @@ export async function updateAutomation(userId: number, id: number, input: any) {
   let nextRunAt: Date | null = current.next_run_at ? new Date(current.next_run_at) : null;
 
   if (triggerType === "定时触发") {
-    const schedule = normalizeScheduleConfig({
-      period: input.schedulePeriod ?? input.triggerConfig?.period ?? triggerConfig.period,
-      time: input.scheduleTime ?? input.triggerConfig?.time ?? triggerConfig.time,
-      timezone: input.scheduleTimezone ?? input.triggerConfig?.timezone ?? triggerConfig.timezone,
-      weekday: input.triggerConfig?.weekday ?? triggerConfig.weekday,
-      dayOfMonth: input.triggerConfig?.dayOfMonth ?? triggerConfig.dayOfMonth,
-      runAt: input.triggerConfig?.runAt ?? triggerConfig.runAt,
-    });
+    const scheduleFieldsTouched =
+      current.trigger_type !== "定时触发" ||
+      input.schedulePeriod !== undefined ||
+      input.scheduleTime !== undefined ||
+      input.scheduleTimezone !== undefined ||
+      input.scheduleWeekdays !== undefined ||
+      input.scheduleMonthlyMode !== undefined ||
+      input.scheduleDayOfMonth !== undefined ||
+      input.scheduleMissingDayPolicy !== undefined ||
+      input.scheduleDate !== undefined ||
+      input.triggerConfig !== undefined;
+
+    const schedule = normalizeScheduleConfig(
+      {
+        period: input.schedulePeriod ?? input.triggerConfig?.period ?? triggerConfig.period,
+        time: input.scheduleTime ?? input.triggerConfig?.time ?? triggerConfig.time,
+        timezone:
+          input.scheduleTimezone ?? input.triggerConfig?.timezone ?? triggerConfig.timezone,
+        weekdays:
+          input.scheduleWeekdays ??
+          input.triggerConfig?.weekdays ??
+          triggerConfig.weekdays,
+        weekday: input.triggerConfig?.weekday ?? triggerConfig.weekday,
+        monthlyMode:
+          input.scheduleMonthlyMode ??
+          input.triggerConfig?.monthlyMode ??
+          triggerConfig.monthlyMode,
+        dayOfMonth:
+          input.scheduleDayOfMonth ??
+          input.triggerConfig?.dayOfMonth ??
+          triggerConfig.dayOfMonth,
+        missingDayPolicy:
+          input.scheduleMissingDayPolicy ??
+          input.triggerConfig?.missingDayPolicy ??
+          triggerConfig.missingDayPolicy,
+        date:
+          input.scheduleDate ??
+          input.triggerConfig?.date ??
+          triggerConfig.date,
+        runAt: input.triggerConfig?.runAt ?? triggerConfig.runAt,
+      },
+      new Date(),
+      { strict: scheduleFieldsTouched }
+    );
+
+    if (status === "running" && schedule.period === "仅一次") {
+      const next = computeNextRunAt(schedule);
+      if (!next) scheduleError("SCHEDULE_ONCE_EXPIRED");
+      nextRunAt = next;
+    } else {
+      nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+    }
     triggerConfig = schedule;
-    nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
+  } else if (triggerType === "邮件触发") {
+    triggerConfig = {
+      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? triggerConfig.mailboxKey ?? "system"),
+      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? triggerConfig.mailboxLabel ?? "系统邮箱"),
+      folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? triggerConfig.folder ?? "INBOX"),
+      ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode ?? triggerConfig.ruleMode) === "any" ? "any" : "all",
+      rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules ?? triggerConfig.rules),
+      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority ?? triggerConfig.priority),
+    };
+    nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
     triggerConfig = {
       upstreamAutomationId:
@@ -536,6 +910,10 @@ export async function updateAutomation(userId: number, id: number, input: any) {
       input.resultEmail !== undefined
         ? input.resultEmail || null
         : existingResultConfig.resultEmail || null,
+    resultEmailIncludeAttachments:
+      input.resultEmailIncludeAttachments !== undefined
+        ? Boolean(input.resultEmailIncludeAttachments)
+        : Boolean(existingResultConfig.resultEmailIncludeAttachments),
     callbackUrl:
       input.callbackUrl !== undefined
         ? input.callbackUrl || null
@@ -597,15 +975,14 @@ export async function deleteAutomation(userId: number, id: number) {
   return { deleted: result.rows.length > 0, dependents: [] };
 }
 
-export async function createRun(
+async function insertRunRow(
+  queryable: { query: (text: string, values?: any[]) => Promise<any> },
   task: any,
   status: "running" | "pending",
   triggerContext: Record<string, any> = {}
 ) {
-  await ensureAutomationTables();
-
   const needsReview = task.strategy === "需要确认后执行";
-  const result = await pool.query(
+  const result = await queryable.query(
     `INSERT INTO automation_runs (
       automation_id, tenant_id, created_by_user_id, automation_name,
       app_id, agent_name, trigger_type, trigger_context,
@@ -629,7 +1006,109 @@ export async function createRun(
       needsReview ? "not_started" : "not_required",
     ]
   );
-  return result.rows[0];
+  return result.rows[0] || null;
+}
+
+export async function createRun(
+  task: any,
+  status: "running" | "pending",
+  triggerContext: Record<string, any> = {}
+) {
+  await ensureAutomationTables();
+  return insertRunRow(pool, task, status, triggerContext);
+}
+
+/**
+ * 原子认领一个到期的定时任务：
+ * 1. 在同一数据库事务里锁住任务；
+ * 2. 创建本次 Run；
+ * 3. 推进 next_run_at（仅一次任务则暂停）；
+ * 4. 提交后再由 Scheduler 执行 AI。
+ *
+ * 这样可以避免“next_run_at 已推进但 Run 尚未创建”时进程异常导致的丢任务窗口。
+ */
+export async function claimDueScheduledRun(automationId: number) {
+  await ensureAutomationTables();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const taskResult = await client.query(
+      `SELECT * FROM automation_tasks
+       WHERE id=$1
+         AND status='running'
+         AND trigger_type='定时触发'
+         AND next_run_at IS NOT NULL
+         AND next_run_at <= NOW()
+       FOR UPDATE`,
+      [automationId]
+    );
+
+    const task = taskResult.rows[0];
+    if (!task) {
+      await client.query("COMMIT");
+      return null;
+    }
+
+    const scheduledFor = new Date(task.next_run_at);
+    let nextRunAt: Date | null = null;
+    let nextStatus: AutomationStatus = task.status;
+
+    if (task.trigger_config?.period === "仅一次") {
+      nextStatus = "paused";
+    } else {
+      // 服务短暂中断后只补执行当前这一条过期计划，不逐条追赶历史周期。
+      // 下一次执行时间直接从“当前时间”和“本次计划时间之后”两者较晚者开始计算。
+      const nextAfter = new Date(Math.max(Date.now(), scheduledFor.getTime() + 1000));
+      nextRunAt = computeNextRunAt(task.trigger_config || {}, nextAfter);
+      if (!nextRunAt) {
+        await client.query("ROLLBACK");
+        scheduleError("SCHEDULE_NO_NEXT_RUN");
+      }
+    }
+
+    const triggerContext = {
+      source: "server-cron",
+      scheduledFor: scheduledFor.toISOString(),
+      firedAt: new Date().toISOString(),
+      schedule: task.trigger_config || {},
+    };
+
+    const run = await insertRunRow(client, task, "running", triggerContext);
+    if (!run) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `UPDATE automation_tasks SET
+         next_run_at=$1,
+         status=$2,
+         updated_at=NOW()
+       WHERE id=$3`,
+      [nextRunAt, nextStatus, task.id]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      task,
+      run,
+      scheduledFor: scheduledFor.toISOString(),
+      nextRunAt,
+      nextStatus,
+    };
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback error
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function insertReviewHistory(
@@ -674,7 +1153,10 @@ function successActionSpecsForRun(run: any): RunActionSpec[] {
     specs.push({
       key: "result_email",
       type: "email",
-      config: { to: resultEmail },
+      config: {
+        to: resultEmail,
+        includeAttachments: config.resultEmailIncludeAttachments === true,
+      },
     });
   }
 
@@ -774,7 +1256,7 @@ export async function prepareAutomaticRunActions(
     const hasActions = specs.length > 0;
     const updated = await client.query(
       `UPDATE automation_runs SET
-        status=$1,
+        status=$1::varchar,
         result=$2,
         ai_result=$2,
         review_content=$2,
@@ -790,7 +1272,7 @@ export async function prepareAutomaticRunActions(
           ELSE 0
         END,
         processing_started_at=NULL,
-        finished_at=CASE WHEN $1='success' THEN NOW() ELSE NULL END,
+        finished_at=CASE WHEN $1::varchar='success' THEN NOW() ELSE NULL END,
         updated_at=NOW()
        WHERE id=$4
        RETURNING *`,
@@ -930,6 +1412,107 @@ export async function finalizeRunActions(userId: number, runId: number) {
   }
 }
 
+export async function prepareFailedRunActionsForRetry(
+  userId: number,
+  runId: number
+) {
+  await ensureAutomationTables();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const locked = await client.query(
+      `SELECT * FROM automation_runs
+       WHERE id=$1 AND created_by_user_id=$2
+       FOR UPDATE`,
+      [runId, userId]
+    );
+
+    const run = locked.rows[0];
+    if (!run) throw new Error("RUN_NOT_FOUND");
+
+    // 失败重试只允许发生在“后续操作已经执行失败”的 Run 上。
+    // final_result / result 在这里保持不变，因此不会重新运行 AI 或重新进入审核。
+    if (run.status !== "failed" || run.action_status !== "failed") {
+      throw new Error("RUN_STATE_CONFLICT");
+    }
+
+    const failedResult = await client.query(
+      `SELECT COUNT(*)::INTEGER AS failed_count
+       FROM automation_run_actions
+       WHERE run_id=$1 AND status='failed'`,
+      [runId]
+    );
+
+    if (Number(failedResult.rows[0]?.failed_count || 0) <= 0) {
+      throw new Error("NO_FAILED_ACTIONS");
+    }
+
+    // 只把失败 Action 放回等待队列。已经成功的 Action 保持 success，
+    // executeRunActions 后续只会 claim pending，因此不会重复发送成功操作。
+    await client.query(
+      `UPDATE automation_run_actions SET
+        status='pending',
+        error=NULL,
+        started_at=NULL,
+        finished_at=NULL,
+        updated_at=NOW()
+       WHERE run_id=$1 AND status='failed'`,
+      [runId]
+    );
+
+    const updated = await client.query(
+      `UPDATE automation_runs SET
+        status='action_running',
+        action_status='pending',
+        error=NULL,
+        finished_at=NULL,
+        updated_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [runId]
+    );
+
+    await client.query("COMMIT");
+    return updated.rows[0] || null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveRunExecutionArtifacts(
+  runId: number,
+  attachments: Array<Record<string, any>> = []
+) {
+  await ensureAutomationTables();
+
+  const safeAttachments = (Array.isArray(attachments) ? attachments : [])
+    .map((item) => ({
+      filename: String(item?.filename || "attachment").trim() || "attachment",
+      object_key: String(item?.object_key || "").trim(),
+      ...(item?.content_type ? { content_type: String(item.content_type) } : {}),
+      ...(Number.isFinite(Number(item?.size)) && Number(item.size) >= 0
+        ? { size: Number(item.size) }
+        : {}),
+    }))
+    .filter((item) => item.object_key)
+    .slice(0, 10);
+
+  const result = await pool.query(
+    `UPDATE automation_runs SET
+       result_attachments=$1::jsonb,
+       updated_at=NOW()
+     WHERE id=$2
+     RETURNING *`,
+    [JSON.stringify(safeAttachments), runId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function markRunPendingReview(
   runId: number,
   resultText: string,
@@ -1007,7 +1590,7 @@ export async function markRunPendingReview(
 
 export async function finishRun(
   runId: number,
-  status: "success" | "failed",
+  status: "success" | "failed" | "timed_out",
   resultText?: string,
   errorText?: string
 ) {
@@ -1015,14 +1598,18 @@ export async function finishRun(
 
   const result = await pool.query(
     `UPDATE automation_runs SET
-      status=$1,
-      result=$2,
-      ai_result=CASE WHEN $1='success' AND $2 IS NOT NULL THEN COALESCE(ai_result, $2) ELSE ai_result END,
+      status=$1::varchar,
+      result=$2::text,
+      ai_result=CASE
+        WHEN $1::varchar='success' AND $2::text IS NOT NULL
+          THEN COALESCE(ai_result, $2::text)
+        ELSE ai_result
+      END,
       final_result=CASE
-        WHEN $1='success' AND review_status='not_required' THEN $2
+        WHEN $1::varchar='success' AND review_status='not_required' THEN $2::text
         ELSE final_result
       END,
-      error=$3,
+      error=$3::text,
       finished_at=NOW(),
       duration_ms=COALESCE(duration_ms, 0) + CASE
         WHEN processing_started_at IS NOT NULL THEN GREATEST(
@@ -1271,7 +1858,7 @@ export async function approveRunReview(
 
     const updated = await client.query(
       `UPDATE automation_runs SET
-        status=$1,
+        status=$1::varchar,
         result=$2,
         review_content=$2,
         final_result=$2,
@@ -1281,7 +1868,7 @@ export async function approveRunReview(
         reviewed_at=NOW(),
         rejection_reason=NULL,
         error=NULL,
-        finished_at=CASE WHEN $1='success' THEN NOW() ELSE NULL END,
+        finished_at=CASE WHEN $1::varchar='success' THEN NOW() ELSE NULL END,
         processing_started_at=NULL,
         updated_at=NOW()
        WHERE id=$5
@@ -1367,6 +1954,394 @@ export async function rejectRunReview(
   }
 }
 
+export async function claimAutomationEmailMessage(
+  userId: number,
+  mailboxKey: string,
+  messageKey: string,
+  automationId: number
+) {
+  await ensureAutomationTables();
+
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeMessageKey = String(messageKey || "").trim();
+  if (!safeMessageKey) throw new Error("EMAIL_MESSAGE_KEY_REQUIRED");
+
+  const result = await pool.query(
+    `INSERT INTO automation_email_processed_messages (
+      created_by_user_id, mailbox_key, message_key, automation_id
+    ) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (created_by_user_id, mailbox_key, message_key) DO NOTHING
+    RETURNING id`,
+    [userId, safeMailboxKey, safeMessageKey.slice(0, 500), automationId]
+  );
+
+  return result.rows.length > 0;
+}
+
+export type AutomationEmailRuleOutcome =
+  | "triggered"
+  | "suppressed_by_priority"
+  | "not_matched"
+  | "duplicate";
+
+export type AutomationEmailRuleEvaluationInput = {
+  userId: number;
+  mailboxKey: string;
+  messageKey: string;
+  messageUid?: number;
+  automationId: number;
+  outcome: AutomationEmailRuleOutcome;
+  winnerAutomationId?: number | null;
+  matchedRule?: string;
+  priority?: number;
+  from?: string;
+  to?: string;
+  subject?: string;
+  date?: string;
+};
+
+export async function recordAutomationEmailRuleEvaluations(
+  evaluations: AutomationEmailRuleEvaluationInput[]
+) {
+  await ensureAutomationTables();
+  const safe = evaluations
+    .filter((item) => Number.isInteger(Number(item.userId)) && Number.isInteger(Number(item.automationId)))
+    .map((item) => ({
+      ...item,
+      mailboxKey: String(item.mailboxKey || "system").trim() || "system",
+      messageKey: String(item.messageKey || "").trim().slice(0, 500),
+    }))
+    .filter((item) => item.messageKey);
+
+  if (safe.length === 0) return;
+
+  const values: string[] = [];
+  const params: any[] = [];
+  for (const item of safe) {
+    const start = params.length;
+    params.push(
+      item.userId,
+      item.mailboxKey,
+      item.messageKey,
+      Number.isFinite(Number(item.messageUid)) ? Number(item.messageUid) : null,
+      item.automationId,
+      item.outcome,
+      item.winnerAutomationId ?? null,
+      item.matchedRule || null,
+      Number.isFinite(Number(item.priority)) ? Number(item.priority) : null,
+      item.from || null,
+      item.to || null,
+      item.subject || null,
+      item.date || null,
+    );
+    const indexes = Array.from({ length: 13 }, (_, i) => `$${start + i + 1}`);
+    values.push(`(${indexes.join(",")},NOW())`);
+  }
+
+  await pool.query(
+    `INSERT INTO automation_email_rule_events (
+       created_by_user_id, mailbox_key, message_key, message_uid,
+       automation_id, outcome, winner_automation_id, matched_rule, priority,
+       from_address, to_address, subject, message_date, created_at
+     ) VALUES ${values.join(",")}
+     ON CONFLICT (created_by_user_id, mailbox_key, message_key, automation_id) DO NOTHING`,
+    params,
+  );
+}
+
+export async function getAutomationEmailRoutingStats(userId: number, automationId: number) {
+  await ensureAutomationTables();
+
+  const statsResult = await pool.query(
+    `SELECT
+       COUNT(*)::int AS scanned,
+       COUNT(*) FILTER (WHERE outcome <> 'not_matched')::int AS matched,
+       COUNT(*) FILTER (WHERE outcome = 'triggered')::int AS triggered,
+       COUNT(*) FILTER (WHERE outcome = 'suppressed_by_priority')::int AS suppressed,
+       COUNT(*) FILTER (WHERE outcome = 'not_matched')::int AS not_matched,
+       COUNT(*) FILTER (WHERE outcome = 'duplicate')::int AS duplicate
+     FROM automation_email_rule_events
+     WHERE created_by_user_id=$1 AND automation_id=$2`,
+    [userId, automationId],
+  );
+
+  const recentResult = await pool.query(
+    `SELECT
+       id, mailbox_key, message_key, message_uid, automation_id, outcome,
+       winner_automation_id, matched_rule, priority,
+       from_address, to_address, subject, message_date, created_at
+     FROM automation_email_rule_events
+     WHERE created_by_user_id=$1 AND automation_id=$2
+     ORDER BY created_at DESC, id DESC
+     LIMIT 20`,
+    [userId, automationId],
+  );
+
+  const row = statsResult.rows[0] || {};
+  return {
+    scanned: Number(row.scanned || 0),
+    matched: Number(row.matched || 0),
+    triggered: Number(row.triggered || 0),
+    suppressed: Number(row.suppressed || 0),
+    notMatched: Number(row.not_matched || 0),
+    duplicate: Number(row.duplicate || 0),
+    recent: recentResult.rows.map((item: any) => ({
+      id: Number(item.id),
+      mailboxKey: item.mailbox_key,
+      messageKey: item.message_key,
+      messageUid: item.message_uid == null ? undefined : Number(item.message_uid),
+      automationId: Number(item.automation_id),
+      outcome: item.outcome,
+      winnerAutomationId:
+        item.winner_automation_id == null ? undefined : Number(item.winner_automation_id),
+      matchedRule: item.matched_rule || undefined,
+      priority: item.priority == null ? undefined : Number(item.priority),
+      from: item.from_address || undefined,
+      to: item.to_address || undefined,
+      subject: item.subject || undefined,
+      date: item.message_date || undefined,
+      createdAt: item.created_at,
+    })),
+  };
+}
+
+export type AutomationNotificationKind =
+  | "pending_review"
+  | "run_failed"
+  | "run_timed_out"
+  | "run_success"
+  | "email_failed"
+  | "result_url_failed";
+
+export interface AutomationNotificationItem {
+  eventKey: string;
+  kind: AutomationNotificationKind;
+  level: "strong" | "normal";
+  title: string;
+  message: string;
+  automationId: number | null;
+  runId: number;
+  createdAt: string;
+  read: boolean;
+  readAt?: string;
+}
+
+async function getAutomationNotificationInitializedAt(userId: number) {
+  await ensureAutomationTables();
+  await pool.query(
+    `INSERT INTO automation_notification_preferences (user_id)
+     VALUES ($1)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId]
+  );
+
+  const result = await pool.query(
+    `SELECT initialized_at, success_enabled
+     FROM automation_notification_preferences
+     WHERE user_id=$1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return {
+    initializedAt: result.rows[0]?.initialized_at || new Date(),
+    successEnabled: result.rows[0]?.success_enabled !== false,
+  };
+}
+
+function notificationEventTime(row: any) {
+  const value = row.event_time || row.finished_at || row.updated_at || row.created_at || row.started_at;
+  return value ? new Date(value) : new Date();
+}
+
+function clipNotificationError(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+}
+
+export async function listAutomationNotifications(userId: number) {
+  const { initializedAt, successEnabled } = await getAutomationNotificationInitializedAt(userId);
+
+  const runResult = await pool.query(
+    `SELECT id, automation_id, automation_name, status, action_status, ai_version,
+            error, started_at, created_at, updated_at, finished_at,
+            COALESCE(updated_at, finished_at, created_at, started_at) AS event_time
+     FROM automation_runs
+     WHERE created_by_user_id=$1
+       AND (
+         status='pending'
+         OR (
+           COALESCE(updated_at, finished_at, created_at, started_at) >= $2
+           AND status IN ('failed', 'timed_out', 'success')
+         )
+       )
+     ORDER BY COALESCE(updated_at, finished_at, created_at, started_at) DESC, id DESC
+     LIMIT 160`,
+    [userId, initializedAt]
+  );
+
+  const actionResult = await pool.query(
+    `SELECT action.id, action.run_id, action.action_type, action.status,
+            action.attempt_count, action.error, action.created_at, action.updated_at,
+            action.finished_at, run.automation_id, run.automation_name,
+            COALESCE(action.finished_at, action.updated_at, action.created_at) AS event_time
+     FROM automation_run_actions AS action
+     JOIN automation_runs AS run ON run.id=action.run_id
+     WHERE run.created_by_user_id=$1
+       AND action.status='failed'
+       AND COALESCE(action.finished_at, action.updated_at, action.created_at) >= $2
+     ORDER BY COALESCE(action.finished_at, action.updated_at, action.created_at) DESC, action.id DESC
+     LIMIT 100`,
+    [userId, initializedAt]
+  );
+
+  const items: AutomationNotificationItem[] = [];
+
+  for (const row of runResult.rows) {
+    const runId = Number(row.id);
+    const automationId = row.automation_id ? Number(row.automation_id) : null;
+    const name = String(row.automation_name || "自动化");
+    const createdAt = notificationEventTime(row).toISOString();
+
+    if (row.status === "pending") {
+      const version = Math.max(1, Number(row.ai_version || 1));
+      items.push({
+        eventKey: `run:${runId}:pending:v${version}`,
+        kind: "pending_review",
+        level: "strong",
+        title: `【待处理】${name}需要审核`,
+        message: "AI 已生成结果，等待你审核后决定是否执行后续业务动作。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "failed") {
+      // 后续 Action 失败会生成更具体的邮件 / URL 失败提醒，避免重复提示。
+      if (row.action_status === "failed") continue;
+      const error = clipNotificationError(row.error);
+      items.push({
+        eventKey: `run:${runId}:failed:${new Date(createdAt).getTime()}`,
+        kind: "run_failed",
+        level: "strong",
+        title: `【失败】${name}执行失败`,
+        message: error ? `本次运行失败：${error}` : "本次自动化运行失败，请进入运行详情查看原因。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "timed_out") {
+      items.push({
+        eventKey: `run:${runId}:timed_out`,
+        kind: "run_timed_out",
+        level: "strong",
+        title: `【超时】${name}执行超时`,
+        message: "本次自动化超过允许执行时间，请进入运行详情处理。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+      continue;
+    }
+
+    if (row.status === "success" && successEnabled) {
+      items.push({
+        eventKey: `run:${runId}:success`,
+        kind: "run_success",
+        level: "normal",
+        title: `【成功】${name}已执行完成`,
+        message: "本次自动化已完成，可进入运行详情查看最终结果。",
+        automationId,
+        runId,
+        createdAt,
+        read: false,
+      });
+    }
+  }
+
+  for (const row of actionResult.rows) {
+    const runId = Number(row.run_id);
+    const automationId = row.automation_id ? Number(row.automation_id) : null;
+    const name = String(row.automation_name || "自动化");
+    const attempt = Math.max(1, Number(row.attempt_count || 1));
+    const createdAt = notificationEventTime(row).toISOString();
+    const error = clipNotificationError(row.error);
+    const isEmail = row.action_type === "email";
+
+    items.push({
+      eventKey: `action:${Number(row.id)}:failed:attempt${attempt}`,
+      kind: isEmail ? "email_failed" : "result_url_failed",
+      level: "strong",
+      title: isEmail ? `【失败】${name}结果邮件发送失败` : `【失败】${name}结果 URL 发送失败`,
+      message: error
+        ? `${isEmail ? "结果邮件" : "结果 URL"}发送失败：${error}`
+        : `${isEmail ? "结果邮件" : "结果 URL"}发送失败，可进入运行详情重试失败操作。`,
+      automationId,
+      runId,
+      createdAt,
+      read: false,
+    });
+  }
+
+  const stateResult = await pool.query(
+    `SELECT event_key, read_at, dismissed_at
+     FROM automation_notification_states
+     WHERE user_id=$1`,
+    [userId]
+  );
+
+  const stateMap = new Map<string, any>(stateResult.rows.map((row) => [String(row.event_key), row]));
+  const merged = items
+    .filter((item) => !stateMap.get(item.eventKey)?.dismissed_at)
+    .map((item) => {
+      const state = stateMap.get(item.eventKey);
+      return {
+        ...item,
+        read: Boolean(state?.read_at),
+        readAt: state?.read_at ? new Date(state.read_at).toISOString() : undefined,
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 100);
+
+  return {
+    items: merged,
+    unreadCount: merged.filter((item) => !item.read).length,
+  };
+}
+
+export async function markAutomationNotificationsRead(userId: number, eventKeys: string[]) {
+  await ensureAutomationTables();
+  const keys = Array.from(
+    new Set(
+      (Array.isArray(eventKeys) ? eventKeys : [])
+        .map((value) => String(value || "").trim())
+        .filter((value) => value.length > 0 && value.length <= 255)
+    )
+  ).slice(0, 100);
+
+  if (keys.length === 0) return;
+
+  for (const eventKey of keys) {
+    await pool.query(
+      `INSERT INTO automation_notification_states (user_id, event_key, read_at, updated_at)
+       VALUES ($1, $2, NOW(), NOW())
+       ON CONFLICT (user_id, event_key)
+       DO UPDATE SET read_at=NOW(), updated_at=NOW()`,
+      [userId, eventKey]
+    );
+  }
+}
+
 export async function listRuns(userId: number, automationId?: number) {
   await ensureAutomationTables();
   const params: any[] = [userId];
@@ -1391,17 +2366,67 @@ export function automationRowToApi(row: any) {
   const config = row.trigger_config || {};
   const resultConfig = row.result_config || {};
 
+  let scheduleTimezone = "Asia/Shanghai";
+  try {
+    scheduleTimezone = cleanTimeZone(config.timezone);
+  } catch {
+    scheduleTimezone = "Asia/Shanghai";
+  }
+
+  const scheduleWeekdays = normalizeWeekdays(config.weekdays, config.weekday);
+  const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  const scheduleDate =
+    config.date ||
+    (config.runAt
+      ? (() => {
+          const parsed = new Date(config.runAt);
+          return Number.isNaN(parsed.getTime())
+            ? undefined
+            : formatCalendarDateInZone(parsed, scheduleTimezone);
+        })()
+      : undefined);
+
+  let scheduleSummary = `${config.period || "每天"} ${config.time || "09:00"}`;
+  if (config.period === "每周" && scheduleWeekdays.length > 0) {
+    scheduleSummary = `每周 ${scheduleWeekdays.map((day) => weekdayNames[day]).join("、")} ${config.time || "09:00"}`;
+  } else if (config.period === "每月") {
+    if (config.monthlyMode === "last_day") {
+      scheduleSummary = `每月最后一天 ${config.time || "09:00"}`;
+    } else if (Number(config.dayOfMonth)) {
+      const missingText =
+        Number(config.dayOfMonth) >= 29
+          ? config.missingDayPolicy === "skip"
+            ? " · 无该日期时跳过"
+            : " · 无该日期时按月末执行"
+          : "";
+      scheduleSummary = `每月 ${Number(config.dayOfMonth)}日 ${config.time || "09:00"}${missingText}`;
+    }
+  } else if (config.period === "仅一次") {
+    scheduleSummary = `仅一次 ${scheduleDate || "未指定日期"} ${config.time || "09:00"}`;
+  }
+
   const triggerDetail =
     row.trigger_type === "定时触发"
-      ? `${config.period || "每天"} ${config.time || "09:00"} · ${config.timezone || "Asia/Shanghai"}`
+      ? `${scheduleSummary} · ${scheduleTimezone}`
       : row.trigger_type === "邮件触发"
-        ? "系统邮箱 · 收到新邮件即触发"
+        ? `${config.mailboxLabel || "系统邮箱"} · ${emailRuleSummary(config)} · 优先级 ${normalizeEmailPriority(config.priority)}`
         : row.trigger_type === "Webhook / API"
           ? "由外部系统通过 Webhook / API 触发"
           : "上游自动化完成后触发";
 
   const statusText =
     row.status === "paused" ? "已暂停" : row.status === "error" ? "异常" : "运行中";
+
+  const lastRunDisplay = row.last_run_at
+    ? row.trigger_type === "定时触发"
+      ? formatDateTimeInZone(row.last_run_at, scheduleTimezone)
+      : new Date(row.last_run_at).toLocaleString("zh-CN")
+    : "";
+  const nextRunDisplay = row.next_run_at
+    ? row.trigger_type === "定时触发"
+      ? formatDateTimeInZone(row.next_run_at, scheduleTimezone)
+      : new Date(row.next_run_at).toLocaleString("zh-CN")
+    : "";
 
   return {
     id: row.id,
@@ -1413,10 +2438,10 @@ export function automationRowToApi(row: any) {
     strategy: row.strategy,
     status: row.status,
     statusText,
-    time: row.last_run_at
-      ? new Date(row.last_run_at).toLocaleString("zh-CN")
-      : row.next_run_at
-        ? `下次 ${new Date(row.next_run_at).toLocaleString("zh-CN")}`
+    time: lastRunDisplay
+      ? lastRunDisplay
+      : nextRunDisplay
+        ? `下次 ${nextRunDisplay}`
         : "尚未运行",
     task: row.task,
     returnDetail: [
@@ -1427,12 +2452,26 @@ export function automationRowToApi(row: any) {
       .filter(Boolean)
       .join(" + "),
     resultEmail: resultConfig.resultEmail || undefined,
+    resultEmailIncludeAttachments: Boolean(resultConfig.resultEmailIncludeAttachments),
     callbackUrl: resultConfig.callbackUrl || undefined,
     callbackTiming: resultConfig.callbackTiming || undefined,
     callbackAuth: resultConfig.callbackAuth || undefined,
     schedulePeriod: config.period,
     scheduleTime: config.time,
-    scheduleTimezone: config.timezone,
+    scheduleTimezone: row.trigger_type === "定时触发" ? scheduleTimezone : config.timezone,
+    scheduleWeekdays,
+    scheduleMonthlyMode: config.monthlyMode === "last_day" ? "last_day" : "fixed_day",
+    scheduleDayOfMonth:
+      Number.isInteger(Number(config.dayOfMonth)) ? Number(config.dayOfMonth) : undefined,
+    scheduleMissingDayPolicy:
+      config.missingDayPolicy === "skip" ? "skip" : "last_day",
+    scheduleDate,
+    mailboxKey: config.mailboxKey || "system",
+    mailboxLabel: config.mailboxLabel || "系统邮箱",
+    mailFolder: config.folder || "INBOX",
+    mailRuleMode: (config.ruleMode === "any" ? "any" : "all") as EmailRuleMode,
+    mailRules: normalizeEmailRules(config.rules),
+    mailPriority: normalizeEmailPriority(config.priority),
     upstreamAutomationId: config.upstreamAutomationId ?? undefined,
     upstreamCondition: config.upstreamCondition ?? undefined,
     passPreviousResult: config.passPreviousResult ?? undefined,
@@ -1481,6 +2520,7 @@ export function runRowToApi(row: any) {
     aiResult: row.ai_result || undefined,
     reviewContent: row.review_content || undefined,
     finalResult: row.final_result || undefined,
+    resultAttachments: Array.isArray(row.result_attachments) ? row.result_attachments : [],
     aiVersion: Number(row.ai_version || 0),
     reviewStatus: row.review_status || "not_required",
     reviewerUserId: row.reviewer_user_id || undefined,
@@ -1496,3 +2536,62 @@ export function runRowToApi(row: any) {
     updatedAt: row.updated_at || row.created_at,
   };
 }
+
+export async function listActiveEmailAutomationsForScheduler() {
+  await ensureAutomationTables();
+  const result = await pool.query(
+    `SELECT * FROM automation_tasks
+     WHERE trigger_type='邮件触发'
+       AND status='running'
+     ORDER BY created_by_user_id ASC, id ASC`
+  );
+  return result.rows;
+}
+
+export async function getAutomationEmailMailboxCursor(
+  userId: number,
+  mailboxKey: string
+) {
+  await ensureAutomationTables();
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const result = await pool.query(
+    `SELECT last_uid, initialized, updated_at
+     FROM automation_email_mailbox_cursors
+     WHERE created_by_user_id=$1 AND mailbox_key=$2
+     LIMIT 1`,
+    [userId, safeMailboxKey]
+  );
+
+  const row = result.rows[0];
+  return {
+    lastUid: Number(row?.last_uid || 0),
+    initialized: Boolean(row?.initialized),
+    updatedAt: row?.updated_at || null,
+  };
+}
+
+export async function saveAutomationEmailMailboxCursor(
+  userId: number,
+  mailboxKey: string,
+  lastUid: number,
+  initialized = true
+) {
+  await ensureAutomationTables();
+  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeUid = Number.isFinite(Number(lastUid)) ? Math.max(0, Math.floor(Number(lastUid))) : 0;
+
+  const result = await pool.query(
+    `INSERT INTO automation_email_mailbox_cursors (
+       created_by_user_id, mailbox_key, last_uid, initialized, updated_at
+     ) VALUES ($1,$2,$3,$4,NOW())
+     ON CONFLICT (created_by_user_id, mailbox_key) DO UPDATE SET
+       last_uid=GREATEST(automation_email_mailbox_cursors.last_uid, EXCLUDED.last_uid),
+       initialized=automation_email_mailbox_cursors.initialized OR EXCLUDED.initialized,
+       updated_at=NOW()
+     RETURNING *`,
+    [userId, safeMailboxKey, safeUid, initialized]
+  );
+
+  return result.rows[0] || null;
+}
+

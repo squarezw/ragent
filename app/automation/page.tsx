@@ -5,6 +5,7 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useLocale } from "next-intl";
 import {
+  Bell,
   Clock3,
   Mail,
   Webhook,
@@ -30,11 +31,37 @@ type RunStatus =
   | "timed_out";
 type TriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
 type StrategyType = "仅生成结果" | "需要确认后执行" | "自动执行";
+type MailRuleMode = "all" | "any";
+type MailRuleField =
+  | "发件人"
+  | "发件人域名"
+  | "收件人"
+  | "邮件主题"
+  | "邮件正文"
+  | "是否包含附件"
+  | "附件名称"
+  | "附件类型";
+type MailRuleOperator = "等于" | "包含" | "不包含" | "开头是" | "结尾是" | "是否存在";
+interface MailTriggerRule {
+  id: string;
+  field: MailRuleField;
+  operator: MailRuleOperator;
+  value: string;
+}
+
+type MailRuleTestMessage = {
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+  attachments: string[];
+};
 
 interface AppOption {
   id: number;
   name: string;
 }
+
 
 interface Automation {
   id: number;
@@ -50,6 +77,7 @@ interface Automation {
   task: string;
   returnDetail: string;
   resultEmail?: string;
+  resultEmailIncludeAttachments?: boolean;
   callbackUrl?: string;
   callbackTiming?: string;
   callbackAuth?: string;
@@ -57,6 +85,17 @@ interface Automation {
   schedulePeriod?: string;
   scheduleTime?: string;
   scheduleTimezone?: string;
+  scheduleWeekdays?: number[];
+  scheduleMonthlyMode?: "fixed_day" | "last_day";
+  scheduleDayOfMonth?: number;
+  scheduleMissingDayPolicy?: "last_day" | "skip";
+  scheduleDate?: string;
+  mailboxKey?: string;
+  mailboxLabel?: string;
+  mailFolder?: string;
+  mailRuleMode?: MailRuleMode;
+  mailRules?: MailTriggerRule[];
+  mailPriority?: number;
   upstreamAutomationId?: number | null;
   upstreamCondition?: string;
   passPreviousResult?: boolean;
@@ -86,6 +125,7 @@ interface RunRecord {
   aiResult?: string;
   reviewContent?: string;
   finalResult?: string;
+  resultAttachments?: Array<{ filename: string; object_key?: string; content_type?: string; size?: number }>;
   aiVersion?: number;
   reviewStatus?: "not_required" | "not_started" | "pending" | "approved" | "rejected";
   reviewerUserId?: number;
@@ -124,20 +164,211 @@ interface RunActionItem {
   finishedAt?: string;
 }
 
-interface InboxMessage {
-  uid: number;
-  message_id?: string;
-  from?: string;
-  subject?: string;
-  date?: string;
-  body?: string;
-  attachments?: string[];
+interface AutomationNotification {
+  eventKey: string;
+  kind:
+    | "pending_review"
+    | "run_failed"
+    | "run_timed_out"
+    | "run_success"
+    | "email_failed"
+    | "result_url_failed";
+  level: "strong" | "normal";
+  title: string;
+  message: string;
+  automationId?: number | null;
+  runId: number;
+  createdAt: string;
+  read: boolean;
+  readAt?: string;
 }
 
-const MAIL_LAST_UID_STORAGE_KEY = "ragent_mail_last_uid_v1";
+type EmailRoutingOutcome = "triggered" | "suppressed_by_priority" | "not_matched" | "duplicate";
+
+interface EmailRoutingEvent {
+  id: number;
+  mailboxKey?: string;
+  messageKey?: string;
+  messageUid?: number;
+  automationId: number;
+  outcome: EmailRoutingOutcome;
+  winnerAutomationId?: number;
+  matchedRule?: string;
+  priority?: number;
+  from?: string;
+  to?: string;
+  subject?: string;
+  date?: string;
+  createdAt?: string;
+}
+
+interface EmailRoutingStats {
+  scanned: number;
+  matched: number;
+  triggered: number;
+  suppressed: number;
+  notMatched: number;
+  duplicate: number;
+  recent: EmailRoutingEvent[];
+}
+
+const emptyEmailRoutingStats: EmailRoutingStats = {
+  scanned: 0,
+  matched: 0,
+  triggered: 0,
+  suppressed: 0,
+  notMatched: 0,
+  duplicate: 0,
+  recent: [],
+};
+
 const CHAIN_PROCESSED_STORAGE_KEY = "ragent_chain_processed_runs_v1";
-const MAIL_POLL_INTERVAL_MS = 8000;
 const WEBHOOK_POLL_INTERVAL_MS = 5000;
+
+
+const MAIL_RULE_FIELDS: MailRuleField[] = [
+  "发件人",
+  "发件人域名",
+  "收件人",
+  "邮件主题",
+  "邮件正文",
+  "是否包含附件",
+  "附件名称",
+  "附件类型",
+];
+const MAIL_RULE_OPERATORS: MailRuleOperator[] = ["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"];
+
+function newMailRule(): MailTriggerRule {
+  return {
+    id: `mail-rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    field: "邮件主题",
+    operator: "包含",
+    value: "",
+  };
+}
+
+function mailRuleText(rule: MailTriggerRule) {
+  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
+    return `${rule.field}${rule.value || "是"}`;
+  }
+  return `${rule.field}${rule.operator}“${rule.value}”`;
+}
+
+function mailRulesSummary(item: Automation) {
+  const rules = Array.isArray(item.mailRules) ? item.mailRules : [];
+  if (rules.length === 0) return "收到新邮件即触发";
+  const prefix = item.mailRuleMode === "any" ? "任一" : "全部";
+  return `${prefix}：${rules.map(mailRuleText).join("；")}`;
+}
+
+function normalizedMailRule(rule: MailTriggerRule) {
+  return `${rule.field}|${rule.operator}|${String(rule.value || "").trim().toLowerCase()}`;
+}
+
+function mailRuleSetsEqual(
+  leftRules: MailTriggerRule[],
+  leftMode: MailRuleMode,
+  rightRules: MailTriggerRule[],
+  rightMode: MailRuleMode,
+) {
+  if (leftMode !== rightMode || leftRules.length !== rightRules.length) return false;
+  const left = leftRules.map(normalizedMailRule).sort();
+  const right = rightRules.map(normalizedMailRule).sort();
+  return left.every((value, index) => value === right[index]);
+}
+
+function mailConflictLevel(
+  currentRules: MailTriggerRule[],
+  currentMode: MailRuleMode,
+  other: Automation,
+): "high" | "possible" {
+  const otherRules = Array.isArray(other.mailRules) ? other.mailRules : [];
+  const otherMode = other.mailRuleMode === "any" ? "any" : "all";
+
+  if (currentRules.length === 0 || otherRules.length === 0) return "high";
+  if (mailRuleSetsEqual(currentRules, currentMode, otherRules, otherMode)) return "high";
+  return "possible";
+}
+
+function mailFolderDisplay(value: unknown) {
+  const folder = String(value || "INBOX").trim() || "INBOX";
+  return folder.toUpperCase() === "INBOX" ? "收件箱（INBOX）" : folder;
+}
+
+function emailSourceDisplay(value: unknown) {
+  return String(value || "") === "email-server" ? "服务端邮件监听" : "邮件触发";
+}
+
+function emailContextText(value: unknown, fallback = "-") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function extractMailSenderDomain(value?: string) {
+  const match = String(value || "").match(/@([^>\s,;]+)/);
+  return match?.[1]?.toLowerCase() || "";
+}
+
+function mailAttachmentExtensions(names?: string[]) {
+  return (Array.isArray(names) ? names : [])
+    .map((item) => {
+      const match = String(item).toLowerCase().match(/(\.[a-z0-9]+)$/i);
+      return match?.[1] || "";
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function mailRuleTestSource(rule: MailTriggerRule, message: MailRuleTestMessage) {
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  switch (rule.field) {
+    case "发件人": return String(message.from || "");
+    case "发件人域名": return extractMailSenderDomain(message.from);
+    case "收件人": return String(message.to || "");
+    case "邮件主题": return String(message.subject || "");
+    case "邮件正文": return String(message.body || "");
+    case "是否包含附件": return attachments.length > 0 ? "是" : "否";
+    case "附件名称": return attachments.join(" ");
+    case "附件类型": return mailAttachmentExtensions(attachments);
+    default: return "";
+  }
+}
+
+function doesMailRuleTestMatch(rule: MailTriggerRule, message: MailRuleTestMessage) {
+  const source = mailRuleTestSource(rule, message).toLowerCase();
+  const wanted = String(rule.value || "").trim().toLowerCase();
+
+  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
+    const exists = rule.field === "是否包含附件" ? source === "是" : source.trim().length > 0;
+    const wantExists = !["否", "false", "0", "no"].includes(wanted || "是");
+    return exists === wantExists;
+  }
+
+  if (!wanted) return false;
+  if (rule.operator === "等于") return source.trim() === wanted;
+  if (rule.operator === "包含") return source.includes(wanted);
+  if (rule.operator === "不包含") return !source.includes(wanted);
+  if (rule.operator === "开头是") return source.startsWith(wanted);
+  if (rule.operator === "结尾是") return source.endsWith(wanted);
+  return false;
+}
+
+function doMailRulesTestMatch(
+  rules: MailTriggerRule[],
+  mode: MailRuleMode,
+  message: MailRuleTestMessage,
+) {
+  if (rules.length === 0) return true;
+  const results = rules.map((rule) => doesMailRuleTestMatch(rule, message));
+  return mode === "any" ? results.some(Boolean) : results.every(Boolean);
+}
+
+function splitMailTestAttachments(value: string) {
+  return String(value || "")
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 const initialAutomations: Automation[] = [];
 
@@ -315,6 +546,30 @@ export default function AutomationPage() {
     return value || "";
   };
 
+  const weekdayOptions = [
+    { value: 1, zh: "周一", en: "Mon" },
+    { value: 2, zh: "周二", en: "Tue" },
+    { value: 3, zh: "周三", en: "Wed" },
+    { value: 4, zh: "周四", en: "Thu" },
+    { value: 5, zh: "周五", en: "Fri" },
+    { value: 6, zh: "周六", en: "Sat" },
+    { value: 0, zh: "周日", en: "Sun" },
+  ];
+
+  const weekdayText = (value: number) => {
+    const item = weekdayOptions.find((option) => option.value === value);
+    return item ? tt(item.zh, item.en) : String(value);
+  };
+
+  const timeZoneLabel = (value?: string) => {
+    if (value === "Asia/Shanghai") return "Asia/Shanghai (UTC+8)";
+    if (value === "Asia/Tokyo") return "Asia/Tokyo (UTC+9)";
+    if (value === "America/New_York") {
+      return tt("America/New_York（自动适配夏令时）", "America/New_York (DST aware)");
+    }
+    return value || "UTC";
+  };
+
   const conditionLabel = (value?: string) => {
     if (value === "执行成功") return tt("执行成功", "Succeeded");
     if (value === "执行失败") return tt("执行失败", "Failed");
@@ -332,6 +587,10 @@ export default function AutomationPage() {
   const [automationsLoaded, setAutomationsLoaded] = useState(false);
   const [runRecords, setRunRecords] = useState<RunRecord[]>(initialRunRecords);
   const [runRecordsLoaded, setRunRecordsLoaded] = useState(false);
+  const [notifications, setNotifications] = useState<AutomationNotification[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const toastedNotificationKeysRef = useRef<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState<"automations" | "templates" | "runs">("automations");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -355,9 +614,28 @@ export default function AutomationPage() {
 
   const [schedulePeriod, setSchedulePeriod] = useState("每天");
   const [scheduleTime, setScheduleTime] = useState("09:00");
-  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai（UTC+8）");
+  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>([]);
+  const [scheduleMonthlyMode, setScheduleMonthlyMode] =
+    useState<"fixed_day" | "last_day">("fixed_day");
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState<number | null>(null);
+  const [scheduleMissingDayPolicy, setScheduleMissingDayPolicy] =
+    useState<"last_day" | "skip">("last_day");
+  const [scheduleDate, setScheduleDate] = useState("");
 
   const [mailResultEmail, setMailResultEmail] = useState("");
+  const [resultEmailIncludeAttachments, setResultEmailIncludeAttachments] = useState(true);
+  // 邮件触发固定使用系统设置中的单一系统邮箱，不允许在自动化页面新增或切换邮箱。
+  const [mailRuleMode, setMailRuleMode] = useState<MailRuleMode>("all");
+  const [mailRules, setMailRules] = useState<MailTriggerRule[]>([]);
+  const [mailPriority, setMailPriority] = useState(50);
+  const [mailTesterOpen, setMailTesterOpen] = useState(false);
+  const [mailTestFrom, setMailTestFrom] = useState("customer@example.com");
+  const [mailTestTo, setMailTestTo] = useState("");
+  const [mailTestSubject, setMailTestSubject] = useState("");
+  const [mailTestBody, setMailTestBody] = useState("");
+  const [mailTestAttachments, setMailTestAttachments] = useState("");
+
 
   const [upstreamAutomationId, setUpstreamAutomationId] = useState<number | null>(1);
   const [upstreamCondition, setUpstreamCondition] = useState("执行成功");
@@ -367,6 +645,8 @@ export default function AutomationPage() {
   const [retryCallback, setRetryCallback] = useState(true);
 
   const [drawerAutomationId, setDrawerAutomationId] = useState<number | null>(null);
+  const [emailRoutingStats, setEmailRoutingStats] = useState<EmailRoutingStats>(emptyEmailRoutingStats);
+  const [emailRoutingStatsLoading, setEmailRoutingStatsLoading] = useState(false);
   const [drawerRunId, setDrawerRunId] = useState<number | null>(null);
   const [editingAutomationId, setEditingAutomationId] = useState<number | null>(null);
 
@@ -380,8 +660,100 @@ export default function AutomationPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
+  const mailConflictCandidates = useMemo(() => {
+    if (trigger !== "邮件触发") return [];
+
+    return automations
+      .filter((item) => {
+        if (item.id === editingAutomationId) return false;
+        return item.trigger === "邮件触发" && item.status === "running";
+      })
+      .map((item) => ({
+        item,
+        level: mailConflictLevel(mailRules, mailRuleMode, item),
+        priority: Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50,
+      }))
+      .sort((a, b) => {
+        if (a.level !== b.level) return a.level === "high" ? -1 : 1;
+        if (a.priority !== b.priority) return b.priority - a.priority;
+        return a.item.id - b.item.id;
+      });
+  }, [automations, editingAutomationId, mailRuleMode, mailRules, trigger]);
+
+  const mailRuleTestResult = useMemo(() => {
+    if (trigger !== "邮件触发") return null;
+
+    const message: MailRuleTestMessage = {
+      from: mailTestFrom,
+      to: mailTestTo,
+      subject: mailTestSubject,
+      body: mailTestBody,
+      attachments: splitMailTestAttachments(mailTestAttachments),
+    };
+    const currentRuleResults = mailRules.map((rule) => ({
+      rule,
+      matched: doesMailRuleTestMatch(rule, message),
+      source: mailRuleTestSource(rule, message),
+    }));
+    const currentMatched = doMailRulesTestMatch(mailRules, mailRuleMode, message);
+    const currentId = editingAutomationId ?? Number.MAX_SAFE_INTEGER;
+
+    const candidates = automations
+      .filter((item) => {
+        if (item.id === editingAutomationId) return false;
+        return item.trigger === "邮件触发" && item.status === "running";
+      })
+      .filter((item) =>
+        doMailRulesTestMatch(
+          Array.isArray(item.mailRules) ? item.mailRules : [],
+          item.mailRuleMode === "any" ? "any" : "all",
+          message,
+        ),
+      )
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        priority: Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50,
+        current: false,
+      }));
+
+    if (currentMatched) {
+      candidates.push({
+        id: currentId,
+        name: name.trim() || tt("当前自动化", "Current automation"),
+        priority: mailPriority,
+        current: true,
+      });
+    }
+
+    candidates.sort((a, b) => {
+      if (a.priority !== b.priority) return b.priority - a.priority;
+      return a.id - b.id;
+    });
+
+    return {
+      message,
+      currentMatched,
+      currentRuleResults,
+      winner: candidates[0] || null,
+      matchedCandidates: candidates,
+    };
+  }, [
+    automations,
+    editingAutomationId,
+    mailPriority,
+    mailRuleMode,
+    mailRules,
+    mailTestAttachments,
+    mailTestBody,
+    mailTestFrom,
+    mailTestSubject,
+    mailTestTo,
+    name,
+    trigger,
+  ]);
+
   const automationsRef = useRef<Automation[]>(initialAutomations);
-  const mailPollBusyRef = useRef(false);
   const webhookPollBusyRef = useRef(false);
   const chainPollBusyRef = useRef(false);
 
@@ -397,6 +769,8 @@ export default function AutomationPage() {
         : [nextRun, ...records];
     });
   }
+
+
 
   async function loadAutomations(options?: { silent?: boolean }) {
     try {
@@ -428,15 +802,104 @@ export default function AutomationPage() {
     }
   }
 
+  async function loadNotifications(options?: { silent?: boolean; showToast?: boolean }) {
+    try {
+      const response = await axios.get("/api/v1/automation-notifications");
+      const items = Array.isArray(response.data?.items) ? response.data.items : [];
+      setNotifications(items);
+      setNotificationUnreadCount(Number(response.data?.unreadCount || 0));
+
+      if (options?.showToast) {
+        const freshUnread = items
+          .filter((item: AutomationNotification) => !item.read && !toastedNotificationKeysRef.current.has(item.eventKey))
+          .slice(0, 2);
+
+        for (const item of freshUnread) {
+          toastedNotificationKeysRef.current.add(item.eventKey);
+          toast(item.title, {
+            description: item.message,
+            action: {
+              label: tt("查看", "View"),
+              onClick: () => {
+                void openNotificationItem(item);
+              },
+            },
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error("加载自动化提醒失败:", error);
+      if (!options?.silent) {
+        toast.error(error?.response?.data?.detail || tt("自动化提醒加载失败", "Failed to load automation notifications"));
+      }
+    }
+  }
+
+  async function markNotificationsRead(eventKeys: string[]) {
+    const keys = Array.from(new Set(eventKeys.filter(Boolean)));
+    if (keys.length === 0) return;
+
+    setNotifications((items) =>
+      items.map((item) => (keys.includes(item.eventKey) ? { ...item, read: true } : item)),
+    );
+    setNotificationUnreadCount((count) => Math.max(0, count - keys.filter((key) => notifications.some((item) => item.eventKey === key && !item.read)).length));
+
+    try {
+      await axios.post("/api/v1/automation-notifications", { eventKeys: keys });
+    } catch (error) {
+      console.error("标记自动化提醒已读失败:", error);
+      void loadNotifications({ silent: true });
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    const keys = notifications.filter((item) => !item.read).map((item) => item.eventKey);
+    if (keys.length === 0) return;
+    await markNotificationsRead(keys);
+  }
+
+  async function openNotificationItem(item: AutomationNotification) {
+    if (!item.read) await markNotificationsRead([item.eventKey]);
+    setNotificationOpen(false);
+    setRunFilter("all");
+    setRunSearch("");
+    setActiveTab("runs");
+    setDrawerRunId(item.runId);
+  }
+
+  async function loadEmailRoutingStats(automationId: number) {
+    try {
+      setEmailRoutingStatsLoading(true);
+      const response = await axios.get("/api/v1/automation-email/stats", {
+        params: { automation_id: automationId },
+      });
+      setEmailRoutingStats({ ...emptyEmailRoutingStats, ...(response.data || {}) });
+    } catch (error: any) {
+      console.error("加载邮件路由统计失败:", error);
+      setEmailRoutingStats(emptyEmailRoutingStats);
+    } finally {
+      setEmailRoutingStatsLoading(false);
+    }
+  }
+
+
   useEffect(() => {
     void loadAutomations();
     void loadRunRecords();
+    void loadNotifications({ silent: true, showToast: true });
 
     const runTimer = window.setInterval(() => {
       void loadRunRecords({ silent: true });
     }, 5000);
 
-    return () => window.clearInterval(runTimer);
+    const notificationTimer = window.setInterval(() => {
+      void loadNotifications({ silent: true, showToast: true });
+    }, 10000);
+
+    return () => {
+      window.clearInterval(runTimer);
+      window.clearInterval(notificationTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -504,6 +967,45 @@ export default function AutomationPage() {
     () => runRecords.find((item) => item.id === drawerRunId) ?? null,
     [runRecords, drawerRunId],
   );
+
+  const drawerAutomationRuns = useMemo(() => {
+    if (drawerAutomationId == null) return [];
+    return runRecords.filter((item) => item.automationId === drawerAutomationId);
+  }, [runRecords, drawerAutomationId]);
+
+  const drawerEmailRuns = useMemo(
+    () =>
+      drawerAutomationRuns.filter(
+        (item) => item.triggerContext?.source === "email-server",
+      ),
+    [drawerAutomationRuns],
+  );
+
+  const drawerEmailStats = useMemo(() => {
+    const success = drawerEmailRuns.filter((item) => item.status === "success").length;
+    const failed = drawerEmailRuns.filter(
+      (item) => item.status === "failed" || item.status === "timed_out",
+    ).length;
+    const pending = drawerEmailRuns.filter((item) =>
+      ["running", "pending", "regenerating", "action_running"].includes(item.status),
+    ).length;
+
+    return {
+      total: drawerEmailRuns.length,
+      success,
+      failed,
+      pending,
+    };
+  }, [drawerEmailRuns]);
+
+  useEffect(() => {
+    if (!drawerAutomation || drawerAutomation.trigger !== "邮件触发") {
+      setEmailRoutingStats(emptyEmailRoutingStats);
+      return;
+    }
+    void loadEmailRoutingStats(drawerAutomation.id);
+  }, [drawerAutomation?.id, drawerAutomation?.trigger]);
+
 
   useEffect(() => {
     if (!drawerRunId) {
@@ -574,25 +1076,66 @@ export default function AutomationPage() {
 
   const variables =
     trigger === "邮件触发"
-      ? ["{{email.sender}}", "{{email.subject}}", "{{email.body}}", "{{email.attachments}}"]
+      ? [
+          { value: "{{email.sender}}", label: tt("发件人", "Sender") },
+          { value: "{{email.subject}}", label: tt("邮件主题", "Email subject") },
+          { value: "{{email.body}}", label: tt("邮件正文", "Email body") },
+          { value: "{{email.attachments}}", label: tt("附件信息", "Attachments") },
+        ]
       : trigger === "Webhook / API"
-        ? ["{{event.payload}}", "{{event.id}}"]
+        ? [
+            { value: "{{event.payload}}", label: tt("请求内容", "Request payload") },
+            { value: "{{event.id}}", label: tt("事件 ID", "Event ID") },
+          ]
         : trigger === "自动化完成触发"
-          ? ["{{previous.result}}", "{{previous.status}}", "{{previous.run_id}}"]
-          : ["{{trigger.time}}", "{{trigger.timezone}}"];
+          ? [
+              { value: "{{previous.result}}", label: tt("上游执行结果", "Previous result") },
+              { value: "{{previous.status}}", label: tt("上游执行状态", "Previous status") },
+              { value: "{{previous.run_id}}", label: tt("上游运行 ID", "Previous run ID") },
+            ]
+          : [
+              { value: "{{trigger.time}}", label: tt("触发时间", "Trigger time") },
+              { value: "{{trigger.timezone}}", label: tt("触发时区", "Trigger timezone") },
+            ];
 
   function localizedTriggerDetail(item: Automation) {
     if (item.trigger === "邮件触发") {
-      return tt("系统邮箱 · 收到新邮件即触发", "System mailbox · Trigger when a new email arrives");
+      const ruleText = mailRulesSummary(item);
+      const priority = Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50;
+      return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
     }
     if (item.trigger === "Webhook / API") {
       return tt("由外部系统通过 Webhook / API 触发", "Triggered by an external system through Webhook / API");
     }
     if (item.trigger === "定时触发") {
-      const period = periodLabel(item.schedulePeriod || item.triggerDetail.split(" ")[0]);
-      const time = item.scheduleTime || item.triggerDetail.split(" ")[1] || "";
-      const timezone = item.scheduleTimezone || "Asia/Shanghai（UTC+8）";
-      return `${period} ${time} · ${timezone.replace("（UTC+8）", " (UTC+8)")}`.trim();
+      const period = item.schedulePeriod || "每天";
+      const time = item.scheduleTime || "09:00";
+      const timezone = timeZoneLabel(item.scheduleTimezone || "Asia/Shanghai");
+
+      if (period === "每周") {
+        const days = weekdayOptions
+          .filter((option) => (item.scheduleWeekdays || []).includes(option.value))
+          .map((option) => tt(option.zh, option.en))
+          .join(tt("、", ", "));
+        return `${periodLabel(period)} ${days || tt("未选择星期", "No weekday selected")} ${time} · ${timezone}`;
+      }
+
+      if (period === "每月") {
+        const day = item.scheduleDayOfMonth;
+        const missing =
+          Number(day) >= 29
+            ? item.scheduleMissingDayPolicy === "skip"
+              ? tt(" · 当月无该日期时跳过", " · skip months without this date")
+              : tt(" · 当月无该日期时按月末执行", " · use month end if unavailable")
+            : "";
+        return `${periodLabel(period)} ${day ? `${day}${tt("日", "")}` : tt("未选择日期", "No date selected")} ${time} · ${timezone}${missing}`;
+      }
+
+      if (period === "仅一次") {
+        return `${periodLabel(period)} ${item.scheduleDate || tt("未选择日期", "No date selected")} ${time} · ${timezone}`;
+      }
+
+      return `${periodLabel(period)} ${time} · ${timezone}`;
     }
 
     const upstream = automations.find((automation) => automation.id === item.upstreamAutomationId);
@@ -604,7 +1147,11 @@ export default function AutomationPage() {
   function localizedReturnDetail(item: Automation) {
     const parts = [tt("平台内保存", "Saved in platform")];
     if (item.resultEmail) {
-      parts.push(isEnglish ? `Send to ${item.resultEmail}` : `完成通知 ${item.resultEmail}`);
+      parts.push(
+        isEnglish
+          ? `Send to ${item.resultEmail}${item.resultEmailIncludeAttachments ? " + generated files" : ""}`
+          : `完成通知 ${item.resultEmail}${item.resultEmailIncludeAttachments ? "（含生成附件）" : ""}`,
+      );
     }
     if (item.callbackUrl) {
       parts.push(tt("发送至接收 URL", "Send to callback URL"));
@@ -629,8 +1176,23 @@ export default function AutomationPage() {
     setStrategy("需要确认后执行");
     setSchedulePeriod("每天");
     setScheduleTime("09:00");
-    setScheduleTimezone("Asia/Shanghai（UTC+8）");
+    setScheduleTimezone("Asia/Shanghai");
+    setScheduleWeekdays([]);
+    setScheduleMonthlyMode("fixed_day");
+    setScheduleDayOfMonth(null);
+    setScheduleMissingDayPolicy("last_day");
+    setScheduleDate("");
     setMailResultEmail("");
+    setResultEmailIncludeAttachments(true);
+    setMailRuleMode("all");
+    setMailRules([]);
+    setMailPriority(50);
+    setMailTesterOpen(false);
+    setMailTestFrom("customer@example.com");
+    setMailTestTo("");
+    setMailTestSubject("");
+    setMailTestBody("");
+    setMailTestAttachments("");
     setUpstreamAutomationId(automations[0]?.id ?? null);
     setUpstreamCondition("执行成功");
     setPassPreviousResult(true);
@@ -659,8 +1221,23 @@ export default function AutomationPage() {
     setStrategy(item.strategy);
     setSchedulePeriod(item.schedulePeriod || "每天");
     setScheduleTime(item.scheduleTime || "09:00");
-    setScheduleTimezone(item.scheduleTimezone || "Asia/Shanghai（UTC+8）");
+    setScheduleTimezone(item.scheduleTimezone || "Asia/Shanghai");
+    setScheduleWeekdays(Array.isArray(item.scheduleWeekdays) ? item.scheduleWeekdays : []);
+    setScheduleMonthlyMode(item.scheduleMonthlyMode === "last_day" ? "last_day" : "fixed_day");
+    setScheduleDayOfMonth(
+      Number.isInteger(Number(item.scheduleDayOfMonth))
+        ? Number(item.scheduleDayOfMonth)
+        : null,
+    );
+    setScheduleMissingDayPolicy(
+      item.scheduleMissingDayPolicy === "skip" ? "skip" : "last_day",
+    );
+    setScheduleDate(item.scheduleDate || "");
     setMailResultEmail(item.resultEmail || "");
+    setResultEmailIncludeAttachments(item.resultEmailIncludeAttachments === true);
+    setMailRuleMode(item.mailRuleMode === "any" ? "any" : "all");
+    setMailRules(Array.isArray(item.mailRules) ? item.mailRules : []);
+    setMailPriority(Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50);
     setUpstreamAutomationId(
       item.upstreamAutomationId ??
         automations.find((automation) => automation.id !== item.id)?.id ??
@@ -688,10 +1265,37 @@ export default function AutomationPage() {
 
   function triggerDetail(): string {
     if (trigger === "定时触发") {
-      return `${schedulePeriod} ${scheduleTime} · ${scheduleTimezone.replace("（UTC+8）", "")}`;
+      if (schedulePeriod === "每周") {
+        const days = weekdayOptions
+          .filter((option) => scheduleWeekdays.includes(option.value))
+          .map((option) => option.zh)
+          .join("、");
+        return `每周 ${days || "未选择星期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+      }
+      if (schedulePeriod === "每月") {
+        if (scheduleMonthlyMode === "last_day") {
+          return `每月最后一天 ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+        }
+        const missing =
+          Number(scheduleDayOfMonth) >= 29
+            ? scheduleMissingDayPolicy === "skip"
+              ? " · 当月无该日期时跳过"
+              : " · 当月无该日期时按月末执行"
+            : "";
+        return `每月 ${scheduleDayOfMonth ? `${scheduleDayOfMonth}日` : "未选择日期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}${missing}`;
+      }
+      if (schedulePeriod === "仅一次") {
+        return `仅一次 ${scheduleDate || "未选择日期"} ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
+      }
+      return `每天 ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
     }
     if (trigger === "邮件触发") {
-      return "系统邮箱 · 收到新邮件即触发";
+      const temp: Automation = {
+        id: 0, name: "", trigger: "邮件触发", triggerDetail: "", appId: null, agent: "",
+        strategy, status: "running", statusText: "", time: "", task: "", returnDetail: "",
+        mailboxLabel: "系统邮箱", mailRuleMode, mailRules, mailPriority,
+      };
+      return `${tt("系统邮箱", "System Mailbox")} · ${mailRulesSummary(temp)} · ${tt("优先级", "Priority")} ${mailPriority}`;
     }
     if (trigger === "Webhook / API") {
       return "由外部系统通过 Webhook / API 触发";
@@ -709,6 +1313,7 @@ export default function AutomationPage() {
       trigger,
       strategy,
       resultEmail: mailResultEmail.trim() || undefined,
+      resultEmailIncludeAttachments: mailResultEmail.trim() ? resultEmailIncludeAttachments : false,
       callbackUrl: callbackUrl.trim() || undefined,
       callbackTiming,
       callbackAuth,
@@ -716,6 +1321,37 @@ export default function AutomationPage() {
       schedulePeriod: trigger === "定时触发" ? schedulePeriod : undefined,
       scheduleTime: trigger === "定时触发" ? scheduleTime : undefined,
       scheduleTimezone: trigger === "定时触发" ? scheduleTimezone : undefined,
+      scheduleWeekdays:
+        trigger === "定时触发" && schedulePeriod === "每周"
+          ? scheduleWeekdays
+          : undefined,
+      scheduleMonthlyMode:
+        trigger === "定时触发" && schedulePeriod === "每月"
+          ? scheduleMonthlyMode
+          : undefined,
+      scheduleDayOfMonth:
+        trigger === "定时触发" &&
+        schedulePeriod === "每月" &&
+        scheduleMonthlyMode === "fixed_day"
+          ? scheduleDayOfMonth ?? undefined
+          : undefined,
+      scheduleMissingDayPolicy:
+        trigger === "定时触发" &&
+        schedulePeriod === "每月" &&
+        scheduleMonthlyMode === "fixed_day" &&
+        Number(scheduleDayOfMonth) >= 29
+          ? scheduleMissingDayPolicy
+          : undefined,
+      scheduleDate:
+        trigger === "定时触发" && schedulePeriod === "仅一次"
+          ? scheduleDate || undefined
+          : undefined,
+      mailboxKey: trigger === "邮件触发" ? "system" : undefined,
+      mailboxLabel: trigger === "邮件触发" ? "系统邮箱" : undefined,
+      mailFolder: trigger === "邮件触发" ? "INBOX" : undefined,
+      mailRuleMode: trigger === "邮件触发" ? mailRuleMode : undefined,
+      mailRules: trigger === "邮件触发" ? mailRules : undefined,
+      mailPriority: trigger === "邮件触发" ? mailPriority : undefined,
       upstreamAutomationId:
         trigger === "自动化完成触发" ? upstreamAutomationId : undefined,
       upstreamCondition:
@@ -723,6 +1359,35 @@ export default function AutomationPage() {
       passPreviousResult:
         trigger === "自动化完成触发" ? passPreviousResult : undefined,
     };
+  }
+
+  function validateScheduleConfiguration() {
+    if (trigger !== "定时触发") return true;
+
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleTime)) {
+      toast.error(tt("请选择有效的执行时间", "Please choose a valid run time"));
+      return false;
+    }
+
+    if (schedulePeriod === "每周" && scheduleWeekdays.length === 0) {
+      toast.error(tt("请至少选择一个执行星期", "Please select at least one weekday"));
+      return false;
+    }
+
+    if (schedulePeriod === "每月" && scheduleMonthlyMode === "fixed_day") {
+      const day = Number(scheduleDayOfMonth);
+      if (!Number.isInteger(day) || day < 1 || day > 31) {
+        toast.error(tt("请选择每月执行日期", "Please choose a monthly run date"));
+        return false;
+      }
+    }
+
+    if (schedulePeriod === "仅一次" && !scheduleDate) {
+      toast.error(tt("请选择一次性任务的执行日期", "Please choose a date for the one-time run"));
+      return false;
+    }
+
+    return true;
   }
 
   async function createAutomation() {
@@ -737,12 +1402,26 @@ export default function AutomationPage() {
       return;
     }
 
+    if (!validateScheduleConfiguration()) {
+      setStep(2);
+      return;
+    }
+
     {
       const email = mailResultEmail.trim();
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (email && !emailPattern.test(email)) {
         toast.error("请输入正确的完成通知邮箱");
         setStep(1);
+        return;
+      }
+    }
+
+    if (trigger === "邮件触发") {
+      const invalidRule = mailRules.find((rule) => rule.field !== "是否包含附件" && rule.operator !== "是否存在" && !rule.value.trim());
+      if (invalidRule) {
+        toast.error(tt("请填写完整的邮件触发条件", "Please complete all email trigger conditions"));
+        setStep(2);
         return;
       }
     }
@@ -773,6 +1452,11 @@ export default function AutomationPage() {
       return;
     }
 
+    if (!validateScheduleConfiguration()) {
+      setStep(2);
+      return;
+    }
+
     {
       const email = mailResultEmail.trim();
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -795,6 +1479,15 @@ export default function AutomationPage() {
       );
       setStep(2);
       return;
+    }
+
+    if (trigger === "邮件触发") {
+      const invalidRule = mailRules.find((rule) => rule.field !== "是否包含附件" && rule.operator !== "是否存在" && !rule.value.trim());
+      if (invalidRule) {
+        toast.error(tt("请填写完整的邮件触发条件", "Please complete all email trigger conditions"));
+        setStep(2);
+        return;
+      }
     }
 
     try {
@@ -969,6 +1662,11 @@ export default function AutomationPage() {
         return;
       }
 
+      if (run?.status === "timed_out") {
+        toast.error(run.error || `自动化执行超时：${item.name}`);
+        return;
+      }
+
       if (run?.status === "success") {
         toast.success(`自动化执行成功：${item.name}`);
       }
@@ -1052,6 +1750,52 @@ export default function AutomationPage() {
     } catch (error: any) {
       console.error("审核通过失败:", error);
       toast.error(error?.response?.data?.detail || tt("审核通过失败", "Failed to approve review"));
+    } finally {
+      setReviewActionBusy(false);
+    }
+  }
+
+  async function retryFailedRunActions(record: RunRecord) {
+    if (
+      reviewActionBusy ||
+      record.status !== "failed" ||
+      record.reviewStatus !== "approved" ||
+      !runActions.some((action) => action.status === "failed")
+    ) {
+      return;
+    }
+
+    try {
+      setReviewActionBusy(true);
+
+      const response = await axios.post(
+        `/api/v1/automation-runs/${record.id}/review`,
+        { action: "retry_failed_actions" },
+      );
+
+      const updated = response.data?.run as RunRecord | undefined;
+      const actions = Array.isArray(response.data?.actions) ? response.data.actions : [];
+
+      if (updated) upsertRunRecord(updated);
+      setRunActions(actions);
+      await loadRunRecords({ silent: true });
+
+      if (updated?.status === "failed") {
+        toast.error(
+          updated.error ||
+            tt("失败操作重试后仍未成功", "Some follow-up actions still failed after retry"),
+        );
+      } else {
+        toast.success(
+          tt("失败的后续操作已重试完成", "Failed follow-up actions retried successfully"),
+        );
+      }
+    } catch (error: any) {
+      console.error("重试失败操作失败:", error);
+      toast.error(
+        error?.response?.data?.detail ||
+          tt("失败操作重试失败", "Failed to retry follow-up actions"),
+      );
     } finally {
       setReviewActionBusy(false);
     }
@@ -1197,189 +1941,8 @@ export default function AutomationPage() {
     }
   }
 
-  async function runEmailAutomation(item: Automation, message: InboxMessage) {
-    if (!item.appId) {
-      toast.error("该任务未绑定真实数字员工");
-      return;
-    }
-
-    const attachments =
-      Array.isArray(message.attachments) && message.attachments.length > 0
-        ? message.attachments.join("、")
-        : "无";
-
-    const rawBody = typeof message.body === "string" ? message.body.trim() : "";
-    const body =
-      rawBody.length > 20000
-        ? `${rawBody.slice(0, 20000)}\n\n[正文较长，已截取前 20000 个字符]`
-        : rawBody || "（无正文）";
-
-    const contextText = [
-      "【本次收到的新邮件】",
-      `发件人：${message.from || "未知"}`,
-      `主题：${message.subject || "无主题"}`,
-      `时间：${message.date || "未知"}`,
-      `附件：${attachments}`,
-      "正文：",
-      body,
-    ].join("\n");
-
-    const question = [
-      "【自动化任务】",
-      item.task,
-      "",
-      contextText,
-      "",
-      "【执行要求】",
-      "请根据上面的真实邮件内容完成自动化任务。",
-      "只输出本次邮件的处理结果，不要自行调用发送邮件、通知或其他外部发送工具；结果将由自动化统一发送。",
-    ].join("\n");
-
-    try {
-      const response = await axios.post(`/api/v1/automations/${item.id}/run`, {
-        trigger: "邮件触发",
-        question,
-        triggerContext: {
-          source: "email",
-          firedAt: new Date().toISOString(),
-          uid: message.uid,
-          messageId: message.message_id,
-          from: message.from,
-          subject: message.subject,
-          date: message.date,
-          body,
-          attachments: message.attachments || [],
-        },
-      });
-
-      const run = response.data?.run as RunRecord | undefined;
-      if (run) upsertRunRecord(run);
-
-      if (run?.status === "pending") {
-        toast.success(`收到新邮件，AI 结果已生成并等待审核：${item.name}`);
-        return;
-      }
-
-      if (run?.status === "failed") {
-        toast.error(run.error || `邮件已处理，但后续操作执行失败：${item.name}`);
-        return;
-      }
-
-      if (run?.status === "success") {
-        toast.success(`收到新邮件，已自动执行：${item.name}`);
-      }
-    } catch (error: any) {
-      const failedRun = error?.response?.data?.run as RunRecord | undefined;
-      if (failedRun) upsertRunRecord(failedRun);
-
-      const errorMessage =
-        error?.response?.data?.detail ||
-        error?.response?.data?.error ||
-        error?.message ||
-        "任务执行失败";
-
-      if (item.strategy === "自动执行") {
-        await sendAutomationCallback(item, "failed", undefined, String(errorMessage));
-      }
-
-      toast.error(`新邮件触发执行失败：${item.name}`);
-    }
-  }
-
-  // 邮件触发目前基于浏览器轮询：页面打开时每 8 秒检查一次系统邮箱。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: polling intentionally follows automation state
-  useEffect(() => {
-    if (!automationsLoaded) return;
-
-    const hasActiveMailAutomation = automations.some(
-      (item) => item.trigger === "邮件触发" && item.status === "running",
-    );
-
-    if (!hasActiveMailAutomation) {
-      window.localStorage.removeItem(MAIL_LAST_UID_STORAGE_KEY);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function pollInbox() {
-      if (cancelled || mailPollBusyRef.current) return;
-
-      const activeMailAutomations = automationsRef.current.filter(
-        (item) => item.trigger === "邮件触发" && item.status === "running",
-      );
-
-      if (activeMailAutomations.length === 0) return;
-
-      mailPollBusyRef.current = true;
-
-      try {
-        const savedUid = window.localStorage.getItem(MAIL_LAST_UID_STORAGE_KEY);
-        const validSavedUid =
-          savedUid && /^\d+$/.test(savedUid) ? savedUid : null;
-
-        if (savedUid && !validSavedUid) {
-          window.localStorage.removeItem(MAIL_LAST_UID_STORAGE_KEY);
-        }
-
-        const response = await axios.get("/api/automation/check-email", {
-          params: validSavedUid ? { after_uid: validSavedUid } : undefined,
-        });
-
-        const latestUid = Number(response.data?.latest_uid ?? 0);
-        const messages: InboxMessage[] = Array.isArray(response.data?.messages)
-          ? response.data.messages
-          : [];
-
-        if (Number.isInteger(latestUid) && latestUid >= 0) {
-          // 先推进邮箱游标，避免同一封邮件因页面重渲染被重复执行。
-          window.localStorage.setItem(
-            MAIL_LAST_UID_STORAGE_KEY,
-            String(latestUid),
-          );
-        }
-
-        // 第一次请求只建立当前邮箱基线，不处理历史邮件。
-        if (!validSavedUid || messages.length === 0) return;
-
-        for (const message of messages) {
-          if (cancelled) return;
-
-          const subject = (message.subject || "").trim();
-
-          // 防止自动化自己发出的结果邮件再次进入收件触发，形成循环。
-          if (
-            subject.startsWith("自动化执行结果：") ||
-            subject.startsWith("[AI对话]")
-          ) {
-            continue;
-          }
-
-          const currentActiveAutomations = automationsRef.current.filter(
-            (item) => item.trigger === "邮件触发" && item.status === "running",
-          );
-
-          for (const item of currentActiveAutomations) {
-            if (cancelled) return;
-
-            await runEmailAutomation(item, message);
-          }
-        }
-      } catch (error) {
-        console.error("检查系统邮箱失败:", error);
-      } finally {
-        mailPollBusyRef.current = false;
-      }
-    }
-
-    pollInbox();
-    const timer = window.setInterval(pollInbox, MAIL_POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [automationsLoaded, automations]);
+  // 邮件触发已交由服务端 Automation Scheduler 处理。
+  // 即使用户关闭自动化页面，服务端仍会持续监听邮箱并按规则触发任务。
 
   // 定时触发已交由服务端 Automation Scheduler 处理。
   // 页面不再执行浏览器端定时轮询，避免与服务端 Scheduler 重复触发同一任务。
@@ -1613,12 +2176,102 @@ export default function AutomationPage() {
             {tt("让数字员工按照时间或业务事件自动执行任务", "Let digital employees run tasks automatically by time or business events")}
           </p>
         </div>
-        <button
-          onClick={openCreateDialog}
-          className="rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
-        >
-          ＋ {tt("新建自动化", "New Automation")}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setNotificationOpen((open) => !open)}
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              title={tt("自动化提醒", "Automation notifications")}
+            >
+              <Bell className="h-4 w-4" />
+              {notificationUnreadCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  {notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}
+                </span>
+              )}
+            </button>
+
+            {notificationOpen && (
+              <div className="absolute right-0 top-12 z-50 w-[390px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-background shadow-xl">
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <div>
+                    <div className="text-sm font-semibold">{tt("自动化提醒", "Automation Notifications")}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {notificationUnreadCount > 0
+                        ? tt(`${notificationUnreadCount} 条未读`, `${notificationUnreadCount} unread`)
+                        : tt("暂无未读提醒", "No unread notifications")}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void markAllNotificationsRead()}
+                    disabled={notificationUnreadCount === 0}
+                    className="text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {tt("全部已读", "Mark all read")}
+                  </button>
+                </div>
+
+                <div className="max-h-[420px] overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      {tt("暂无自动化提醒", "No automation notifications")}
+                    </div>
+                  ) : (
+                    notifications.slice(0, 12).map((item) => (
+                      <button
+                        key={item.eventKey}
+                        type="button"
+                        onClick={() => void openNotificationItem(item)}
+                        className={`block w-full border-b px-4 py-3 text-left last:border-b-0 hover:bg-muted/50 ${
+                          item.read ? "bg-background" : "bg-amber-50/40"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                              item.read
+                                ? "bg-slate-300"
+                                : item.level === "strong"
+                                  ? "bg-red-500"
+                                  : "bg-primary"
+                            }`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-sm ${item.read ? "font-medium" : "font-semibold"}`}>
+                              {item.title}
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                              {item.message}
+                            </div>
+                            <div className="mt-1.5 text-[11px] text-muted-foreground">
+                              {new Date(item.createdAt).toLocaleString(isEnglish ? "en-US" : "zh-CN")}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="border-t px-4 py-2.5 text-xs text-muted-foreground">
+                  {tt(
+                    "待审核、失败和超时为强提醒；成功为普通提醒。点击提醒可直接打开对应运行记录。",
+                    "Pending review, failures, and timeouts are high-priority alerts. Success notifications are standard. Click an item to open its run details.",
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={openCreateDialog}
+            className="rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
+          >
+            ＋ {tt("新建自动化", "New Automation")}
+          </button>
+        </div>
       </div>
 
       <div className="mt-7 flex gap-7 border-b">
@@ -1740,7 +2393,11 @@ export default function AutomationPage() {
                 <article
                   key={item.id}
                   onClick={() => setDrawerAutomationId(item.id)}
-                  className="relative min-h-[205px] cursor-pointer rounded-xl border bg-background p-6 transition hover:-translate-y-0.5 hover:shadow-md"
+                  className={`relative min-h-[205px] cursor-pointer rounded-xl border p-6 transition ${
+                    item.status === "paused"
+                      ? "bg-muted/40 opacity-70 hover:translate-y-0 hover:shadow-none"
+                      : "bg-background hover:-translate-y-0.5 hover:shadow-md"
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
@@ -1796,7 +2453,9 @@ export default function AutomationPage() {
               {filteredAutomations.map((item) => (
                 <div
                   key={item.id}
-                  className="grid grid-cols-[1.5fr_.9fr_1fr_1.15fr_.8fr_70px] items-center gap-4 border-t px-4 py-4 text-sm"
+                  className={`grid grid-cols-[1.5fr_.9fr_1fr_1.15fr_.8fr_70px] items-center gap-4 border-t px-4 py-4 text-sm transition ${
+                    item.status === "paused" ? "bg-muted/30 opacity-70" : "bg-background"
+                  }`}
                 >
                   <div className="font-semibold">{item.name}</div>
                   <div className="text-muted-foreground">{triggerLabel(item.trigger)}</div>
@@ -1825,7 +2484,7 @@ export default function AutomationPage() {
             </div>
 
             <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3">
-              {automationTemplates.map((template) => (
+              {automationTemplates.filter((template) => template.trigger !== "邮件触发").map((template) => (
                 <article
                   key={template.id}
                   className="flex min-h-[225px] flex-col rounded-xl border bg-background p-6 transition hover:-translate-y-0.5 hover:shadow-md"
@@ -2030,6 +2689,24 @@ export default function AutomationPage() {
                         <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
                           {tt("任务完成后，可将最终结果作为完成通知发送到该邮箱；它不是邮件触发的监听邮箱。留空则不发送邮件通知。", "After the task finishes, the final result can be sent to this address as a completion notification. This is separate from the mailbox monitored by an email trigger. Leave it blank to skip email notification.")}
                         </div>
+                        {mailResultEmail.trim() && (
+                          <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border bg-background px-3 py-2.5">
+                            <input
+                              type="checkbox"
+                              checked={resultEmailIncludeAttachments}
+                              onChange={(e) => setResultEmailIncludeAttachments(e.target.checked)}
+                              className="mt-0.5 h-4 w-4"
+                            />
+                            <span>
+                              <span className="block text-sm font-medium text-foreground">
+                                {tt("附带数字员工生成的文件", "Attach files generated by the digital employee")}
+                              </span>
+                              <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                                {tt("若本次任务生成了平台文件，将与执行结果一起作为邮件附件发送；没有生成文件时仍只发送正文。", "If this run generated platform files, they will be attached to the completion email. If no files were generated, only the email body is sent.")}
+                              </span>
+                            </span>
+                          </label>
+                        )}
                       </Field>
 
                       <Field label={tt("接收 URL（选填）", "Callback URL (optional)")} compact>
@@ -2111,7 +2788,6 @@ export default function AutomationPage() {
                     {(
                       [
                         ["定时触发", tt("按照指定时间自动运行", "Run automatically on a schedule")],
-                        ["邮件触发", tt("系统邮箱收到新邮件后自动处理并发送结果", "Process new system-mailbox emails automatically and send the result")],
                         ["Webhook / API", tt("由 ERP、CRM 等外部系统触发", "Triggered by ERP, CRM, or other external systems")],
                         ["自动化完成触发", tt("当另一个自动化结束后运行", "Run after another automation completes")],
                       ] as [TriggerType, string][]
@@ -2156,16 +2832,195 @@ export default function AutomationPage() {
                             />
                           </Field>
                         </div>
+
+                        {schedulePeriod === "每周" && (
+                          <Field label={tt("执行星期", "Run on")} compact>
+                            <div className="flex flex-wrap gap-2">
+                              {weekdayOptions.map((option) => {
+                                const selected = scheduleWeekdays.includes(option.value);
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() =>
+                                      setScheduleWeekdays((current) =>
+                                        selected
+                                          ? current.filter((value) => value !== option.value)
+                                          : [...current, option.value],
+                                      )
+                                    }
+                                    className={`rounded-lg border px-3 py-2 text-sm transition ${
+                                      selected
+                                        ? "border-primary bg-primary/10 font-medium text-primary"
+                                        : "bg-background hover:bg-muted/40"
+                                    }`}
+                                  >
+                                    {tt(option.zh, option.en)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              {tt(
+                                "至少选择一个星期，可同时选择多个。",
+                                "Select at least one weekday; multiple days are supported.",
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
+                        {schedulePeriod === "每月" && (
+                          <Field label={tt("执行日期", "Run Date")} compact>
+                            <div className="space-y-3">
+                              <label
+                                className={`block cursor-pointer rounded-xl border p-4 transition ${
+                                  scheduleMonthlyMode === "fixed_day"
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary/10"
+                                    : "bg-background hover:bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="radio"
+                                    name="schedule-monthly-mode"
+                                    checked={scheduleMonthlyMode === "fixed_day"}
+                                    onChange={() => {
+                                      setScheduleMonthlyMode("fixed_day");
+                                      if (!scheduleDayOfMonth) setScheduleDayOfMonth(1);
+                                    }}
+                                  />
+                                  <span className="text-sm font-medium">
+                                    {tt("每月固定日期", "Fixed day each month")}
+                                  </span>
+                                  <select
+                                    value={scheduleDayOfMonth ?? ""}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      setScheduleMonthlyMode("fixed_day");
+                                      setScheduleDayOfMonth(Number(e.target.value));
+                                    }}
+                                    className="ml-auto min-w-28 rounded-lg border bg-background px-3 py-2 text-sm"
+                                  >
+                                    <option value="" disabled>
+                                      {tt("选择日期", "Choose day")}
+                                    </option>
+                                    {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                                      <option key={day} value={day}>
+                                        {tt(`${day}日`, `Day ${day}`)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </label>
+
+                              <label
+                                className={`block cursor-pointer rounded-xl border p-4 transition ${
+                                  scheduleMonthlyMode === "last_day"
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary/10"
+                                    : "bg-background hover:bg-muted/30"
+                                }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <input
+                                    type="radio"
+                                    name="schedule-monthly-mode"
+                                    checked={scheduleMonthlyMode === "last_day"}
+                                    onChange={() => setScheduleMonthlyMode("last_day")}
+                                    className="mt-0.5"
+                                  />
+                                  <div>
+                                    <div className="text-sm font-medium">
+                                      {tt("每月最后一天", "Last day of each month")}
+                                    </div>
+                                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                      {tt(
+                                        "自动按当月实际最后一天执行；2月会自动识别28日或闰年的29日。",
+                                        "Runs on the actual last day of each month; February automatically uses the 28th or the 29th in a leap year.",
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </label>
+
+                              {scheduleMonthlyMode === "fixed_day" && Number(scheduleDayOfMonth) >= 29 && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                                  <div className="text-sm font-medium text-amber-900">
+                                    {tt(
+                                      "提醒：当前日期并非每个月都存在",
+                                      "Reminder: this date does not exist in every month",
+                                    )}
+                                  </div>
+                                  <div className="mt-1 text-xs leading-5 text-amber-800">
+                                    {tt(
+                                      "请选择当月没有该日期时的处理方式。2月天数会按普通年份和闰年自动判断。",
+                                      "Choose what to do when that date does not exist. February is handled automatically for normal and leap years.",
+                                    )}
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    <label className="flex cursor-pointer items-start gap-2 text-sm">
+                                      <input
+                                        type="radio"
+                                        name="schedule-missing-day"
+                                        checked={scheduleMissingDayPolicy === "skip"}
+                                        onChange={() => setScheduleMissingDayPolicy("skip")}
+                                        className="mt-0.5"
+                                      />
+                                      <span>{tt("跳过该月", "Skip that month")}</span>
+                                    </label>
+                                    <label className="flex cursor-pointer items-start gap-2 text-sm">
+                                      <input
+                                        type="radio"
+                                        name="schedule-missing-day"
+                                        checked={scheduleMissingDayPolicy === "last_day"}
+                                        onChange={() => setScheduleMissingDayPolicy("last_day")}
+                                        className="mt-0.5"
+                                      />
+                                      <span>
+                                        {tt(
+                                          "改为当月最后一天执行",
+                                          "Run on the last day of that month instead",
+                                        )}
+                                      </span>
+                                    </label>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
+                        {schedulePeriod === "仅一次" && (
+                          <Field label={tt("执行日期", "Run Date")} compact>
+                            <input
+                              type="date"
+                              value={scheduleDate}
+                              onChange={(e) => setScheduleDate(e.target.value)}
+                              className="input-base"
+                            />
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              {tt(
+                                "请选择具体日期；任务执行完成后会自动暂停。",
+                                "Choose a specific date. The automation pauses after this run.",
+                              )}
+                            </div>
+                          </Field>
+                        )}
+
                         <Field label={tt("时区", "Time Zone")} compact>
                           <select
                             value={scheduleTimezone}
                             onChange={(e) => setScheduleTimezone(e.target.value)}
                             className="input-base"
                           >
-                            <option>Asia/Shanghai（UTC+8）</option>
-                            <option>Asia/Tokyo（UTC+9）</option>
-                            <option>America/New_York</option>
-                            <option>UTC</option>
+                            <option value="Asia/Shanghai">Asia/Shanghai (UTC+8)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                            <option value="America/New_York">
+                              {tt(
+                                "America/New_York（自动适配夏令时）",
+                                "America/New_York (DST aware)",
+                              )}
+                            </option>
+                            <option value="UTC">UTC</option>
                           </select>
                         </Field>
                       </>
@@ -2177,32 +3032,250 @@ export default function AutomationPage() {
                           <div className="rounded-lg border bg-background px-3 py-2.5">
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <div className="text-sm font-medium">{tt("系统邮箱", "System Mailbox")}</div>
+                                <div className="text-sm font-medium">
+                                  {tt("系统邮箱（系统设置）", "System Mailbox (System Settings)")}
+                                </div>
                                 <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                                  {tt("用于接收新邮件并触发该自动化。当前使用管理员在「系统设置」中统一配置的系统邮箱，自动化中无需重复填写账号或密码。", "This mailbox receives new emails and triggers the automation. It currently uses the system mailbox configured centrally by an administrator in System Settings, so no account or password is required here.")}
+                                  {tt(
+                                    "邮件触发固定监听管理员在「系统设置」中配置的系统邮箱，不在自动化页面新增或切换邮箱。",
+                                    "Email triggers always monitor the system mailbox configured by an administrator in System Settings. Mailboxes cannot be added or switched here.",
+                                  )}
                                 </div>
                               </div>
                               <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                                {tt("当前监听", "Currently Monitored")}
+                                {tt("固定监听", "Fixed")}
                               </span>
                             </div>
                           </div>
+                          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            {tt(
+                              "监听邮箱与任务完成后的通知邮箱相互独立。",
+                              "The monitored mailbox is separate from the completion notification email.",
+                            )}
+                          </div>
                         </Field>
 
-                        <Field label={tt("触发规则", "Trigger Rule")} compact>
-                          <div className="rounded-lg border bg-background px-3 py-2.5">
-                            <div className="text-sm font-medium">{tt("收到新邮件即触发", "Trigger on New Email")}</div>
-                            <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                              {tt("不限制发件人和主题。每收到一封新邮件，都会将邮件内容交给所选数字员工处理。", "No sender or subject restrictions. Every new email is passed to the selected digital employee.")}
+                        <Field label={tt("监听文件夹", "Monitored Folder")} compact>
+                          <div className="rounded-lg border bg-background px-3 py-2.5 text-sm">
+                            {tt("收件箱（INBOX）", "Inbox (INBOX)")}
+                          </div>
+                          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            {tt(
+                              "当前仅监听系统邮箱的收件箱中新到达的邮件。",
+                              "Currently, only new messages arriving in the system mailbox inbox are monitored.",
+                            )}
+                          </div>
+                        </Field>
+
+                        <Field label={tt("触发条件", "Trigger Conditions")} compact>
+                          <div className="space-y-3 rounded-lg border bg-background p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <select value={mailRuleMode} onChange={(e) => setMailRuleMode(e.target.value === "any" ? "any" : "all")} className="input-base max-w-[220px]">
+                                <option value="all">{tt("满足全部条件（AND）", "Match all conditions (AND)")}</option>
+                                <option value="any">{tt("满足任一条件（OR）", "Match any condition (OR)")}</option>
+                              </select>
+                              <button type="button" onClick={() => setMailRules((rules) => [...rules, newMailRule()])} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted/40">
+                                {tt("+ 添加条件", "+ Add condition")}
+                              </button>
+                            </div>
+
+                            {mailRules.length === 0 ? (
+                              <div className="rounded-lg bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                                {tt("未添加条件时，收到新邮件即触发。", "With no conditions, every new email triggers the automation.")}
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {mailRules.map((rule) => (
+                                  <div key={rule.id} className="grid grid-cols-1 gap-2 rounded-lg border p-2 md:grid-cols-[1fr_1fr_1.4fr_auto]">
+                                    <select value={rule.field} onChange={(e) => {
+                                      const field = e.target.value as MailRuleField;
+                                      setMailRules((rules) => rules.map((item) => item.id === rule.id ? {
+                                        ...item, field,
+                                        operator: field === "是否包含附件" ? "是否存在" : item.operator === "是否存在" ? "包含" : item.operator,
+                                        value: field === "是否包含附件" ? "是" : item.value,
+                                      } : item));
+                                    }} className="input-base">
+                                      {MAIL_RULE_FIELDS.map((field) => <option key={field} value={field}>{field}</option>)}
+                                    </select>
+
+                                    <select value={rule.field === "是否包含附件" ? "是否存在" : rule.operator} disabled={rule.field === "是否包含附件"} onChange={(e) => setMailRules((rules) => rules.map((item) => item.id === rule.id ? { ...item, operator: e.target.value as MailRuleOperator } : item))} className="input-base disabled:opacity-60">
+                                      {MAIL_RULE_OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
+                                    </select>
+
+                                    {rule.operator === "是否存在" || rule.field === "是否包含附件" ? (
+                                      <select value={rule.value || "是"} onChange={(e) => setMailRules((rules) => rules.map((item) => item.id === rule.id ? { ...item, value: e.target.value } : item))} className="input-base">
+                                        <option value="是">{tt("是", "Yes")}</option>
+                                        <option value="否">{tt("否", "No")}</option>
+                                      </select>
+                                    ) : (
+                                      <input value={rule.value} onChange={(e) => setMailRules((rules) => rules.map((item) => item.id === rule.id ? { ...item, value: e.target.value } : item))} className="input-base" placeholder={tt("填写条件值", "Enter value")} />
+                                    )}
+
+                                    <button type="button" onClick={() => setMailRules((rules) => rules.filter((item) => item.id !== rule.id))} className="rounded-lg border px-3 py-2 text-xs hover:bg-muted/40">
+                                      {tt("删除", "Remove")}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="text-xs leading-5 text-muted-foreground">
+                              {tt("“包含”只做文字包含判断，不进行语义推断。", "Contains performs literal text matching only; it does not use semantic inference.")}
                             </div>
                           </div>
                         </Field>
 
+                        <Field label={tt("规则优先级", "Rule Priority")} compact>
+                          <input type="number" min={0} max={100} value={mailPriority} onChange={(e) => setMailPriority(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} className="input-base" />
+                          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            {tt("同一封邮件同时命中多个自动化时，只执行优先级最高的一条。建议使用 0–100。", "If multiple automations match the same email, only the highest-priority one runs. Recommended range: 0–100.")}
+                          </div>
+                        </Field>
+
+                        {mailConflictCandidates.length > 0 && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3 text-amber-950">
+                            <div className="text-xs font-semibold">
+                              {tt("检测到同一监听范围内存在其他邮件自动化", "Other email automations use the same monitored mailbox")}
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-amber-900/80">
+                              {tt(
+                                "这些规则可能同时命中同一封邮件。平台仍只会执行优先级最高的一条，建议确认优先级是否符合业务顺序。",
+                                "These rules may match the same email. The platform still runs only the highest-priority automation, so confirm that the priority order matches the business requirement.",
+                              )}
+                            </div>
+                            <div className="mt-2 space-y-1.5">
+                              {mailConflictCandidates.slice(0, 3).map(({ item, level, priority }) => (
+                                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200/80 bg-white/70 px-2.5 py-2 text-xs">
+                                  <div className="min-w-0">
+                                    <span className="font-medium">{item.name}</span>
+                                    <span className="ml-2 text-amber-800/70">
+                                      {level === "high"
+                                        ? tt("规则高度重叠", "High overlap")
+                                        : tt("存在潜在重叠", "Potential overlap")}
+                                    </span>
+                                  </div>
+                                  <div className="shrink-0">
+                                    {tt("优先级", "Priority")} {priority}
+                                  </div>
+                                </div>
+                              ))}
+                              {mailConflictCandidates.length > 3 && (
+                                <div className="text-xs text-amber-800/70">
+                                  {tt(
+                                    `另有 ${mailConflictCandidates.length - 3} 条同范围邮件自动化`,
+                                    `${mailConflictCandidates.length - 3} more email automations use the same scope`,
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {mailConflictCandidates.some(({ priority }) => priority > mailPriority) && (
+                              <div className="mt-2 text-xs font-medium leading-5">
+                                {tt(
+                                  "当前优先级低于其中部分自动化；若同一邮件同时命中，当前自动化将不会执行。",
+                                  "The current priority is lower than at least one existing automation. If the same email matches both, this automation will not run.",
+                                )}
+                              </div>
+                            )}
+                            {mailConflictCandidates.some(({ priority }) => priority === mailPriority) && (
+                              <div className="mt-1 text-xs leading-5 text-amber-900/80">
+                                {tt(
+                                  "存在相同优先级。相同优先级时系统按固定顺序只执行一条，建议使用不同优先级避免业务歧义。",
+                                  "An equal priority exists. With equal priorities, the system uses a fixed order and runs only one; use distinct priorities to avoid ambiguity.",
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <Field label={tt("规则测试", "Rule Test")} compact>
+                          <div className="rounded-lg border bg-background p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-medium">{tt("用模拟邮件验证当前规则", "Test the current rules with a sample email")}</div>
+                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                  {tt("不会读取真实邮箱，也不会创建运行记录，只按照服务端相同的文字匹配逻辑进行预判。", "This does not read a real mailbox or create a run. It previews using the same literal matching logic as the server.")}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setMailTesterOpen((value) => !value)}
+                                className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted/40"
+                              >
+                                {mailTesterOpen ? tt("收起测试", "Hide test") : tt("测试规则", "Test rules")}
+                              </button>
+                            </div>
+
+                            {mailTesterOpen && mailRuleTestResult && (
+                              <div className="mt-3 space-y-3 border-t pt-3">
+                                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                  <input value={mailTestFrom} onChange={(e) => setMailTestFrom(e.target.value)} className="input-base" placeholder={tt("发件人，例如 customer@example.com", "Sender, e.g. customer@example.com")} />
+                                  <input value={mailTestTo} onChange={(e) => setMailTestTo(e.target.value)} className="input-base" placeholder={tt("收件人，例如 sales@company.com", "Recipient, e.g. sales@company.com")} />
+                                  <input value={mailTestSubject} onChange={(e) => setMailTestSubject(e.target.value)} className="input-base md:col-span-2" placeholder={tt("邮件主题", "Email subject")} />
+                                  <textarea value={mailTestBody} onChange={(e) => setMailTestBody(e.target.value)} className="input-base min-h-[88px] resize-y md:col-span-2" placeholder={tt("邮件正文", "Email body")} />
+                                  <textarea value={mailTestAttachments} onChange={(e) => setMailTestAttachments(e.target.value)} className="input-base min-h-[70px] resize-y md:col-span-2" placeholder={tt("附件名称，可每行填写一个，例如：报价单.xlsx", "Attachment names, one per line, e.g. quote.xlsx")} />
+                                </div>
+
+                                <div className={`rounded-lg border px-3 py-2.5 ${
+                                  mailRuleTestResult.winner?.current
+                                    ? "border-emerald-200 bg-emerald-50/70"
+                                    : mailRuleTestResult.currentMatched
+                                      ? "border-amber-200 bg-amber-50/70"
+                                      : "bg-muted/25"
+                                }`}>
+                                  <div className="text-xs font-semibold">
+                                    {mailRuleTestResult.winner?.current
+                                      ? tt("结果：当前自动化会触发", "Result: current automation will run")
+                                      : mailRuleTestResult.currentMatched && mailRuleTestResult.winner
+                                        ? tt(`结果：当前规则命中，但会由「${mailRuleTestResult.winner.name}」优先执行`, `Result: current rules match, but “${mailRuleTestResult.winner.name}” wins by priority`)
+                                        : tt("结果：当前自动化不会触发", "Result: current automation will not run")}
+                                  </div>
+                                  {mailRuleTestResult.winner && (
+                                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                      {tt("最终命中", "Winner")}: {mailRuleTestResult.winner.name} · {tt("优先级", "Priority")} {mailRuleTestResult.winner.priority}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {mailRules.length > 0 && (
+                                  <div className="space-y-1.5">
+                                    <div className="text-xs font-medium">{tt("条件明细", "Condition details")}</div>
+                                    {mailRuleTestResult.currentRuleResults.map(({ rule, matched, source }) => (
+                                      <div key={rule.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-xs">
+                                        <div className="min-w-0">
+                                          <span className="font-medium">{mailRuleText(rule)}</span>
+                                          <span className="ml-2 text-muted-foreground">
+                                            {tt("实际值", "Actual")}: {source || tt("空", "empty")}
+                                          </span>
+                                        </div>
+                                        <span className={matched ? "font-medium text-emerald-700" : "font-medium text-muted-foreground"}>
+                                          {matched ? tt("命中", "Matched") : tt("未命中", "Not matched")}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {mailRuleTestResult.matchedCandidates.length > 1 && (
+                                  <div className="rounded-lg bg-muted/25 px-3 py-2.5">
+                                    <div className="text-xs font-medium">{tt("同时命中的自动化", "Other matching automations")}</div>
+                                    <div className="mt-1.5 flex flex-wrap gap-2">
+                                      {mailRuleTestResult.matchedCandidates.map((item) => (
+                                        <span key={`${item.current ? "current" : "saved"}-${item.id}`} className="rounded-full border bg-background px-2 py-1 text-xs">
+                                          {item.name} · {item.priority}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </Field>
 
                         <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-2.5">
                           <div className="text-xs font-medium text-foreground">{tt("自动传入邮件内容", "Automatically Pass Email Content")}</div>
                           <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                            {tt("发件人、主题、正文和附件信息会作为任务上下文传给数字员工。", "Sender, subject, body, and attachment information are passed to the digital employee as task context.")}
+                            {tt("监听邮箱、发件人、收件人、主题、正文、附件和命中规则都会写入本次运行上下文，便于追溯。", "Mailbox, sender, recipient, subject, body, attachments, and the matched rule are stored in the run context.")}
                           </div>
                         </div>
                       </>
@@ -2272,14 +3345,17 @@ export default function AutomationPage() {
                       {tt("当前触发方式可用变量（点击可插入任务说明）", "Available variables for this trigger (click to insert into the task description)")}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {variables.map((value) => (
+                      {variables.map((variable) => (
                         <button
-                          key={value}
+                          key={variable.value}
                           type="button"
-                          onClick={() => insertVariable(value)}
-                          className="rounded-md border bg-background px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                          onClick={() => insertVariable(variable.value)}
+                          className="min-w-[132px] rounded-lg border bg-background px-3 py-2 text-left hover:bg-muted"
                         >
-                          {value}
+                          <div className="text-xs font-medium text-foreground">{variable.label}</div>
+                          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                            {variable.value}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -2448,6 +3524,146 @@ export default function AutomationPage() {
                 </InfoBox>
               </InfoSection>
 
+              {drawerAutomation.trigger === "邮件触发" && (
+                <InfoSection title={tt("邮件触发统计", "Email Trigger Statistics")}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-xs text-muted-foreground">
+                      {tt(
+                        "路由统计记录服务端实际检查结果，包括未命中和被更高优先级规则截获的邮件。",
+                        "Routing statistics include server-side checks, unmatched messages, and messages suppressed by higher-priority rules.",
+                      )}
+                    </div>
+                    {emailRoutingStatsLoading && (
+                      <div className="shrink-0 text-xs text-muted-foreground">{tt("读取中...", "Loading...")}</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("已检查邮件", "Checked")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.scanned}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("规则命中", "Rule Matched")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.matched}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("实际触发", "Triggered")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.triggered}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("未命中", "Not Matched")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.notMatched}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("被高优先级截获", "Suppressed")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.suppressed}</div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("重复拦截", "Deduplicated")}</div>
+                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.duplicate}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-lg border bg-background px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("命中并创建运行", "Runs Created")}</div>
+                      <div className="mt-1 text-lg font-bold">{drawerEmailStats.total}</div>
+                    </div>
+                    <div className="rounded-lg border bg-background px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("成功", "Success")}</div>
+                      <div className="mt-1 text-lg font-bold">{drawerEmailStats.success}</div>
+                    </div>
+                    <div className="rounded-lg border bg-background px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("失败 / 超时", "Failed / Timed Out")}</div>
+                      <div className="mt-1 text-lg font-bold">{drawerEmailStats.failed}</div>
+                    </div>
+                    <div className="rounded-lg border bg-background px-3 py-3">
+                      <div className="text-xs text-muted-foreground">{tt("处理中 / 待审核", "Processing / Pending")}</div>
+                      <div className="mt-1 text-lg font-bold">{drawerEmailStats.pending}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-lg border bg-background px-3 py-3">
+                    <div className="text-xs font-medium text-foreground">{tt("最近路由结果", "Recent Routing Results")}</div>
+                    {emailRoutingStats.recent.length === 0 ? (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {tt("暂无服务端邮件路由统计", "No server-side email routing statistics yet")}
+                      </div>
+                    ) : (
+                      <div className="mt-2 divide-y">
+                        {emailRoutingStats.recent.slice(0, 5).map((event) => {
+                          const outcomeText =
+                            event.outcome === "triggered"
+                              ? tt("已触发", "Triggered")
+                              : event.outcome === "suppressed_by_priority"
+                                ? tt("被高优先级截获", "Suppressed")
+                                : event.outcome === "duplicate"
+                                  ? tt("重复拦截", "Deduplicated")
+                                  : tt("未命中", "Not Matched");
+                          return (
+                            <div key={event.id} className="flex items-start justify-between gap-3 py-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">
+                                  {event.subject || tt("无主题", "No Subject")}
+                                </div>
+                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {event.from || tt("未知发件人", "Unknown Sender")}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="text-xs font-medium">{outcomeText}</div>
+                                {event.priority != null && (
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                    {tt("优先级", "Priority")} {event.priority}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 rounded-lg border bg-background px-3 py-3">
+                    <div className="text-xs font-medium text-foreground">{tt("最近实际触发的邮件", "Recently Triggered Emails")}</div>
+                    {drawerEmailRuns.length === 0 ? (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {tt("暂无由服务端邮件监听触发的运行记录", "No runs have been triggered by server-side email monitoring yet")}
+                      </div>
+                    ) : (
+                      <div className="mt-2 divide-y">
+                        {drawerEmailRuns.slice(0, 3).map((run) => (
+                          <button
+                            key={run.id}
+                            type="button"
+                            onClick={() => {
+                              setDrawerAutomationId(null);
+                              setDrawerRunId(run.id);
+                            }}
+                            className="flex w-full items-start justify-between gap-3 py-2 text-left hover:bg-muted/40"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">
+                                {String(run.triggerContext?.subject || tt("无主题", "No Subject"))}
+                              </div>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {String(run.triggerContext?.from || tt("未知发件人", "Unknown Sender"))}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="text-xs font-medium">{statusLabel(run.statusText, run.status)}</div>
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">{displayTime(run.time)}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </InfoSection>
+              )}
+
               <InfoSection title={tt("任务说明", "Task Description")}>
                 <InfoBox>{drawerAutomation.task}</InfoBox>
               </InfoSection>
@@ -2457,20 +3673,25 @@ export default function AutomationPage() {
               </InfoSection>
 
               <InfoSection title={tt("最近运行", "Recent Run")}>
-                <div className="ml-2 border-l pl-5">
-                  <TimelineItem text={tt("触发条件满足，自动化开始执行", "Trigger condition met; automation started")} time={tt("今天 14:32", "Today 14:32")} />
-                  <TimelineItem text={isEnglish ? `Digital employee “${drawerAutomation.agent}” started processing` : `数字员工「${drawerAutomation.agent}」开始处理任务`} time={tt("今天 14:32", "Today 14:32")} />
-                  <TimelineItem
-                    text={
-                      drawerAutomation.status === "error"
-                        ? tt("执行失败：外部数据源连接超时", "Execution failed: external data source timed out")
-                        : drawerAutomation.status === "paused"
-                          ? tt("自动化当前已暂停", "Automation is currently paused")
-                          : tt("任务执行完成并保存结果", "Task completed and result saved")
-                    }
-                    time={tt("今天 14:33", "Today 14:33")}
-                  />
-                </div>
+                {drawerAutomationRuns.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    {tt("暂无运行记录", "No run history yet")}
+                  </div>
+                ) : (
+                  <div className="ml-2 border-l pl-5">
+                    {drawerAutomationRuns.slice(0, 3).map((run) => (
+                      <TimelineItem
+                        key={run.id}
+                        text={
+                          run.triggerContext?.source === "email-server"
+                            ? `${tt("邮件触发", "Email Trigger")} · ${String(run.triggerContext?.subject || tt("无主题", "No Subject"))} · ${statusLabel(run.statusText, run.status)}`
+                            : `${triggerLabel(run.trigger)} · ${statusLabel(run.statusText, run.status)}`
+                        }
+                        time={displayTime(run.time)}
+                      />
+                    ))}
+                  </div>
+                )}
               </InfoSection>
             </div>
           </aside>
@@ -2524,12 +3745,106 @@ export default function AutomationPage() {
                 </div>
               </InfoSection>
 
+              {drawerRun.trigger === "邮件触发" && drawerRun.triggerContext && (
+                <InfoSection title={tt("邮件来源", "Email Source")}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <InfoItem
+                      label={tt("监听邮箱", "Monitored Mailbox")}
+                      value={emailContextText(drawerRun.triggerContext.mailbox, tt("系统邮箱", "System Mailbox"))}
+                    />
+                    <InfoItem
+                      label={tt("监听范围", "Monitoring Scope")}
+                      value={mailFolderDisplay(drawerRun.triggerContext.folder)}
+                    />
+                    <InfoItem
+                      label={tt("监听方式", "Monitoring Method")}
+                      value={emailSourceDisplay(drawerRun.triggerContext.source)}
+                    />
+                    <InfoItem
+                      label={tt("规则优先级", "Rule Priority")}
+                      value={String(drawerRun.triggerContext.priority ?? 50)}
+                    />
+                    <InfoItem
+                      label={tt("发件人", "Sender")}
+                      value={emailContextText(drawerRun.triggerContext.from, tt("未知", "Unknown"))}
+                    />
+                    <InfoItem
+                      label={tt("收件人", "Recipient")}
+                      value={emailContextText(drawerRun.triggerContext.to, tt("未知", "Unknown"))}
+                    />
+                    <InfoItem
+                      label={tt("邮件主题", "Subject")}
+                      value={emailContextText(drawerRun.triggerContext.subject, tt("无主题", "No subject"))}
+                    />
+                    <InfoItem
+                      label={tt("邮件时间", "Email Time")}
+                      value={emailContextText(drawerRun.triggerContext.date)}
+                    />
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold text-muted-foreground">
+                      {tt("命中规则", "Matched Rule")}
+                    </div>
+                    <InfoBox>
+                      <div className="whitespace-pre-wrap text-foreground">
+                        {emailContextText(
+                          drawerRun.triggerContext.matchedRule,
+                          tt("收到新邮件即触发", "Trigger on new email"),
+                        )}
+                      </div>
+                    </InfoBox>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold text-muted-foreground">
+                      {tt("邮件正文", "Email Body")}
+                    </div>
+                    <InfoBox>
+                      <div className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-foreground">
+                        {emailContextText(drawerRun.triggerContext.body, tt("无正文", "No body"))}
+                      </div>
+                    </InfoBox>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold text-muted-foreground">
+                      {tt("附件", "Attachments")}
+                    </div>
+                    <InfoBox>
+                      <div className="whitespace-pre-wrap break-words text-foreground">
+                        {Array.isArray(drawerRun.triggerContext.attachments) && drawerRun.triggerContext.attachments.length > 0
+                          ? drawerRun.triggerContext.attachments.join("\n")
+                          : tt("无附件", "No attachments")}
+                      </div>
+                    </InfoBox>
+                  </div>
+
+                  <details className="mt-3 rounded-lg border bg-muted/20 px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+                      {tt("技术信息", "Technical Details")}
+                    </summary>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                      <InfoItem
+                        label={tt("邮件唯一标识（Message-ID）", "Message-ID")}
+                        value={emailContextText(drawerRun.triggerContext.messageId)}
+                      />
+                      <InfoItem
+                        label={tt("邮箱序号（UID）", "Mailbox UID")}
+                        value={emailContextText(drawerRun.triggerContext.uid)}
+                      />
+                    </div>
+                  </details>
+                </InfoSection>
+              )}
+
               {(drawerRun.taskSnapshot ||
-                (drawerRun.triggerContext &&
+                (drawerRun.trigger !== "邮件触发" &&
+                  drawerRun.triggerContext &&
                   Object.keys(drawerRun.triggerContext).length > 0)) && (
                 <InfoSection title={tt("触发 / 输入明细", "Trigger / Input Details")}>
                   {drawerRun.taskSnapshot && (
-                    <div className="mb-3">
+                    <div className={drawerRun.trigger === "邮件触发" ? "" : "mb-3"}>
                       <div className="mb-1 text-xs font-semibold text-muted-foreground">
                         {tt("任务快照", "Task Snapshot")}
                       </div>
@@ -2541,7 +3856,8 @@ export default function AutomationPage() {
                     </div>
                   )}
 
-                  {drawerRun.triggerContext &&
+                  {drawerRun.trigger !== "邮件触发" &&
+                    drawerRun.triggerContext &&
                     Object.keys(drawerRun.triggerContext).length > 0 && (
                       <div>
                         <div className="mb-1 text-xs font-semibold text-muted-foreground">
@@ -2698,6 +4014,17 @@ export default function AutomationPage() {
                     </div>
                   </InfoBox>
 
+                  {drawerRun.status === "timed_out" && drawerRun.result && (
+                    <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+                      <div className="mb-1 text-xs font-semibold text-foreground">
+                        {tt("超时前已生成的部分结果", "Partial result generated before timeout")}
+                      </div>
+                      <div className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                        {drawerRun.result}
+                      </div>
+                    </div>
+                  )}
+
                   {drawerRun.status === "rejected" && (
                     <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
                       <span className="font-semibold text-foreground">
@@ -2706,6 +4033,23 @@ export default function AutomationPage() {
                       {drawerRun.rejectionReason || tt("未填写", "Not provided")}
                     </div>
                   )}
+                </InfoSection>
+              )}
+
+              {Array.isArray(drawerRun.resultAttachments) && drawerRun.resultAttachments.length > 0 && (
+                <InfoSection title={tt("数字员工生成的附件", "Generated Attachments")}>
+                  <div className="space-y-2">
+                    {drawerRun.resultAttachments.map((attachment, index) => (
+                      <div key={`${attachment.object_key || attachment.filename}-${index}`} className="rounded-lg border bg-muted/20 px-3 py-2">
+                        <div className="text-sm font-medium text-foreground">{attachment.filename}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {[attachment.content_type, attachment.size ? `${Math.max(1, Math.round(attachment.size / 1024))} KB` : ""]
+                            .filter(Boolean)
+                            .join(" · ") || tt("平台生成文件", "Platform-generated file")}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </InfoSection>
               )}
 
@@ -2728,6 +4072,23 @@ export default function AutomationPage() {
                       </div>
                     ))}
                   </div>
+
+                  {drawerRun.status === "failed" &&
+                    drawerRun.reviewStatus === "approved" &&
+                    runActions.some((action) => action.status === "failed") && (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void retryFailedRunActions(drawerRun)}
+                          disabled={reviewActionBusy}
+                          className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {reviewActionBusy
+                            ? tt("重试中…", "Retrying…")
+                            : tt("重试失败操作", "Retry Failed Actions")}
+                        </button>
+                      </div>
+                    )}
                 </InfoSection>
               )}
 
