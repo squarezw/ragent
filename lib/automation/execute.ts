@@ -1,17 +1,78 @@
 import jwt from "jsonwebtoken";
 import { extractSseErrorMessage, isSseCommentLine } from "@/lib/chatSse";
 
+export interface AutomationExecutionAttachment {
+  filename: string;
+  object_key?: string;
+  content_type?: string;
+  size?: number;
+}
+
 export interface AutomationExecutionResult {
   answer: string;
   reference: unknown;
   segment_ids: number[];
   detail_id: number | null;
+  attachments: AutomationExecutionAttachment[];
+}
+
+type AutomationTimeoutLike = Error & {
+  code?: string;
+  partialAnswer?: string;
+};
+
+export function isAutomationTimeoutError(
+  error: unknown,
+): error is AutomationTimeoutLike {
+  if (!(error instanceof Error)) return false;
+
+  const candidate = error as AutomationTimeoutLike;
+  return (
+    candidate.name === "AutomationTimeoutError" ||
+    candidate.code === "AUTOMATION_TIMEOUT"
+  );
 }
 
 function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
+}
+
+function normalizeAttachments(value: unknown): AutomationExecutionAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+
+      const record = item as Record<string, unknown>;
+      const filename =
+        typeof record.filename === "string"
+          ? record.filename
+          : typeof record.name === "string"
+            ? record.name
+            : "";
+
+      if (!filename.trim()) return null;
+
+      return {
+        filename: filename.trim(),
+        object_key:
+          typeof record.object_key === "string" ? record.object_key : undefined,
+        content_type:
+          typeof record.content_type === "string"
+            ? record.content_type
+            : undefined,
+        size:
+          typeof record.size === "number" && Number.isFinite(record.size)
+            ? record.size
+            : undefined,
+      };
+    })
+    .filter(
+      (item): item is AutomationExecutionAttachment => item !== null,
+    );
 }
 
 export async function executeAutomationAgent(params: {
@@ -54,6 +115,7 @@ export async function executeAutomationAgent(params: {
   let reference: unknown = null;
   let segmentIds: number[] = [];
   let detailId: number | null = null;
+  let attachments: AutomationExecutionAttachment[] = [];
 
   const consumeLine = (line: string) => {
     const trimmedLine = line.trim();
@@ -94,6 +156,11 @@ export async function executeAutomationAgent(params: {
       if (Array.isArray(parsed?.segment_ids)) segmentIds = parsed.segment_ids;
       if (typeof parsed?.detail_id === "number") detailId = parsed.detail_id;
 
+      const parsedAttachments = normalizeAttachments(parsed?.attachments);
+      if (parsedAttachments.length > 0) {
+        attachments = parsedAttachments;
+      }
+
       currentEvent = null;
       return false;
     }
@@ -133,5 +200,6 @@ export async function executeAutomationAgent(params: {
     reference,
     segment_ids: segmentIds,
     detail_id: detailId,
+    attachments,
   };
 }
