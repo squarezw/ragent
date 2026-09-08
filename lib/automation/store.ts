@@ -1599,13 +1599,17 @@ export async function finishRun(
   const result = await pool.query(
     `UPDATE automation_runs SET
       status=$1::varchar,
-      result=$2,
-      ai_result=CASE WHEN $1::varchar='success' AND $2 IS NOT NULL THEN COALESCE(ai_result, $2) ELSE ai_result END,
+      result=$2::text,
+      ai_result=CASE
+        WHEN $1::varchar='success' AND $2::text IS NOT NULL
+          THEN COALESCE(ai_result, $2::text)
+        ELSE ai_result
+      END,
       final_result=CASE
-        WHEN $1::varchar='success' AND review_status='not_required' THEN $2
+        WHEN $1::varchar='success' AND review_status='not_required' THEN $2::text
         ELSE final_result
       END,
-      error=$3,
+      error=$3::text,
       finished_at=NOW(),
       duration_ms=COALESCE(duration_ms, 0) + CASE
         WHEN processing_started_at IS NOT NULL THEN GREATEST(

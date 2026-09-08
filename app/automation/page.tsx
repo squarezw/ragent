@@ -62,19 +62,6 @@ interface AppOption {
   name: string;
 }
 
-interface ConnectedMailbox {
-  id: number;
-  key: string;
-  name: string;
-  email: string;
-  username: string;
-  imapHost: string;
-  imapPort: number;
-  imapSecure: boolean;
-  folder: string;
-  status: string;
-  label: string;
-}
 
 interface Automation {
   id: number;
@@ -238,15 +225,6 @@ const emptyEmailRoutingStats: EmailRoutingStats = {
 const CHAIN_PROCESSED_STORAGE_KEY = "ragent_chain_processed_runs_v1";
 const WEBHOOK_POLL_INTERVAL_MS = 5000;
 
-function defaultImapHost(email: string) {
-  const domain = String(email || "").trim().toLowerCase().split("@")[1] || "";
-  if (domain === "qq.com") return "imap.qq.com";
-  if (domain === "163.com") return "imap.163.com";
-  if (domain === "126.com") return "imap.126.com";
-  if (domain === "gmail.com") return "imap.gmail.com";
-  if (domain === "outlook.com" || domain === "hotmail.com") return "outlook.office365.com";
-  return domain ? `imap.${domain}` : "";
-}
 
 const MAIL_RULE_FIELDS: MailRuleField[] = [
   "发件人",
@@ -647,9 +625,7 @@ export default function AutomationPage() {
 
   const [mailResultEmail, setMailResultEmail] = useState("");
   const [resultEmailIncludeAttachments, setResultEmailIncludeAttachments] = useState(true);
-  const [mailboxKey, setMailboxKey] = useState("system");
-  const [mailboxLabel, setMailboxLabel] = useState("系统邮箱");
-  const [mailFolder, setMailFolder] = useState("INBOX");
+  // 邮件触发固定使用系统设置中的单一系统邮箱，不允许在自动化页面新增或切换邮箱。
   const [mailRuleMode, setMailRuleMode] = useState<MailRuleMode>("all");
   const [mailRules, setMailRules] = useState<MailTriggerRule[]>([]);
   const [mailPriority, setMailPriority] = useState(50);
@@ -660,16 +636,6 @@ export default function AutomationPage() {
   const [mailTestBody, setMailTestBody] = useState("");
   const [mailTestAttachments, setMailTestAttachments] = useState("");
 
-  const [connectedMailboxes, setConnectedMailboxes] = useState<ConnectedMailbox[]>([]);
-  const [mailboxConnectOpen, setMailboxConnectOpen] = useState(false);
-  const [mailboxSaving, setMailboxSaving] = useState(false);
-  const [newMailboxName, setNewMailboxName] = useState("");
-  const [newMailboxEmail, setNewMailboxEmail] = useState("");
-  const [newMailboxUsername, setNewMailboxUsername] = useState("");
-  const [newMailboxPassword, setNewMailboxPassword] = useState("");
-  const [newMailboxImapHost, setNewMailboxImapHost] = useState("");
-  const [newMailboxImapPort, setNewMailboxImapPort] = useState(993);
-  const [newMailboxImapSecure, setNewMailboxImapSecure] = useState(true);
 
   const [upstreamAutomationId, setUpstreamAutomationId] = useState<number | null>(1);
   const [upstreamCondition, setUpstreamCondition] = useState("执行成功");
@@ -697,18 +663,10 @@ export default function AutomationPage() {
   const mailConflictCandidates = useMemo(() => {
     if (trigger !== "邮件触发") return [];
 
-    const currentMailbox = String(mailboxKey || "system");
-    const currentFolder = String(mailFolder || "INBOX").toUpperCase();
-
     return automations
       .filter((item) => {
         if (item.id === editingAutomationId) return false;
-        if (item.trigger !== "邮件触发" || item.status !== "running") return false;
-
-        const itemMailbox = String(item.mailboxKey || "system");
-        const itemFolder = String(item.mailFolder || "INBOX").toUpperCase();
-
-        return itemMailbox === currentMailbox && itemFolder === currentFolder;
+        return item.trigger === "邮件触发" && item.status === "running";
       })
       .map((item) => ({
         item,
@@ -720,15 +678,7 @@ export default function AutomationPage() {
         if (a.priority !== b.priority) return b.priority - a.priority;
         return a.item.id - b.item.id;
       });
-  }, [
-    automations,
-    editingAutomationId,
-    mailFolder,
-    mailboxKey,
-    mailRuleMode,
-    mailRules,
-    trigger,
-  ]);
+  }, [automations, editingAutomationId, mailRuleMode, mailRules, trigger]);
 
   const mailRuleTestResult = useMemo(() => {
     if (trigger !== "邮件触发") return null;
@@ -746,18 +696,12 @@ export default function AutomationPage() {
       source: mailRuleTestSource(rule, message),
     }));
     const currentMatched = doMailRulesTestMatch(mailRules, mailRuleMode, message);
-    const currentMailbox = String(mailboxKey || "system");
-    const currentFolder = String(mailFolder || "INBOX").toUpperCase();
     const currentId = editingAutomationId ?? Number.MAX_SAFE_INTEGER;
 
     const candidates = automations
       .filter((item) => {
         if (item.id === editingAutomationId) return false;
-        if (item.trigger !== "邮件触发" || item.status !== "running") return false;
-        return (
-          String(item.mailboxKey || "system") === currentMailbox &&
-          String(item.mailFolder || "INBOX").toUpperCase() === currentFolder
-        );
+        return item.trigger === "邮件触发" && item.status === "running";
       })
       .filter((item) =>
         doMailRulesTestMatch(
@@ -797,8 +741,6 @@ export default function AutomationPage() {
   }, [
     automations,
     editingAutomationId,
-    mailFolder,
-    mailboxKey,
     mailPriority,
     mailRuleMode,
     mailRules,
@@ -828,68 +770,7 @@ export default function AutomationPage() {
     });
   }
 
-  async function loadConnectedMailboxes(options?: { silent?: boolean }) {
-    try {
-      const response = await axios.get("/api/v1/automation-mailboxes");
-      const items = Array.isArray(response.data?.items) ? response.data.items : [];
-      setConnectedMailboxes(items);
-    } catch (error: any) {
-      console.error("加载已连接邮箱失败:", error);
-      if (!options?.silent) {
-        toast.error(error?.response?.data?.detail || tt("已连接邮箱加载失败", "Failed to load connected mailboxes"));
-      }
-    }
-  }
 
-  async function connectMailbox() {
-    const email = newMailboxEmail.trim();
-    const username = newMailboxUsername.trim() || email;
-    const imapHost = newMailboxImapHost.trim() || defaultImapHost(email);
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      toast.error(tt("请输入正确的邮箱地址", "Please enter a valid email address"));
-      return;
-    }
-    if (!newMailboxPassword) {
-      toast.error(tt("请填写邮箱授权码或密码", "Please enter the mailbox app password or password"));
-      return;
-    }
-    if (!imapHost) {
-      toast.error(tt("请填写 IMAP 服务器", "Please enter the IMAP server"));
-      return;
-    }
-
-    try {
-      setMailboxSaving(true);
-      const response = await axios.post("/api/v1/automation-mailboxes", {
-        name: newMailboxName.trim() || email,
-        email,
-        username,
-        password: newMailboxPassword,
-        imapHost,
-        imapPort: newMailboxImapPort,
-        imapSecure: newMailboxImapSecure,
-        folder: "INBOX",
-      });
-      const mailbox = response.data as ConnectedMailbox;
-      setConnectedMailboxes((items) => [mailbox, ...items.filter((item) => item.id !== mailbox.id)]);
-      setMailboxKey(mailbox.key);
-      setMailboxLabel(mailbox.label || mailbox.email);
-      setMailFolder(mailbox.folder || "INBOX");
-      setMailboxConnectOpen(false);
-      setNewMailboxName("");
-      setNewMailboxEmail("");
-      setNewMailboxUsername("");
-      setNewMailboxPassword("");
-      setNewMailboxImapHost("");
-      setNewMailboxImapPort(993);
-      setNewMailboxImapSecure(true);
-      toast.success(tt("邮箱连接成功", "Mailbox connected"));
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || tt("邮箱连接失败", "Failed to connect mailbox"));
-    } finally {
-      setMailboxSaving(false);
-    }
-  }
 
   async function loadAutomations(options?: { silent?: boolean }) {
     try {
@@ -1005,7 +886,6 @@ export default function AutomationPage() {
   useEffect(() => {
     void loadAutomations();
     void loadRunRecords();
-    void loadConnectedMailboxes();
     void loadNotifications({ silent: true, showToast: true });
 
     const runTimer = window.setInterval(() => {
@@ -1220,10 +1100,9 @@ export default function AutomationPage() {
 
   function localizedTriggerDetail(item: Automation) {
     if (item.trigger === "邮件触发") {
-      const mailbox = item.mailboxLabel || tt("系统邮箱", "System Mailbox");
       const ruleText = mailRulesSummary(item);
       const priority = Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50;
-      return `${mailbox} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
+      return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
     }
     if (item.trigger === "Webhook / API") {
       return tt("由外部系统通过 Webhook / API 触发", "Triggered by an external system through Webhook / API");
@@ -1305,9 +1184,6 @@ export default function AutomationPage() {
     setScheduleDate("");
     setMailResultEmail("");
     setResultEmailIncludeAttachments(true);
-    setMailboxKey("system");
-    setMailboxLabel("系统邮箱");
-    setMailFolder("INBOX");
     setMailRuleMode("all");
     setMailRules([]);
     setMailPriority(50);
@@ -1359,9 +1235,6 @@ export default function AutomationPage() {
     setScheduleDate(item.scheduleDate || "");
     setMailResultEmail(item.resultEmail || "");
     setResultEmailIncludeAttachments(item.resultEmailIncludeAttachments === true);
-    setMailboxKey(item.mailboxKey || "system");
-    setMailboxLabel(item.mailboxLabel || "系统邮箱");
-    setMailFolder(item.mailFolder || "INBOX");
     setMailRuleMode(item.mailRuleMode === "any" ? "any" : "all");
     setMailRules(Array.isArray(item.mailRules) ? item.mailRules : []);
     setMailPriority(Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50);
@@ -1420,9 +1293,9 @@ export default function AutomationPage() {
       const temp: Automation = {
         id: 0, name: "", trigger: "邮件触发", triggerDetail: "", appId: null, agent: "",
         strategy, status: "running", statusText: "", time: "", task: "", returnDetail: "",
-        mailboxLabel, mailRuleMode, mailRules, mailPriority,
+        mailboxLabel: "系统邮箱", mailRuleMode, mailRules, mailPriority,
       };
-      return `${mailboxLabel} · ${mailRulesSummary(temp)} · 优先级 ${mailPriority}`;
+      return `${tt("系统邮箱", "System Mailbox")} · ${mailRulesSummary(temp)} · ${tt("优先级", "Priority")} ${mailPriority}`;
     }
     if (trigger === "Webhook / API") {
       return "由外部系统通过 Webhook / API 触发";
@@ -1473,9 +1346,9 @@ export default function AutomationPage() {
         trigger === "定时触发" && schedulePeriod === "仅一次"
           ? scheduleDate || undefined
           : undefined,
-      mailboxKey: trigger === "邮件触发" ? mailboxKey : undefined,
-      mailboxLabel: trigger === "邮件触发" ? mailboxLabel : undefined,
-      mailFolder: trigger === "邮件触发" ? mailFolder : undefined,
+      mailboxKey: trigger === "邮件触发" ? "system" : undefined,
+      mailboxLabel: trigger === "邮件触发" ? "系统邮箱" : undefined,
+      mailFolder: trigger === "邮件触发" ? "INBOX" : undefined,
       mailRuleMode: trigger === "邮件触发" ? mailRuleMode : undefined,
       mailRules: trigger === "邮件触发" ? mailRules : undefined,
       mailPriority: trigger === "邮件触发" ? mailPriority : undefined,
@@ -2611,7 +2484,7 @@ export default function AutomationPage() {
             </div>
 
             <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3">
-              {automationTemplates.map((template) => (
+              {automationTemplates.filter((template) => template.trigger !== "邮件触发").map((template) => (
                 <article
                   key={template.id}
                   className="flex min-h-[225px] flex-col rounded-xl border bg-background p-6 transition hover:-translate-y-0.5 hover:shadow-md"
@@ -2915,7 +2788,6 @@ export default function AutomationPage() {
                     {(
                       [
                         ["定时触发", tt("按照指定时间自动运行", "Run automatically on a schedule")],
-                        ["邮件触发", tt("邮箱收到符合规则的新邮件后自动处理", "Process new emails that match configured rules")],
                         ["Webhook / API", tt("由 ERP、CRM 等外部系统触发", "Triggered by ERP, CRM, or other external systems")],
                         ["自动化完成触发", tt("当另一个自动化结束后运行", "Run after another automation completes")],
                       ] as [TriggerType, string][]
@@ -3157,79 +3029,42 @@ export default function AutomationPage() {
                     {trigger === "邮件触发" && (
                       <>
                         <Field label={tt("监听邮箱", "Monitored Mailbox")} compact>
-                          <div className="flex gap-2">
-                            <select
-                              value={mailboxKey}
-                              onChange={(e) => {
-                                const nextKey = e.target.value;
-                                setMailboxKey(nextKey);
-                                if (nextKey === "system") {
-                                  setMailboxLabel("系统邮箱");
-                                  setMailFolder("INBOX");
-                                } else {
-                                  const mailbox = connectedMailboxes.find((item) => item.key === nextKey);
-                                  setMailboxLabel(mailbox?.label || mailbox?.email || nextKey);
-                                  setMailFolder(mailbox?.folder || "INBOX");
-                                }
-                              }}
-                              className="input-base flex-1"
-                            >
-                              <option value="system">{tt("系统邮箱（系统设置）", "System Mailbox (System Settings)")}</option>
-                              {connectedMailboxes.map((mailbox) => (
-                                <option key={mailbox.id} value={mailbox.key}>
-                                  {mailbox.label || mailbox.email}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => setMailboxConnectOpen((open) => !open)}
-                              className="shrink-0 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted/40"
-                            >
-                              {tt("连接新邮箱", "Connect Mailbox")}
-                            </button>
+                          <div className="rounded-lg border bg-background px-3 py-2.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-medium">
+                                  {tt("系统邮箱（系统设置）", "System Mailbox (System Settings)")}
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                  {tt(
+                                    "邮件触发固定监听管理员在「系统设置」中配置的系统邮箱，不在自动化页面新增或切换邮箱。",
+                                    "Email triggers always monitor the system mailbox configured by an administrator in System Settings. Mailboxes cannot be added or switched here.",
+                                  )}
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                                {tt("固定监听", "Fixed")}
+                              </span>
+                            </div>
                           </div>
                           <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                            {tt("每个自动化只监听这里选中的邮箱；监听邮箱与完成通知邮箱相互独立。", "Each automation monitors only the mailbox selected here. This is separate from the completion notification email.")}
+                            {tt(
+                              "监听邮箱与任务完成后的通知邮箱相互独立。",
+                              "The monitored mailbox is separate from the completion notification email.",
+                            )}
                           </div>
-
-                          {mailboxConnectOpen && (
-                            <div className="mt-3 space-y-3 rounded-lg border bg-muted/20 p-3">
-                              <div className="text-sm font-semibold">{tt("连接企业邮箱", "Connect Enterprise Mailbox")}</div>
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                <input value={newMailboxName} onChange={(e) => setNewMailboxName(e.target.value)} className="input-base" placeholder={tt("邮箱名称，例如：销售邮箱", "Mailbox name, e.g. Sales")} />
-                                <input type="email" value={newMailboxEmail} onChange={(e) => {
-                                  const nextEmail = e.target.value;
-                                  setNewMailboxEmail(nextEmail);
-                                  if (!newMailboxUsername || newMailboxUsername === newMailboxEmail) setNewMailboxUsername(nextEmail);
-                                  if (!newMailboxImapHost || newMailboxImapHost === defaultImapHost(newMailboxEmail)) setNewMailboxImapHost(defaultImapHost(nextEmail));
-                                }} className="input-base" placeholder={tt("邮箱地址", "Email address")} />
-                                <input value={newMailboxUsername} onChange={(e) => setNewMailboxUsername(e.target.value)} className="input-base" placeholder={tt("登录账号（通常与邮箱一致）", "Login username")} />
-                                <input type="password" value={newMailboxPassword} onChange={(e) => setNewMailboxPassword(e.target.value)} className="input-base" placeholder={tt("邮箱授权码 / 密码", "App password / password")} autoComplete="new-password" />
-                                <input value={newMailboxImapHost} onChange={(e) => setNewMailboxImapHost(e.target.value)} className="input-base" placeholder="imap.company.com" />
-                                <input type="number" min={1} max={65535} value={newMailboxImapPort} onChange={(e) => setNewMailboxImapPort(Number(e.target.value || 993))} className="input-base" placeholder="993" />
-                              </div>
-                              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <input type="checkbox" checked={newMailboxImapSecure} onChange={(e) => setNewMailboxImapSecure(e.target.checked)} />
-                                {tt("使用 SSL 安全连接（通常为 993 端口）", "Use SSL (usually port 993)")}
-                              </label>
-                              <div className="flex justify-end gap-2">
-                                <button type="button" onClick={() => setMailboxConnectOpen(false)} className="rounded-lg border px-3 py-2 text-xs hover:bg-background">{tt("取消", "Cancel")}</button>
-                                <button type="button" onClick={() => void connectMailbox()} disabled={mailboxSaving} className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background disabled:opacity-50">
-                                  {mailboxSaving ? tt("正在验证…", "Verifying…") : tt("验证并连接", "Verify & Connect")}
-                                </button>
-                              </div>
-                              <div className="text-xs leading-5 text-muted-foreground">
-                                {tt("密码或授权码只在服务端加密保存，页面不会再次显示。企业邮箱如禁用 IMAP，需要管理员先在邮箱后台开启。", "The password/app password is encrypted on the server and is never shown again. IMAP must be enabled by the mailbox administrator if disabled.")}
-                              </div>
-                            </div>
-                          )}
                         </Field>
 
                         <Field label={tt("监听文件夹", "Monitored Folder")} compact>
-                          <select value={mailFolder} onChange={(e) => setMailFolder(e.target.value)} className="input-base">
-                            <option value="INBOX">{tt("收件箱", "Inbox")}</option>
-                          </select>
+                          <div className="rounded-lg border bg-background px-3 py-2.5 text-sm">
+                            {tt("收件箱（INBOX）", "Inbox (INBOX)")}
+                          </div>
+                          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            {tt(
+                              "当前仅监听系统邮箱的收件箱中新到达的邮件。",
+                              "Currently, only new messages arriving in the system mailbox inbox are monitored.",
+                            )}
+                          </div>
                         </Field>
 
                         <Field label={tt("触发条件", "Trigger Conditions")} compact>
