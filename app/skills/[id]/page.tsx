@@ -135,7 +135,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         skill={skill}
         saving={saving}
         canReview={canReview}
-        readOnly={!!skill.is_managed}
+        readOnly={!!skill.is_managed || !canEditAssets}
         isSuperAdmin={checkSuperAdmin(user)}
         isTenantAdmin={checkTenantAdmin(user)}
         onTransferTenant={async (tenantId) => {
