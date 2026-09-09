@@ -183,11 +183,12 @@ export default function SkillsPage() {
                     skill.content,
                     skill.published_content
                   );
+                  const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin);
                   return (
                     <TableRow
                       key={skill.id}
-                      className="cursor-pointer"
-                      onClick={() => router.push(`/skills/${skill.id}`)}
+                      className={canEdit ? "cursor-pointer" : ""}
+                      onClick={canEdit ? () => router.push(`/skills/${skill.id}`) : undefined}
                     >
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -257,11 +258,10 @@ export default function SkillsPage() {
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-2">
-                          {/* 没有写权限的人不该看到「编辑」「删除」——原先两个按钮无条件渲染，
-                              点下去才被后端 403 拦住。界面先说"你可以改"、动手后再说"不行"，
-                              用户会以为是系统坏了而不是自己没权限。
-                              但详情页他是能看的，所以按钮换成「查看」而不是整个消失。 */}
-                          {canEditSkill(skill, user, isSuperAdmin, isTenantAdmin) ? (
+                          {/* 没有写权限的人：编辑/删除藏掉，**查看也一并藏掉**——跨租户的
+                              公开技能在列表里只展示一行，既不能改也不能点进去看详情。
+                              操作列空白，而不是放一个「查看」按钮骗人能进去。 */}
+                          {canEdit && (
                             <>
                               <Button
                                 variant="outline"
@@ -278,14 +278,6 @@ export default function SkillsPage() {
                                 {tc("delete")}
                               </Button>
                             </>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => router.push(`/skills/${skill.id}`)}
-                            >
-                              {tc("view")}
-                            </Button>
                           )}
                         </div>
                       </TableCell>
