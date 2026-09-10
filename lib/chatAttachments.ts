@@ -18,9 +18,9 @@
  *
  * ## 清单的依据
  *
- * 与后端 `app/services/file_processing_service.py` 的 `supported_extensions` 对齐 ——
- * 能传上来的，`extract_document_text` 都读得动。多列一个在这里，用户就能传上来一个
- * 后端读不出内容的文件。
+ * 多数类型与后端 `file_processing_service.supported_extensions` 对齐（能抽文字的）。
+ * **例外**：图片、以及 `.dwg` / `.dxf` —— 只上传到对象存储，不要求平台先抽文字；
+ * 后续由用户指令 / skill（如 graph 沙箱）按需处理。多列一个「只存文件」的类型是刻意的。
  */
 
 /** 允许的扩展名（判定以此为准）。全小写、带点。 */
@@ -33,6 +33,8 @@ export const ATTACHMENT_EXTENSIONS = [
   ".csv",
   ".txt",
   ".ai",
+  ".dwg",
+  ".dxf",
   ".png",
   ".jpg",
   ".jpeg",
@@ -59,6 +61,16 @@ export const ATTACHMENT_MIME_TYPES = [
   "text/csv",
   "text/plain",
   "application/postscript",
+  // CAD：浏览器/OS 登记表很乱，扩展名优先；这些作无扩展名时的兜底
+  "application/dxf",
+  "application/x-dxf",
+  "image/vnd.dxf",
+  "application/acad",
+  "application/x-acad",
+  "application/autocad_dwg",
+  "application/dwg",
+  "application/x-dwg",
+  "drawing/dwg",
   "image/png",
   "image/jpeg",
   "image/gif",

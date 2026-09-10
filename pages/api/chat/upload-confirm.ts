@@ -62,6 +62,16 @@ function describeType(contentType: string | undefined, filename: string): string
   const mime = (contentType || "").toLowerCase();
   const name = (filename || "").toLowerCase();
 
+  // CAD 必须先于 image/*：部分系统给 .dxf 的 MIME 是 image/vnd.dxf，
+  // 若先走 startsWith("image/") 会错标成 Image（与扩展名不符）。
+  if (
+    name.endsWith(".dwg") ||
+    name.endsWith(".dxf") ||
+    mime.includes("dwg") ||
+    mime.includes("dxf") ||
+    mime.includes("acad")
+  )
+    return "CAD";
   if (mime.startsWith("image/")) return "Image";
   if (mime === "application/pdf" || name.endsWith(".pdf")) return "PDF";
   if (mime.includes("word") || name.endsWith(".docx") || name.endsWith(".doc")) return "Word";
