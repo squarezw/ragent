@@ -138,6 +138,8 @@ export function useFileAttachments() {
       if (lowerFilename.endsWith(".xls")) return "application/vnd.ms-excel";
       if (lowerFilename.endsWith(".txt")) return "text/plain";
       if (lowerFilename.endsWith(".ai")) return "application/postscript";
+      if (lowerFilename.endsWith(".dwg")) return "application/dwg";
+      if (lowerFilename.endsWith(".dxf")) return "application/dxf";
       // 图片也要走扩展名兜底：部分浏览器/系统对图片给不出 MIME，
       // 落到 octet-stream 就会被判成不支持而传不上来。
       if (lowerFilename.endsWith(".png")) return "image/png";

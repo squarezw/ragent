@@ -38,6 +38,8 @@ test("CSV 大写扩展名同样放行", () => {
 test("扩展名认得出就放行，不看 MIME", () => {
   assert.equal(isAllowedAttachment("图纸.ai", "application/octet-stream"), true);
   assert.equal(isAllowedAttachment("合同.pdf", ""), true);
+  assert.equal(isAllowedAttachment("线束.dwg", "application/octet-stream"), true);
+  assert.equal(isAllowedAttachment("topology.DXF", ""), true);
 });
 
 test("没有扩展名时用 MIME 兜底（拖拽粘贴的截图）", () => {
