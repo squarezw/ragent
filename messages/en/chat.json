@@ -119,5 +119,15 @@
   "previewMayNotEmbed": "This website may block embedded previews. You can open it in a new tab.",
   "openInNewTab": "Open in new tab",
   "closePreview": "Close preview",
-  "imageLoadFailed": "The image could not be loaded. Open it in a new tab."
+  "imageLoadFailed": "The image could not be loaded. Open it in a new tab.",
+  "dxfPreview": "Drawing preview",
+  "dxfLoading": "Loading drawing…",
+  "dxfFailed": "Could not load this drawing. The link may have expired or the format may be unsupported.",
+  "dxfFit": "Fit drawing",
+  "dxfLayers": "Layers",
+  "dxfNote": "2D preview. Fonts, dimensions and layouts may differ from CAD.",
+  "dxfEmpty": "No supported geometry found.",
+  "dxfDownload": "Downloading",
+  "dxfParse": "Preparing drawing",
+  "dxfOmitted": "Some hatch geometry could not be displayed."
 }

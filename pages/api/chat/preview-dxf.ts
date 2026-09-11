@@ -2,16 +2,16 @@ import { ossClient } from "@/lib/ossClient";
 import { requireAuth } from "@/lib/auth";
 import type { NextApiRequest, NextApiResponse } from "next";
 
-const MAX_HTML_BYTES = 25 * 1024 * 1024;
+const MAX_DXF_BYTES = 25 * 1024 * 1024;
 const COS_HOST_SUFFIX = ".cos.ap-shanghai.myqcloud.com";
 
 function isAllowedArtifactUrl(raw: string): URL | null {
   try {
     const url = new URL(raw);
     const hostAllowed = url.hostname.endsWith(COS_HOST_SUFFIX);
-    const pathAllowed = url.pathname.startsWith("/skill-artifacts/");
+    const pathAllowed = url.pathname.toLowerCase().endsWith(".dxf");
     const signed = Boolean(url.searchParams.get("X-Amz-Signature"));
-    const html = url.pathname.toLowerCase().endsWith(".html");
+    const html = url.pathname.toLowerCase().endsWith(".dxf");
     if (url.protocol !== "https:" || url.username || url.password || url.port || !hostAllowed || !pathAllowed || !signed || !html) {
       return null;
     }
@@ -36,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (typeof raw !== "string") return res.status(400).json({ error: "url is required" });
 
   let resolved = raw;
-  if (raw.startsWith("/api/oss/") && /\.html?$/i.test(raw)) {
+  if (raw.startsWith("/api/oss/") && /\.dxf$/i.test(raw)) {
     try { resolved = (await ossClient.sign({ objectKey: raw.slice(9) })).url; }
     catch { return res.status(502).json({ error: "artifact unavailable" }); }
   }
@@ -45,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const upstream = await fetch(target, {
-      headers: { Accept: "text/html" },
+      headers: { Accept: "application/dxf" },
       redirect: "error",
       signal: AbortSignal.timeout(30_000),
     });
@@ -54,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const contentLength = Number(upstream.headers.get("content-length") || 0);
-    if (contentLength > MAX_HTML_BYTES) {
+    if (contentLength > MAX_DXF_BYTES) {
       await upstream.body?.cancel();
       return res.status(413).json({ error: "artifact preview is too large" });
     }
@@ -67,14 +67,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > MAX_HTML_BYTES) {
+      if (received > MAX_DXF_BYTES) {
         await reader.cancel();
         return res.status(413).json({ error: "artifact preview is too large" });
       }
       chunks.push(value);
     }
     const body = Buffer.concat(chunks);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).send(body);

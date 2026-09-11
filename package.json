@@ -45,6 +45,7 @@
     "d3": "^7.9.0",
     "date-fns": "^3.6.0",
     "dotenv": "^17.0.0",
+    "dxf-viewer": "1.0.48",
     "fernet": "^0.3.3",
     "form-data": "^4.0.4",
     "formidable": "^3.5.4",

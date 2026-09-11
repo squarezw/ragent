@@ -1,5 +1,6 @@
 "use client";
 
+import DxfPreview from "./DxfPreview";
 import { ExternalLink, LoaderCircle, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ interface ResourcePreviewPanelProps {
 
 function getEmbedUrl(resource: PreviewResource): string {
   if (resource.kind !== "url") return resource.url;
+  if (resource.url.startsWith("/api/oss/")) return `/api/chat/preview-artifact?url=${encodeURIComponent(resource.url)}`;
   try {
     const url = new URL(resource.url);
     if (url.protocol === "https:" && url.hostname.endsWith(".cos.ap-shanghai.myqcloud.com") && url.pathname.startsWith("/skill-artifacts/") && url.pathname.toLowerCase().endsWith(".html") && url.searchParams.has("X-Amz-Signature")) {
@@ -69,7 +71,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const title = resource.kind === "image" ? t("imagePreview") : t("webPreview");
+  const title = resource.kind === "dxf" ? t("dxfPreview") : resource.kind === "image" ? t("imagePreview") : t("webPreview");
   const embedUrl = getEmbedUrl(resource);
 
   return (
@@ -113,7 +115,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0">
           <Dialog.Title className="font-semibold">{title}</Dialog.Title>
-          <p className="truncate text-xs text-muted-foreground">{new URL(resource.url).hostname}</p>
+          <p className="truncate text-xs text-muted-foreground">{new URL(resource.url, "https://local.invalid").hostname.replace("local.invalid", "")}</p>
         </div>
         <Button
           aria-label={t("closePreview")}
@@ -129,7 +131,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border bg-muted">
-          {resource.kind === "image" ? (
+          {resource.kind === "dxf" ? <DxfPreview key={resource.url} url={resource.url} /> : resource.kind === "image" ? (
             imageError ? (
               <p className="p-4 text-sm text-muted-foreground">{t("imageLoadFailed")}</p>
             ) : (

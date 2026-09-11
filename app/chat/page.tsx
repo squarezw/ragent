@@ -25,7 +25,7 @@ import { useMessageScroll } from "@/app/chat/hooks/useMessageScroll";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Attachment } from "./hooks/useFileAttachments";
 import type { TurnUsage } from "@/types/token-usage";
-import type { PreviewResource } from "@/lib/chatResourcePreview";
+import { attachmentPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
 
 interface Message {
   role: "user" | "assistant";
@@ -513,7 +513,11 @@ export default function ChatPage() {
                 segmentsLoading={segmentsLoading}
                 onOpenReferences={openReferencesDialog}
                 onPreviewFile={setPreviewFile}
-                onPreviewAttachment={handlePreviewAttachment}
+                onPreviewAttachment={(attachment) => {
+                  const resource = attachmentPreviewResource(attachment);
+                  if (resource) setPreviewResource(resource);
+                  else handlePreviewAttachment(attachment);
+                }}
                 onPreviewResource={setPreviewResource}
                 sendFeedback={sendFeedback}
                 messagesContainerRef={messagesContainerRef}
