@@ -1,0 +1,19 @@
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  width: min(100vw, max(420px, 38vw));
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--background));
+  border-left: 1px solid hsl(var(--border));
+  box-shadow: -8px 0 32px rgb(0 0 0 / 12%);
+  animation: enter 220ms ease-out;
+}
+.overlay { position: fixed; inset: 0; z-index: 59; background: rgb(0 0 0 / 8%); }
+.resizeHandle { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; z-index: 2; }
+.resizeHandle:hover, .resizeHandle:focus-visible { background: hsl(var(--primary) / 25%); outline: none; }
+@keyframes enter { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; } }

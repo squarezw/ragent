@@ -4,11 +4,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
+import { toPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
   highlightText?: string;
+  onPreviewResource?: (resource: PreviewResource) => void;
 }
 
 /**
@@ -44,6 +46,7 @@ export function MarkdownRenderer({
   content,
   className = "",
   highlightText,
+  onPreviewResource,
 }: MarkdownRendererProps) {
   if (!content) return null;
 
@@ -134,14 +137,44 @@ export function MarkdownRenderer({
               {renderWithHighlight(children)}
             </blockquote>
           ),
-          a: ({ node, ...props }) => (
+          a: ({ node, href, onClick, ...props }) => (
             <a
               className="text-blue-500 underline hover:text-blue-400"
-              target="_blank"
+              href={href}
+              onClick={(event) => {
+                const resource = toPreviewResource("url", href);
+                if (resource && onPreviewResource) {
+                  event.preventDefault();
+                  onPreviewResource(resource);
+                  return;
+                }
+                onClick?.(event);
+              }}
               rel="noopener noreferrer"
+              target="_blank"
               {...props}
             />
           ),
+          img: ({ node, src, alt, className: imageClassName, ...props }) => {
+            const resource = toPreviewResource("image", typeof src === "string" ? src : undefined, alt);
+            const image = (
+              // Chat content can reference arbitrary external image hosts, so it cannot use Next image optimization.
+              // biome-ignore lint/performance/noImgElement: external chat images need direct rendering
+              <img alt={alt || ""} className={imageClassName} src={src} {...props} />
+            );
+            if (!resource || !onPreviewResource) return image;
+
+            return (
+              <button
+                aria-label={alt || ""}
+                className="inline-block cursor-zoom-in"
+                onClick={() => onPreviewResource(resource)}
+                type="button"
+              >
+                {image}
+              </button>
+            );
+          },
           strong: ({ node, children, ...props }) => (
             <strong className="font-semibold" {...props}>
               {renderWithHighlight(children)}

@@ -109,5 +109,15 @@
   "tokenCached": "{count} cached",
   "insufficientBalance": "Insufficient balance. Ask an administrator to add credits to continue.",
   "activityRunning": "Working",
-  "activityDone": "Done"
+  "activityDone": "Done",
+  "resourcePreview": "Resource preview",
+  "previewRetry": "Retry preview",
+  "resizePreview": "Resize preview",
+  "imagePreview": "Image preview",
+  "webPreview": "Web preview",
+  "previewLoading": "Loading preview...",
+  "previewMayNotEmbed": "This website may block embedded previews. You can open it in a new tab.",
+  "openInNewTab": "Open in new tab",
+  "closePreview": "Close preview",
+  "imageLoadFailed": "The image could not be loaded. Open it in a new tab."
 }

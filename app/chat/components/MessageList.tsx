@@ -10,6 +10,7 @@ import { stripWorkflowRunStartedPrefix } from "@/hooks/useChatSession";
 import type { Attachment } from "@/app/chat/hooks/useFileAttachments";
 import type { TaskState } from "@/types/workflow-run";
 import type { TurnUsage } from "@/types/token-usage";
+import type { PreviewResource } from "@/lib/chatResourcePreview";
 
 function getFileIcon(mimetype?: string) {
   if (mimetype?.includes("pdf") || mimetype?.includes("PDF")) {
@@ -63,6 +64,7 @@ interface MessageListProps {
   toolSteps?: ToolStep[];
   /** Whether the turn is still streaming; drives the spinner and the timer. */
   toolsRunning?: boolean;
+  onPreviewResource: (resource: PreviewResource) => void;
 }
 
 export default function MessageList({
@@ -81,6 +83,7 @@ export default function MessageList({
   onCancelRun,
   toolSteps,
   toolsRunning,
+  onPreviewResource,
 }: MessageListProps) {
   const t = useTranslations("chat");
 
@@ -129,7 +132,7 @@ export default function MessageList({
             <div className="flex items-start gap-2 sm:gap-3 max-w-[95%] sm:max-w-[85%]">
               <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3">
                 <div className="whitespace-pre-line break-words">
-                  <MarkdownRenderer content={msg.content} />
+                  <MarkdownRenderer content={msg.content} onPreviewResource={onPreviewResource} />
                   {msg.attachments && msg.attachments.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {msg.attachments.map((attachment, index) => (
@@ -161,7 +164,10 @@ export default function MessageList({
               </div>
               <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 flex-1">
                 <div className="break-words">
-                  <MarkdownRenderer content={stripWorkflowRunStartedPrefix(msg.content)} />
+                  <MarkdownRenderer
+                    content={stripWorkflowRunStartedPrefix(msg.content)}
+                    onPreviewResource={onPreviewResource}
+                  />
                 </div>
                 <ReferencesDisplay
                   messageIndex={i}
@@ -241,7 +247,10 @@ export default function MessageList({
             </div>
             <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 flex-1">
               <div className="break-words">
-                <MarkdownRenderer content={stripWorkflowRunStartedPrefix(streamingMessage)} />
+                <MarkdownRenderer
+                  content={stripWorkflowRunStartedPrefix(streamingMessage)}
+                  onPreviewResource={onPreviewResource}
+                />
                 <span className="inline-flex items-center gap-1 ml-1 align-middle">
                   <span className="streaming-dot" />
                   <span className="streaming-dot" />
