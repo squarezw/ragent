@@ -109,5 +109,15 @@
   "tokenCached": "缓存命中 {count}",
   "insufficientBalance": "余额不足，请联系管理员为本租户充值后继续。",
   "activityRunning": "执行中",
-  "activityDone": "已完成"
+  "activityDone": "已完成",
+  "resourcePreview": "资源预览",
+  "previewRetry": "重新加载预览",
+  "resizePreview": "调整预览宽度",
+  "imagePreview": "图片预览",
+  "webPreview": "网页预览",
+  "previewLoading": "正在加载预览...",
+  "previewMayNotEmbed": "该网站可能拒绝在此嵌入。您可以在新标签页中打开它。",
+  "openInNewTab": "在新标签页打开",
+  "closePreview": "关闭预览",
+  "imageLoadFailed": "图片加载失败，请在新标签页中打开。"
 }

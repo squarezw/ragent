@@ -7,6 +7,7 @@ import ChatHeader from "@/app/chat/components/ChatHeader";
 import MessageList from "@/app/chat/components/MessageList";
 import HistoryDialog from "@/app/chat/components/HistoryDialog";
 import ReferencesDialog from "@/app/chat/components/ReferencesDialog";
+import ResourcePreviewPanel from "@/app/chat/components/ResourcePreviewPanel";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useChatHistory } from "@/hooks/useChatHistory";
@@ -24,6 +25,7 @@ import { useMessageScroll } from "@/app/chat/hooks/useMessageScroll";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Attachment } from "./hooks/useFileAttachments";
 import type { TurnUsage } from "@/types/token-usage";
+import type { PreviewResource } from "@/lib/chatResourcePreview";
 
 interface Message {
   role: "user" | "assistant";
@@ -69,6 +71,7 @@ export default function ChatPage() {
   const [currentMessageIndex, setCurrentMessageIndex] = useState<number>(-1);
   const [loadingHistorySession, setLoadingHistorySession] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [previewResource, setPreviewResource] = useState<PreviewResource | null>(null);
   const { setOpen: setSidebarOpen } = useSidebar();
 
   // Custom hooks
@@ -181,6 +184,7 @@ export default function ChatPage() {
     setStreamingMessage("");
     setIsStreaming(false);
     setToolSteps([]);
+    setPreviewResource(null);
     setChatId(0);
   }, [setChatId, setAttachments]);
 
@@ -430,6 +434,7 @@ export default function ChatPage() {
       }
 
       setMessages(historyMessages);
+      setPreviewResource(null);
       setHistoryOpen(false);
       setChatId(sessionId);
 
@@ -486,40 +491,45 @@ export default function ChatPage() {
         {showWelcomeView ? (
           <WelcomeView {...inputProps} />
         ) : (
-          <div
-            className={`flex flex-col h-full mx-auto px-1 sm:px-4 transition-all duration-300 ${
-              isFullscreen ? "max-w-6xl" : "max-w-4xl"
-            }`}
-          >
-            <ChatHeader
-              isFullscreen={isFullscreen}
-              onToggleFullscreen={toggleFullscreen}
-              onNewConversation={startNewConversation}
-            />
+          <div className="relative flex h-full w-full">
+            <div
+              className={`flex min-w-0 flex-1 flex-col mx-auto px-1 sm:px-4 transition-all duration-300 ${
+                isFullscreen ? "max-w-6xl" : "max-w-4xl"
+              }`}
+            >
+              <ChatHeader
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
+                onNewConversation={startNewConversation}
+              />
 
-            <MessageList
-              messages={messages}
-              streamingMessage={streamingMessage}
-              isStreaming={isStreaming}
-              toolSteps={toolSteps}
-              toolsRunning={isStreaming}
-              segments={segments}
-              segmentsLoading={segmentsLoading}
-              onOpenReferences={openReferencesDialog}
-              onPreviewFile={setPreviewFile}
-              onPreviewAttachment={handlePreviewAttachment}
-              sendFeedback={sendFeedback}
-              messagesContainerRef={messagesContainerRef}
-              messagesEndRef={messagesEndRef}
-              activeRuns={activeRuns}
-              onCancelRun={cancelRun}
-            />
+              <MessageList
+                messages={messages}
+                streamingMessage={streamingMessage}
+                isStreaming={isStreaming}
+                toolSteps={toolSteps}
+                toolsRunning={isStreaming}
+                segments={segments}
+                segmentsLoading={segmentsLoading}
+                onOpenReferences={openReferencesDialog}
+                onPreviewFile={setPreviewFile}
+                onPreviewAttachment={handlePreviewAttachment}
+                onPreviewResource={setPreviewResource}
+                sendFeedback={sendFeedback}
+                messagesContainerRef={messagesContainerRef}
+                messagesEndRef={messagesEndRef}
+                activeRuns={activeRuns}
+                onCancelRun={cancelRun}
+              />
 
-            {/* Bottom input area */}
-            <div className="flex-shrink-0 pb-4">
-              <ChatInputComposite {...inputProps} placeholder={t("placeholderReply")} />
-              <p className="text-xs text-muted-foreground mt-2 text-center">{t("aiDisclaimer")}</p>
+              <div className="flex-shrink-0 pb-4">
+                <ChatInputComposite {...inputProps} placeholder={t("placeholderReply")} />
+                <p className="text-xs text-muted-foreground mt-2 text-center">{t("aiDisclaimer")}</p>
+              </div>
             </div>
+            {previewResource && (
+              <ResourcePreviewPanel resource={previewResource} onClose={() => setPreviewResource(null)} />
+            )}
           </div>
         )}
       </div>
