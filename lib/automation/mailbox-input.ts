@@ -82,6 +82,44 @@ export type MailboxUpdateResolution = {
   cursorResetRequired: boolean;
 };
 
+/** PUT 请求体里允许出现的字段。 */
+const UPDATE_BODY_TEXT_FIELDS = [
+  "name",
+  "email",
+  "username",
+  "password",
+  "imapHost",
+  "folder",
+] as const;
+
+/**
+ * 从编辑（PUT）请求体里读出**真正出现过**的字段。
+ *
+ * 与创建路径相反：创建时缺失字段各有默认值，编辑时缺失字段表示"保留原值"。因此这里
+ * 不做任何补齐——尤其不能把缺失的 `password` 补成空串。当前"未提供"与"提供了空串"
+ * 都表示"不修改既有凭据"，但两者必须一路可区分：一旦中间层把它们抹平成同一个值，
+ * 未来的语义分叉（例如允许显式清空）就没有任何判断依据了。
+ */
+export function mailboxUpdateInputFromBody(body: unknown): MailboxConfigInput {
+  const source: Record<string, unknown> =
+    body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const input: MailboxConfigInput = {};
+
+  for (const field of UPDATE_BODY_TEXT_FIELDS) {
+    const value = source[field];
+    if (typeof value === "string") input[field] = value;
+  }
+
+  // 端口：数字与数字串都收；空串/null/undefined 视为"没提供"，保持原端口。
+  const imapPort = source.imapPort;
+  if (imapPort !== undefined && imapPort !== null && imapPort !== "") {
+    input.imapPort = Number(imapPort);
+  }
+  if (typeof source.imapSecure === "boolean") input.imapSecure = source.imapSecure;
+
+  return input;
+}
+
 /**
  * 编辑语义：把请求里**出现过的**字段覆盖到既有配置上，未出现的字段保留原值。
  *

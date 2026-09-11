@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  mailboxUpdateInputFromBody,
   normalizeMailboxConfig,
   resolveMailboxUpdate,
   type MailboxConfig,
@@ -163,4 +164,35 @@ test("创建路径: 缺少密码或主机时拒绝，不静默补默认值", () 
     () => normalizeMailboxConfig({ email: "sales@corp.com", password: "code", imapHost: " " }),
     /MAILBOX_IMAP_HOST_REQUIRED/
   );
+});
+
+test("编辑请求体: 只收下出现过的字段，缺口不补默认值（否则只改密码会顺带改写主机/文件夹）", () => {
+  const input = mailboxUpdateInputFromBody({ password: "new-code" });
+
+  assert.deepEqual(Object.keys(input), ["password"]);
+});
+
+test("编辑请求体: 密码「未提供」与「空串」必须能区分——前者不下发该字段，后者原样下发", () => {
+  assert.deepEqual(mailboxUpdateInputFromBody({ name: "改名" }), { name: "改名" });
+  assert.deepEqual(mailboxUpdateInputFromBody({ name: "改名", password: "" }), {
+    name: "改名",
+    password: "",
+  });
+});
+
+test("编辑请求体: 端口数字与数字串都收，空串/null 视为未提供；非数字留给服务端报 400", () => {
+  assert.equal(mailboxUpdateInputFromBody({ imapPort: 143 }).imapPort, 143);
+  assert.equal(mailboxUpdateInputFromBody({ imapPort: "143" }).imapPort, 143);
+  assert.equal("imapPort" in mailboxUpdateInputFromBody({ imapPort: "" }), false);
+  assert.equal("imapPort" in mailboxUpdateInputFromBody({ imapPort: null }), false);
+  assert.equal(Number.isNaN(mailboxUpdateInputFromBody({ imapPort: "abc" }).imapPort), true);
+});
+
+test("编辑请求体: imapSecure 只收布尔；非文本字段与非法 body 一律忽略", () => {
+  assert.deepEqual(mailboxUpdateInputFromBody({ imapSecure: false }), { imapSecure: false });
+  assert.equal("imapSecure" in mailboxUpdateInputFromBody({ imapSecure: "false" }), false);
+  assert.deepEqual(mailboxUpdateInputFromBody({ name: 123, email: null }), {});
+  assert.deepEqual(mailboxUpdateInputFromBody(null), {});
+  assert.deepEqual(mailboxUpdateInputFromBody("not-an-object"), {});
+  assert.deepEqual(mailboxUpdateInputFromBody(undefined), {});
 });
