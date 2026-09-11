@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { DxfViewer } from "dxf-viewer";
+import { visibleDxfColor } from "@/lib/dxfPreviewColors";
 import { Button } from "@/components/ui/button";
 
 export default function DxfPreview({ url }: { url: string }) {
@@ -30,7 +31,12 @@ export default function DxfPreview({ url }: { url: string }) {
       try {
         const { DxfViewer } = await import("dxf-viewer");
         if (disposed || !host.current) return;
-        instance = new DxfViewer(host.current, { autoResize: true });
+        class ReadableDxfViewer extends DxfViewer {
+          _TransformColor(color: number) {
+            return visibleDxfColor(super._TransformColor(color));
+          }
+        }
+        instance = new ReadableDxfViewer(host.current, { autoResize: true });
         viewer.current = instance;
         await instance.Load({
           url: `/api/chat/preview-dxf?url=${encodeURIComponent(url)}`,
