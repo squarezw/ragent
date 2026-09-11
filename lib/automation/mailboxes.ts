@@ -5,6 +5,7 @@ import {
   encryptMailboxPassword,
 } from "@/lib/automation/mailbox-credentials";
 import { mailboxLabelFromRow } from "@/lib/automation/mailbox-id";
+import { mailboxErrorText } from "@/lib/automation/mailbox-health";
 import {
   normalizeMailboxConfig,
   resolveMailboxUpdate,
@@ -32,7 +33,12 @@ export type AutomationMailboxUpdateInput = MailboxConfigInput;
 
 let mailboxInitPromise: Promise<void> | null = null;
 
-async function ensureAutomationMailboxTable() {
+/**
+ * 建表（幂等）。导出供 `store.ts` 的提醒派生使用：那种情况下要先按 `status='error'`
+ * 查这张表，而"表还不存在"（本模块从未被调用过）不能变成一次 500。
+ * 已存在的旧表补列在 `ensureAutomationTables()`（模块 E.1）里，不在这里重复。
+ */
+export async function ensureAutomationMailboxTable() {
   if (mailboxInitPromise) return mailboxInitPromise;
 
   mailboxInitPromise = pool.query(`
@@ -49,6 +55,8 @@ async function ensureAutomationMailboxTable() {
       imap_secure BOOLEAN NOT NULL DEFAULT TRUE,
       folder VARCHAR(255) NOT NULL DEFAULT 'INBOX',
       status VARCHAR(20) NOT NULL DEFAULT 'connected',
+      last_error TEXT,
+      last_error_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(created_by_user_id, email)
@@ -143,6 +151,10 @@ export function mailboxRowToApi(row: any) {
     imapSecure: row.imap_secure !== false,
     folder: row.folder || "INBOX",
     status: row.status || "connected",
+    // 模块 E.1：连接失败的原因与时间。列表接口是抽屉「状态徽标 + 最后错误」的唯一数据源，
+    // 因此这两列必须在这里露面——列有了但接口不下发，抽屉就永远显示"无"。
+    lastError: row.last_error || undefined,
+    lastErrorAt: row.last_error_at || undefined,
     label: mailboxLabelFromRow(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
@@ -180,6 +192,8 @@ export async function createAutomationMailbox(userId: number, input: AutomationM
       imap_secure=EXCLUDED.imap_secure,
       folder=EXCLUDED.folder,
       status='connected',
+      last_error=NULL,
+      last_error_at=NULL,
       updated_at=NOW()
     RETURNING *`,
     [
@@ -207,6 +221,56 @@ export async function getAutomationMailboxForUser(userId: number, mailboxId: num
     [mailboxId, userId],
   );
   return result.rows[0] || null;
+}
+
+/**
+ * 模块 E.1：把邮箱标记为连接失败，并记下原因与时间。
+ *
+ * 这是「一次写入、三处亮起」的那一次写入——抽屉的状态徽标、抽屉的「最后错误」、
+ * 通知中心里按 `status='error'` 派生的那条提醒，都来自这一行。
+ *
+ * **本函数不抛错**（失败只记日志）：它记录的是一个已经发生的失败，绝不能反过来把调用方
+ * 手里那个原始错误盖掉，或让调度器的错误处理多出一条无关的堆栈。
+ */
+export async function markAutomationMailboxConnectionError(
+  userId: number,
+  mailboxId: number,
+  error: unknown,
+) {
+  const message = mailboxErrorText(error instanceof Error ? error.message : error) || "邮箱连接失败";
+
+  try {
+    await ensureAutomationMailboxTable();
+    await pool.query(
+      `UPDATE automation_mailboxes
+         SET status='error', last_error=$3, last_error_at=NOW(), updated_at=NOW()
+       WHERE id=$1 AND created_by_user_id=$2`,
+      [mailboxId, userId, message],
+    );
+  } catch (recordError) {
+    console.error("[Automation Mailboxes] failed to record connection error:", recordError);
+  }
+}
+
+/**
+ * 模块 E.1：连接成功时恢复为 `connected` 并清掉上次的错误记录。
+ *
+ * 只在"当前不是 connected"时才该被调用（调度器按已取到的行判断），因此正常轮询——
+ * 每 10 秒一次——不产生任何写库；这里的 `status <> 'connected'` 只是并发下的兜底。
+ * 与写入同一个道理：恢复状态是副作用，不能让它把一次成功的轮询变成失败。
+ */
+export async function markAutomationMailboxConnected(userId: number, mailboxId: number) {
+  try {
+    await ensureAutomationMailboxTable();
+    await pool.query(
+      `UPDATE automation_mailboxes
+         SET status='connected', last_error=NULL, last_error_at=NULL, updated_at=NOW()
+       WHERE id=$1 AND created_by_user_id=$2 AND status <> 'connected'`,
+      [mailboxId, userId],
+    );
+  } catch (error) {
+    console.error("[Automation Mailboxes] failed to mark mailbox connected:", error);
+  }
 }
 
 export function mailboxConnectionFromRow(row: any) {
@@ -264,7 +328,7 @@ export async function updateAutomationMailbox(
     `UPDATE automation_mailboxes SET
        name=$3, email=$4, username=$5, password_ciphertext=$6,
        imap_host=$7, imap_port=$8, imap_secure=$9, folder=$10,
-       status='connected', updated_at=NOW()
+       status='connected', last_error=NULL, last_error_at=NULL, updated_at=NOW()
      WHERE id=$1 AND created_by_user_id=$2
      RETURNING *`,
     [

@@ -6,7 +6,12 @@ import {
   requireMailboxId,
 } from "@/lib/automation/mailbox-id";
 import { mailRulesBriefSummary } from "@/lib/automation/mail-rules";
-import { getAutomationMailboxForUser } from "@/lib/automation/mailboxes";
+import {
+  ensureAutomationMailboxTable,
+  getAutomationMailboxForUser,
+} from "@/lib/automation/mailboxes";
+import { mailboxErrorNotificationItems } from "@/lib/automation/mailbox-health";
+import { emailProcessedRetentionCutoff } from "@/lib/automation/retention";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
 export type AutomationTriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
@@ -78,6 +83,24 @@ export async function ensureAutomationTables() {
           ELSE
             RAISE EXCEPTION 'automation_email_rule_events 仍含旧列 mailbox_key 且表中已有数据，请先清空该表后再启动';
           END IF;
+        END IF;
+      END $$;
+
+      -- 模块 E.1：邮箱连接状态与最后错误。automation_mailboxes 里可能已有真实数据，
+      -- 因此只能加列、不能像上面三张邮件表那样重建。
+      --
+      -- 两个细节都是必须的：
+      -- 1. 外层先判断表存在。这张表由 mailboxes.ts 按需建（本函数不建它），首次部署时
+      --    完全可能还不存在；那时裸跑 ALTER 会以 42P01 失败，而本函数失败后会重置
+      --    initPromise（见文件末尾的 catch），于是每一次 store 调用都重跑整段并再次失败。
+      -- 2. ADD COLUMN IF NOT EXISTS：本函数每次 store 调用都会执行，语句必须可重复执行。
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema = current_schema()
+                     AND table_name = 'automation_mailboxes') THEN
+          ALTER TABLE automation_mailboxes ADD COLUMN IF NOT EXISTS last_error TEXT;
+          ALTER TABLE automation_mailboxes ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ;
         END IF;
       END $$;
 
@@ -2039,6 +2062,30 @@ export async function claimAutomationEmailMessage(
   return result.rows.length > 0;
 }
 
+/**
+ * 模块 E.4：清理邮件去重表中的过期行（保留 30 天，随调度器每天执行一次）。
+ *
+ * 为什么删旧去重行是安全的（推理见 `lib/automation/retention.ts` 的模块注释）：一行去重记录的
+ * 唯一作用是"这封邮件已被处理过"，它只需要活到该邮件的 UID 落到游标高水位以下——游标在处理完
+ * 该邮件后立刻推进，所以正常情况这个窗口只有几秒；30 天是给"游标被 D.4 打回重来"的宽裕余量。
+ * 反方向也不会出问题：`saveAutomationEmailMailboxCursor` 用 `GREATEST` 写游标，高水位只会前进，
+ * 调度器不会回看早于基线的邮件，因此去重行消失不会让历史邮件被重新处理（唯一能让游标倒退的
+ * 显式重置，之后也会先重建基线、不处理历史）。
+ *
+ * 保留期在 JS 里算好当参数传下去（而不是写 `INTERVAL '30 days'`），这样"保留多少天"是可测的。
+ */
+export async function cleanupAutomationEmailProcessedMessages(now: Date = new Date()) {
+  await ensureAutomationTables();
+
+  const result = await pool.query(
+    `DELETE FROM automation_email_processed_messages
+     WHERE created_at < $1`,
+    [emailProcessedRetentionCutoff(now)]
+  );
+
+  return result.rowCount ?? 0;
+}
+
 export type AutomationEmailRuleOutcome =
   | "triggered"
   | "suppressed_by_priority"
@@ -2224,6 +2271,10 @@ function clipNotificationError(value: unknown) {
 export async function listAutomationNotifications(userId: number) {
   const { initializedAt, successEnabled } = await getAutomationNotificationInitializedAt(userId);
 
+  // 邮箱记录表由 mailboxes.ts 按需创建，本函数可能先于它被调用（自动化页同时拉两个接口），
+  // 因此这里显式保证它存在，而不是让下面那段查询以 42P01 把整个提醒接口打成 500。
+  await ensureAutomationMailboxTable();
+
   const runResult = await pool.query(
     `SELECT id, automation_id, automation_name, status, action_status, ai_version,
             error, started_at, created_at, updated_at, finished_at,
@@ -2257,7 +2308,39 @@ export async function listAutomationNotifications(userId: number) {
     [userId, initializedAt]
   );
 
-  const items: AutomationNotificationItem[] = [];
+  /*
+   * 模块 E.2：第三段派生——监听邮箱连接失败。
+   *
+   * 为什么是"派生"而不是"插入一条通知"：邮箱连接失败发生在建 Run 之前，`automation_runs`
+   * / `automation_run_actions` 里什么都没有，没有 run 记录可派生；系统邮箱下线后每个邮箱
+   * 都有 `automation_mailboxes` 行，所以这张表本身就是健康状态的唯一事实来源，不需要
+   * （也不该有）第二张健康状态表。
+   *
+   * 只取 `status='error'`：因此"邮箱恢复 → 提醒自动消失"是结构性的，不需要任何"已解决"
+   * 状态；而 eventKey 固定为 `mailbox-error:<mailboxId>`（见 mailboxErrorEventKey），
+   * 同一个邮箱反复失败也只是同一条提醒，不会越滚越多。
+   *
+   * 刻意**不**按 initializedAt 过滤：那一段时间窗是为了不把历史运行/失败在用户第一次打开
+   * 通知中心时一次性倒出来，而这里取的是"当前状态"——邮箱现在就是坏的，什么时候开始坏的
+   * 并不影响用户该看到它。
+   */
+  const mailboxErrorResult = await pool.query(
+    `SELECT id, name, email, last_error, last_error_at
+     FROM automation_mailboxes
+     WHERE created_by_user_id=$1 AND status='error'
+     ORDER BY last_error_at DESC NULLS LAST, id DESC
+     LIMIT 50`,
+    [userId]
+  );
+
+  const items: AutomationNotificationItem[] = mailboxErrorNotificationItems(
+    mailboxErrorResult.rows.map((row) => ({
+      mailboxId: Number(row.id),
+      label: mailboxLabelFromRow(row),
+      error: row.last_error,
+      errorAt: row.last_error_at,
+    }))
+  );
 
   for (const row of runResult.rows) {
     const runId = Number(row.id);

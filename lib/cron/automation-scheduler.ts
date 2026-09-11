@@ -6,6 +6,7 @@ import { executeRunActions } from "@/lib/automation/actions";
 import {
   claimAutomationEmailMessage,
   claimDueScheduledRun,
+  cleanupAutomationEmailProcessedMessages,
   createRun,
   ensureAutomationTables,
   finishRun,
@@ -20,6 +21,8 @@ import {
 import {
   getAutomationMailboxForUser,
   mailboxConnectionFromRow,
+  markAutomationMailboxConnected,
+  markAutomationMailboxConnectionError,
 } from "@/lib/automation/mailboxes";
 import {
   mailboxGroupKey,
@@ -42,6 +45,8 @@ declare global {
   var automationEmailCronTask: ScheduledTask | undefined;
   // eslint-disable-next-line no-var
   var automationEmailCronBusy: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var automationEmailCleanupTask: ScheduledTask | undefined;
 }
 
 const ADVISORY_LOCK_NAMESPACE = 20260903;
@@ -236,11 +241,28 @@ async function fetchConfiguredMailboxUnread(
   const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
   if (!mailbox) throw new Error(`监听邮箱不存在：${mailboxId}`);
 
-  return fetchMailboxUnread({
-    authorization: serverAuthorization(userId),
-    afterUid,
-    connection: mailboxConnectionFromRow(mailbox),
-  });
+  try {
+    // 解密失败（凭据被换过密钥、授权码被清空）与 IMAP 连不上在这里是同一件事：
+    // 这条邮箱管道这次收信失败了，用户看到的都该是"邮箱连接失败"。
+    const data = await fetchMailboxUnread({
+      authorization: serverAuthorization(userId),
+      afterUid,
+      connection: mailboxConnectionFromRow(mailbox),
+    });
+
+    // 模块 E.1：连上了就恢复状态。只在"当前不是 connected"时才写库——正常轮询（每 10 秒一次）
+    // 不产生任何写入；判断用的是上面取到的那一行，省掉一次查询。
+    if (mailbox.status !== "connected") {
+      await markAutomationMailboxConnected(userId, mailboxId);
+    }
+
+    return data;
+  } catch (error) {
+    // 模块 E.1/E.2：一次写入点亮三处（抽屉徽标、抽屉的「最后错误」、通知中心里按
+    // status='error' 派生的那条提醒）。记录失败不抛错，原始错误照旧往上抛给分组层的日志。
+    await markAutomationMailboxConnectionError(userId, mailboxId, error);
+    throw error;
+  }
 }
 
 async function executeEmailAutomation(task: any, message: InboxMessage) {
@@ -484,6 +506,20 @@ export async function scanEmailAutomations() {
   }
 }
 
+/**
+ * 模块 E.4：去重表保留期清理（每次执行都幂等——一条按 `created_at` 截止的 DELETE）。
+ *
+ * 失败只记日志：这是维护动作，不该影响邮件扫描本身；下一次执行会补上。
+ */
+async function runAutomationEmailRetentionCleanup() {
+  try {
+    const removed = await cleanupAutomationEmailProcessedMessages();
+    console.log(`[Automation Email] dedup retention cleanup: ${removed} row(s) removed`);
+  } catch (error) {
+    console.error("[Automation Email] dedup retention cleanup failed:", error);
+  }
+}
+
 export async function initAutomationScheduler() {
   await ensureAutomationTables();
 
@@ -505,5 +541,16 @@ export async function initAutomationScheduler() {
     console.log("[Automation Email] scheduler initialized (every 10 seconds)");
   } else {
     console.log("[Automation Email] scheduler already initialized");
+  }
+
+  // 模块 E.4：去重表清理，每天一次。与上面两个扫描任务同一套做法（同一个 node-cron、
+  // 同样的 global 句柄防重复初始化），不另起计时器；启动时也跑一次，保证进程活不到每天那个
+  // 时刻（频繁重启的部署）也总有机会清理——清理语句幂等，多跑一次没有副作用。
+  if (!global.automationEmailCleanupTask) {
+    await runAutomationEmailRetentionCleanup();
+    global.automationEmailCleanupTask = cron.schedule("0 3 * * *", () => {
+      void runAutomationEmailRetentionCleanup();
+    });
+    console.log("[Automation Email] dedup retention cleanup initialized (daily at 03:00)");
   }
 }
