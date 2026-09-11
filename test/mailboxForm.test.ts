@@ -10,6 +10,7 @@ import {
   EMPTY_MAILBOX_FORM,
   firstMailboxFormIssue,
   mailboxCreatePayload,
+  mailboxUpdatePayload,
   type MailboxFormState,
 } from "../lib/automation/mailbox-form.ts";
 
@@ -87,4 +88,35 @@ test("新建请求体: 文本字段去空格，端口与文件夹回落默认值
 test("新建请求体: 名称留空时下发空串，由服务端回落到邮箱地址", () => {
   assert.equal(mailboxCreatePayload(form({ name: "" })).name, "");
   assert.equal(mailboxCreatePayload(form({ name: " 销售部邮箱 " })).name, "销售部邮箱");
+});
+
+test("编辑表单校验: 密码可留空（留空表示不修改凭据），其余必填项照旧", () => {
+  assert.equal(firstMailboxFormIssue(form({ password: "" }), { passwordOptional: true }), null);
+  assert.equal(
+    firstMailboxFormIssue(form({ password: "", imapHost: "" }), { passwordOptional: true }),
+    "imapHost"
+  );
+  assert.equal(
+    firstMailboxFormIssue(form({ password: "", imapPort: "0" }), { passwordOptional: true }),
+    "imapPort"
+  );
+});
+
+test("编辑请求体: 密码留空时下发空串（而不是省略字段），由服务端理解为保留原值", () => {
+  const payload = mailboxUpdatePayload(form({ password: "" }));
+
+  assert.equal("password" in payload, true);
+  assert.equal(payload.password, "");
+});
+
+test("编辑请求体: 填写了密码时原样下发，不做 trim", () => {
+  assert.equal(mailboxUpdatePayload(form({ password: " code " })).password, " code ");
+});
+
+test("编辑请求体: 其余字段与新建请求体一致", () => {
+  const state = form({ name: " 销售部邮箱 ", imapPort: "143", folder: " Alerts " });
+  const { password, ...rest } = mailboxUpdatePayload(state);
+
+  assert.equal(password, "auth-code");
+  assert.deepEqual(rest, mailboxCreatePayload({ ...state, password: "" }));
 });

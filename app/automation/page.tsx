@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useLocale } from "next-intl";
@@ -8,6 +8,7 @@ import {
   Bell,
   Clock3,
   Mail,
+  Settings2,
   Webhook,
   GitBranch,
   LayoutGrid,
@@ -18,6 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import MailboxManager from "./components/MailboxManager";
 import {
   MAIL_RULE_FIELDS,
   MAIL_RULE_OPERATORS,
@@ -531,6 +533,7 @@ export default function AutomationPage() {
   const [mailboxFormIssue, setMailboxFormIssue] = useState<MailboxFormIssue | null>(null);
   const [mailboxSaveError, setMailboxSaveError] = useState("");
   const [mailboxTesting, setMailboxTesting] = useState(false);
+  const [mailboxManagerOpen, setMailboxManagerOpen] = useState(false);
   const [mailRuleMode, setMailRuleMode] = useState<MailRuleMode>("all");
   const [mailRules, setMailRules] = useState<MailTriggerRule[]>([]);
   const [mailPriority, setMailPriority] = useState(50);
@@ -831,39 +834,38 @@ export default function AutomationPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let alive = true;
+  /**
+   * 监听邮箱列表：供向导内联选择/配置使用。一条都没有（或列表拉取失败）时直接
+   * 展开内联表单，避免用户卡在"没有邮箱可选"的空状态。
+   *
+   * 同时暴露给邮箱管理抽屉：抽屉里改密码/删除后回拉一次，向导的下拉才不会停留在旧名单上
+   * （页面的名单只在挂载时拉取一次，见 `mailboxSelectionUnresolved` 对"查不到"的处理）。
+   */
+  const loadMailboxOptions = useCallback(async () => {
+    try {
+      const response = await axios.get("/api/v1/automation-mailboxes");
+      const items = Array.isArray(response.data?.items)
+        ? (response.data.items as MailboxOption[])
+        : [];
 
-    // 监听邮箱列表：供向导内联选择/配置使用。一条都没有（或列表拉取失败）时直接
-    // 展开内联表单，避免用户卡在"没有邮箱可选"的空状态。
-    async function loadMailboxOptions() {
-      try {
-        const response = await axios.get("/api/v1/automation-mailboxes");
-        const items = Array.isArray(response.data?.items)
-          ? (response.data.items as MailboxOption[])
-          : [];
-        if (!alive) return;
-
-        setMailboxes(items);
-        // 已有选择原样保留（查不到时由 mailboxSelectionUnresolved 让用户重选），
-        // 只有还没选择过才用名单第一条作默认值。
-        setMailboxId((current) => defaultMailboxSelection(current, items));
-        // 名单为空必须展开表单（空状态不是死路）；名单非空时不改写此前的展开状态，
-        // 那可能是用户点的"配置新邮箱"，也可能是遗留行要求重选。
-        if (items.length === 0) setMailboxFormOpen(true);
-      } catch (error) {
-        console.error("加载监听邮箱列表失败:", error);
-        if (alive) setMailboxFormOpen(true);
-      } finally {
-        if (alive) setMailboxesLoaded(true);
-      }
+      setMailboxes(items);
+      // 已有选择原样保留（查不到时由 mailboxSelectionUnresolved 让用户重选），
+      // 只有还没选择过才用名单第一条作默认值。
+      setMailboxId((current) => defaultMailboxSelection(current, items));
+      // 名单为空必须展开表单（空状态不是死路）；名单非空时不改写此前的展开状态，
+      // 那可能是用户点的"配置新邮箱"，也可能是遗留行要求重选。
+      if (items.length === 0) setMailboxFormOpen(true);
+    } catch (error) {
+      console.error("加载监听邮箱列表失败:", error);
+      setMailboxFormOpen(true);
+    } finally {
+      setMailboxesLoaded(true);
     }
-
-    loadMailboxOptions();
-    return () => {
-      alive = false;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadMailboxOptions();
+  }, [loadMailboxOptions]);
 
   useEffect(() => {
     let alive = true;
@@ -2372,6 +2374,16 @@ export default function AutomationPage() {
           </div>
 
           <button
+            type="button"
+            onClick={() => setMailboxManagerOpen(true)}
+            className="inline-flex h-10 items-center gap-1.5 rounded-md border bg-background px-3 text-sm text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+            title={tt("邮箱管理", "Mailbox management")}
+          >
+            <Settings2 className="h-4 w-4" />
+            {tt("邮箱管理", "Mailbox management")}
+          </button>
+
+          <button
             onClick={openCreateDialog}
             className="rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
           >
@@ -2379,6 +2391,12 @@ export default function AutomationPage() {
           </button>
         </div>
       </div>
+
+      <MailboxManager
+        open={mailboxManagerOpen}
+        onClose={() => setMailboxManagerOpen(false)}
+        onMailboxesChanged={loadMailboxOptions}
+      />
 
       <div className="mt-7 flex gap-7 border-b">
         <button
