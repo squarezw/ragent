@@ -7,20 +7,24 @@
 
 邮件触发的执行链路（服务端调度器每 10 秒轮询邮箱 → 规则匹配 → 优先级竞争 → 去重 → 调用数字员工 → 策略分叉）**已经跑通**，但存在两类问题：
 
-1. **能力已在后端、用户够不着**：自定义监听邮箱的后端（加密存储、真实 IMAP 连接验证、依赖检查删除）已完整实现，但前端完全没有入口，自动化向导写死"系统邮箱"；系统邮箱的 IMAP 配置在平台内完全不可见。
+1. **能力已在后端、用户够不着**：自定义监听邮箱的后端（加密存储、真实 IMAP 连接验证、依赖检查删除）已完整实现，但前端完全没有入口，自动化向导写死"系统邮箱"，用户无法配置自己的监听邮箱。
 2. **已知缺陷**：服务端零校验、前端冲突检测未按邮箱隔离、连接失败无告警、匹配逻辑双份维护、存在死代码。
 
-本方案让用户在**创建自动化时直接配置监听邮箱**，把系统邮箱纳入平台系统设置，并修复上述缺陷。
+本方案让用户在**创建自动化时直接配置监听邮箱**，并**下线"系统邮箱"这一共享概念**（已确认决策），同时修复上述缺陷。
+
+**关键收益**：系统邮箱退场后，每个邮箱都归属于唯一用户，分组键 `${userId}:${mailboxKey}` 不再可能跨用户碰撞——彻底消除了"同一封邮件被多个用户各自处理"的重复触发风险，且**不再需要 ragent-service 配合开发**（原方案的最大外部依赖）。
 
 ## 二、范围
 
 **纳入**：
 - 向导 step 2 内联配置监听邮箱（主路径）
 - 自动化页轻量邮箱管理入口（改密码 / 删除 / 看状态）
-- 系统设置新增 IMAP 收信配置（需 ragent-service 配合）
+- **系统邮箱下线** + 存量自动化迁移
 - 服务端校验、冲突检测隔离、连接失败告警、规则逻辑去重、死代码清理
 
 **不纳入（YAGNI）**：
+- 系统设置页的 IMAP 收信配置（随系统邮箱退场一并取消）
+- **SMTP 发信配置保持不动**：系统设置里的 `smtp_config` 用于发送结果通知邮件（`/api/v1/email/send`），与 IMAP 收信无关，本次不改
 - 附件内容解析后传给 AI（现状只传附件名）
 - 部门/角色级邮箱共享（已确认：仅创建者本人）
 - 调度器多实例分布式锁（DB 唯一约束已防重复触发）
@@ -42,38 +46,62 @@
 | 创建邮箱接口保存前**真实连接 IMAP 验证**，失败即 400 | `pages/api/v1/automation-mailboxes/index.ts:52-63` |
 | 前端冲突检测与规则测试**未按邮箱隔离** | `page.tsx:663-681`、`683-754` |
 | `triggerDetail` 硬编码"系统邮箱" | `page.tsx:1292-1299`、`1101-1105` |
-| 系统设置 SMTP 密码**明文回传前端** | `system-settings/page.tsx:195` |
+| 邮件模板描述写死"系统邮箱收到新邮件" | `page.tsx:387`、`411` |
+| 系统设置 SMTP 密码**明文回传前端**（本次不修改，仅记录） | `system-settings/page.tsx:195` |
 | 测试基建：`node --experimental-strip-types --test test/*.test.ts`，测试直接 import lib 纯函数 | `package.json:11`、`test/chatSse.test.ts` |
+
+### 系统邮箱的完整触点清单（下线范围）
+
+| 位置 | 内容 |
+|---|---|
+| `automation-scheduler.ts:299-317` | `fetchSystemMailboxUnread`（调 `/api/v1/email/unread`） |
+| `automation-scheduler.ts:324` | `if (mailboxKey === "system")` 分支 |
+| `automation-scheduler.ts:357,376,377,456,554,567` | `"系统邮箱"` / `"system"` 兜底值 |
+| `store.ts:725-726,875-876` | 创建/更新时的 `"system"` / `"系统邮箱"` 默认值 |
+| `store.ts:1965,2011,2556,2580` | 底层函数的 `\|\| "system"` 兜底 |
+| `store.ts:2412,2469-2470` | 展示层兜底标签 |
+| `page.tsx:628,1105,1296,1298,1349-1350` | 写死的 `mailboxKey`/`mailboxLabel` |
+| `page.tsx:3020-3059` | 向导的"固定监听系统邮箱"卡片 |
+| `page.tsx:3762` | 运行详情邮箱显示兜底 |
+| `page.tsx:387,411` | 模板文案 |
+| `pages/api/v1/automation-email/claim.ts:15` | HTTP 端点的 `"system"` 兜底（该端点本身是死代码） |
+
+**下线后 `/api/v1/email/unread` 在本仓库将无任何调用方**（已核实仅 `check-email.ts` 与调度器 system 分支调用，两者都删）。ragent-service 侧该端点可保留，本平台不再调用。
 
 ## 四、模块设计
 
-### 模块 A：系统邮箱 IMAP 配置（系统设置页）
+### 模块 A：系统邮箱下线与迁移
 
-系统邮箱是平台级共享邮箱，由超管维护，沿用现有 SMTP 配置的形态与权限模型。
+由于系统邮箱退场是**破坏性变更**，必须保证存量用户不静默失效。
 
-**ragent-service 侧（外部依赖，需配合）**：
-1. system settings 对象新增 `imap_config` 字段（`IMAP_HOST` / `IMAP_PORT` / `IMAP_USERNAME` / `IMAP_PASSWORD` / `IMAP_USE_SSL` / `IMAP_FOLDER`），与现有 `smtp_config` 对称。
-2. `/api/v1/email/unread` 改为读取该配置。
-3. 新增 IMAP 连接测试端点。
+1. **存量迁移**（在 `ensureAutomationTables()` 中追加一次性迁移 SQL，与现有 `ALTER TABLE ... IF NOT EXISTS` 的迁移惯例一致）：
 
-**本仓库**：
-- `app/system-settings/page.tsx`：在现有 SMTP 卡片旁新增"系统邮箱（IMAP 收信）" `CollapsibleCard`，含字段表单 + 保存 + "测试连接"按钮。保存复用现有 `PUT /api/system` 代理透传 `imap_config`。
-- `pages/api/system/index.ts`：透传 `imap_config`（与 `smtp_config` 同样处理）。
-- 新增 `pages/api/system/test-imap.ts`（转发 ragent-service 测试端点，需 super admin 校验）。
+```sql
+UPDATE automation_tasks
+SET status='paused', updated_at=NOW()
+WHERE trigger_type='邮件触发'
+  AND status='running'
+  AND trigger_config->>'mailboxKey' = 'system';
+```
 
-**安全要求（不照抄 SMTP 的既有缺陷）**：
-- 密码字段**只写**：接口只返回 `hasPassword` 布尔值，不回传密码明文。
-- 表单密码留空 = 不修改原值。
+该语句天然幂等（执行后不再有 running 的 system 任务）。
 
-**权限**：沿用页面现有 `checkSuperAdmin`。
+2. **用户可见提示**：暂停是静默的，必须让用户知道原因。
+   - 自动化列表卡片 / 详情抽屉：对 `mailboxKey === 'system'` 的任务显示醒目提示条「系统邮箱已下线，请重新配置监听邮箱」+「立即配置」按钮（直接打开向导 step 2）。
+   - 存量任务被暂停后状态徽标显示"已暂停"，配合上述提示条解释原因。
+
+3. **拒绝新建/更新为 system**：`mailboxKey` 不再接受 `"system"`，返回明确错误「系统邮箱已下线，请配置监听邮箱」。
+
+4. **代码清理**：删除 `fetchSystemMailboxUnread` 与 `mailboxKey === "system"` 分支；`fetchConfiguredMailboxUnread` 简化为唯一路径。所有 `|| "system"` / `|| "系统邮箱"` 兜底改为显式校验并抛错（避免静默落入已下线分支）。
+
+5. **保留防循环判断**（`automation-scheduler.ts:483`）：结果邮件可能从用户自己的邮箱发出，主题前缀判断仍需保留。
 
 ### 模块 B：向导内联邮箱配置（主路径）
 
 `app/automation/page.tsx` step 2 的邮件触发区块，把当前写死的"系统邮箱（固定监听）"卡片改为可选可配：
 
 ```
-监听邮箱  [ 系统邮箱（平台）        ▾ ]
-          ├ 系统邮箱（平台）
+监听邮箱  [ 销售部邮箱 sales@corp.com  ▾ ]
           ├ 销售部邮箱 sales@corp.com     ← 已保存的自定义邮箱（本用户）
           └ ＋ 配置新邮箱…                 ← 选中后展开内联表单
                 IMAP 服务器 / 端口 / 账号 / 密码 / 文件夹
@@ -83,8 +111,10 @@
 
 - 选中"＋ 配置新邮箱…"展开内联表单；测试通过后调 `POST /api/v1/automation-mailboxes` 保存，从响应的 `key` 字段取得 `mailbox:<id>` 写入本次自动化的 `mailboxKey`。
 - 邮箱来源：`GET /api/v1/automation-mailboxes`（已存在）。
+- 无已保存邮箱时，下拉默认落在"＋ 配置新邮箱…"并自动展开表单（避免空状态死路）。
 - `buildAutomationPayload()` 的 `mailboxKey`/`mailboxLabel` 从选择派生，移除写死逻辑。
 - `triggerDetail()`（`page.tsx:1292`）与 `localizedTriggerDetail`（`page.tsx:1101`）中的硬编码"系统邮箱"改为使用选中的邮箱标签。
+- 邮件模板描述（`page.tsx:387`、`411`）中的"系统邮箱"改为"监听邮箱"。
 - `resetWizard()` / `openEditDialog()` / `useTemplate()` 同步处理邮箱字段。
 
 **必须处理的三个陷阱**：
@@ -97,28 +127,28 @@
 职责仅限"改密码 / 删除 / 看连接状态"，与向导内联配置不重复。
 
 - 自动化页头部新增次级入口按钮（"邮箱管理"）→ 抽屉组件 `app/automation/components/MailboxManager.tsx`，列表展示：名称 / 邮箱 / IMAP 服务器 / 状态徽标（`connected` / `error`）/ 最后错误。
-- **编辑（新增后端能力）**：`lib/automation/mailboxes.ts` 新增 `updateAutomationMailbox`（更新前同样真实连接验证一次）；`pages/api/v1/automation-mailboxes/[id].ts` 新增 `PUT` 分支。
+- **编辑（新增后端能力）**：`lib/automation/mailboxes.ts` 新增 `updateAutomationMailbox`（更新前同样真实连接验证一次，密码留空则保留原值）；`pages/api/v1/automation-mailboxes/[id].ts` 新增 `PUT` 分支。
 - **删除**：复用现有 `DELETE`（已有 409 + dependents 依赖检查）。
 - **编辑邮箱时必须重置游标**（见模块 D）。
 - 新组件使用 next-intl `useTranslations` + `messages/` 文案，遵守 AGENTS.md 规范；不改动自动化页存量 `tt()` 文案。
 
 ### 模块 D：服务端校验与一致性修复
 
-1. **mailboxKey 归属校验**：`store.ts` 的 `createAutomation`（725-727）与 `updateAutomation`（875-877）邮件分支中，若 `mailboxKey` 形如 `mailbox:<id>`，调用 `getAutomationMailboxForUser(userId, id)` 校验归属，不存在则抛错。
-2. **mailboxLabel 服务端派生**：忽略客户端传入的 `mailboxLabel`，一律由邮箱记录派生（避免伪造显示）。`mailboxKey === "system"` 时固定为"系统邮箱"，无对应邮箱表记录。
+1. **mailboxKey 归属校验**：`store.ts` 的 `createAutomation`（725-727）与 `updateAutomation`（875-877）邮件分支中，`mailboxKey` 必须形如 `mailbox:<id>`，并调用 `getAutomationMailboxForUser(userId, id)` 校验归属，不存在或为 `system` 则抛错。
+2. **mailboxLabel 服务端派生**：忽略客户端传入的 `mailboxLabel`，一律由邮箱记录派生（避免伪造显示）。
 3. **游标重置**：邮箱的 IMAP 主机 / 账号 / 文件夹变更后，UID 基线完全不同，必须将该 `mailboxKey` 的游标置为 `initialized=false`，否则会漏邮件或重复处理。
 4. **删除邮箱清理游标**：`deleteAutomationMailbox` 中一并删除 `automation_email_mailbox_cursors` 对应行，避免 id 复用导致游标串号。
 5. **规则逻辑去重**：抽取 `lib/automation/mail-rules.ts` 纯函数模块，承载 `doesMailRuleMatch` / `mailRulesSummary` / `mailRuleText` / 字段取值提取，以及规范化类型定义。调度器（`automation-scheduler.ts:242-297`）与前端测试器（`page.tsx:322-371`）均改为 import 该模块，消除双份维护。
 6. **前端冲突检测按邮箱隔离**：`mailConflictCandidates`（`page.tsx:663-681`）与 `mailRuleTestResult`（`page.tsx:683-754`）的过滤条件增加 `mailboxKey` 相等判断，并随邮箱选择联动重算。**修复原因**：调度器只在同一 `userId:mailboxKey` 分组内做优先级竞争，前端跨邮箱比较会误报冲突并预测错误的 winner。
-7. **死代码清理**：删除 `pages/api/automation/check-email.ts`、`pages/api/automation/send-email.ts`（全仓库含文档均无引用）、`page.tsx:462` 的 `LEGACY_DEMO_AUTOMATION_NAMES`。
+7. **死代码清理**：删除 `pages/api/automation/check-email.ts`、`pages/api/automation/send-email.ts`、`pages/api/v1/automation-email/claim.ts`（全仓库含文档均无引用；调度器直接调用 store 函数，不经 HTTP）、`page.tsx:462` 的 `LEGACY_DEMO_AUTOMATION_NAMES`。
 
 ### 模块 E：健壮性改进
 
-1. **连接失败告警**：现有通知机制是从 `automation_runs` / `automation_run_actions` **实时派生**的，没有通知表可插入，且邮箱连接失败时没有 run 记录。因此需新增一个健康状态数据源：
-   - 新表 `automation_mailbox_health(user_id, mailbox_key, last_error, last_error_at)`。
-   - `listAutomationNotifications` 的派生逻辑新增第三段查询，eventKey 为 `mailbox:<key>:error`，kind 复用已有的 `email_failed`。
-   - 带去抖：同一邮箱 10 分钟内最多产生一条提醒。
-2. **邮箱状态标记**：连接失败时更新状态为 `error` 并记录最后错误；成功后恢复 `connected`。模块 C 的列表展示该状态。
+1. **邮箱状态与告警**：`automation_mailboxes` 新增 `last_error` / `last_error_at` 列。连接失败时更新状态为 `error` 并记录错误；成功后恢复 `connected`。
+2. **连接失败通知**：现有通知机制是从 `automation_runs` / `automation_run_actions` **实时派生**的，没有通知表可插入，且邮箱连接失败时没有 run 记录。因此：
+   - `listAutomationNotifications` 的派生逻辑新增第三段查询，来源为 `automation_mailboxes` 中 `status='error'` 的记录，kind 复用已有的 `email_failed`。
+   - **eventKey 固定为 `mailbox:<id>:error`（不含时间戳）**：因此邮箱恢复前该提醒只存在一条、状态稳定；邮箱恢复后提醒自动消失。前端的 toast 去重（`page.tsx:593` 的 `toastedNotificationKeysRef`，按 eventKey 去重）已能防止重复弹窗，无需额外的服务端去抖逻辑。
+   - **注**：系统邮箱退场后所有邮箱都有 `automation_mailboxes` 行，因此无需新建独立的健康状态表。
 3. **加密密钥前置条件**：`AUTOMATION_MAILBOX_SECRET` 当前不在 `env.example` 中，代码回退到 `JWT_SECRET`（`mailboxes.ts:51`）。**风险**：未显式配置时，轮换 `JWT_SECRET` 会导致所有已存邮箱密码永久无法解密（AES-GCM 认证失败）。处理：写入 `env.example` 并标注为部署前置条件；解密失败时返回明确错误码而非 500。
 4. **去重表保留期**：`automation_email_processed_messages` 无界增长，增加定时清理（保留 30 天，随调度器每日执行一次）。
 
@@ -126,20 +156,23 @@
 
 | 表 | 变更 | 用途 |
 |---|---|---|
-| `automation_mailbox_health` | 新建 | 邮箱连接健康状态与最后错误（模块 E.1） |
-| `automation_mailboxes` | 新增 `last_error` / `last_error_at` 列 | 邮箱状态展示（模块 E.2） |
+| `automation_mailboxes` | 新增 `last_error` / `last_error_at` 列 | 邮箱连接状态与告警（模块 E.1） |
+| `automation_tasks` | 一次性迁移：system 邮箱任务置为 paused | 系统邮箱下线（模块 A.1） |
 | `automation_email_mailbox_cursors` | 无结构变更 | 删除/编辑邮箱时清理或重置（模块 D.3、D.4） |
+
+**无新增表。** 由于每个邮箱归属唯一用户，游标表与去重表的 `created_by_user_id` 键保持不变，无需 schema 变更。
 
 ## 六、API 变更
 
 | 端点 | 变更 |
 |---|---|
 | `GET/POST /api/v1/automation-mailboxes` | 已存在，无变更 |
-| `PUT /api/v1/automation-mailboxes/[id]` | **新增**（编辑，含真实连接验证、游标重置） |
+| `PUT /api/v1/automation-mailboxes/[id]` | **新增**（编辑，含真实连接验证、密码留空保留原值、游标重置） |
 | `DELETE /api/v1/automation-mailboxes/[id]` | 已存在；增加游标清理 |
-| `PUT /api/system` | 透传 `imap_config` |
-| IMAP 测试代理端点 | **新增**（super admin 校验） |
-| `POST/PUT /api/v1/automations` | 增加 mailboxKey 归属校验、label 服务端派生 |
+| `POST/PUT /api/v1/automations` | 增加 mailboxKey 归属校验、拒绝 system、label 服务端派生 |
+| `GET /api/v1/automation-email/stats` | 无变更（前端在用） |
+| `POST /api/v1/automation-email/claim` | **删除**（死代码） |
+| `/api/system` 的 `smtp_config` | **不变**（发信，与本次无关） |
 
 ## 七、测试与验收
 
@@ -149,40 +182,42 @@
 
 **手工验收**：
 1. 向导内联配置邮箱（正确凭据 / 错误密码两条路径）→ 保存 → 自动化创建成功
-2. 向该邮箱发测试邮件 → 触发运行 → 运行详情显示邮件来源与命中规则
-3. 同一邮箱配置两个自动化 → 冲突提示与 winner 预测与实际一致
-4. 编辑邮箱主机 → 确认游标重置、不重复处理历史邮件
-5. 删除被引用的邮箱 → 409 拦截提示
-6. 系统设置保存 IMAP + 测试连接
-7. 邮箱连接失败 → 通知中心出现提醒（10 分钟去抖）
+2. 无已保存邮箱时，向导默认展开"配置新邮箱"表单
+3. 向该邮箱发测试邮件 → 触发运行 → 运行详情显示邮件来源与命中规则
+4. 同一邮箱配置两个自动化 → 冲突提示与 winner 预测与实际一致
+5. 不同邮箱的两个自动化 → **不产生**冲突提示
+6. 编辑邮箱主机 → 确认游标重置、不重复处理历史邮件
+7. 删除被引用的邮箱 → 409 拦截提示
+8. 尝试创建 `mailboxKey="system"` 的自动化 → 被拒绝并提示
+9. 存量 system 自动化 → 启动后为 paused 状态，列表显示"系统邮箱已下线"提示条
+10. 邮箱连接失败 → 通知中心出现提醒（10 分钟去抖）+ 状态标记为 error
 
-## 八、外部依赖（前置确认项）
+## 八、外部依赖
 
-**ragent-service 需配合三件事**（模块 A）：
-1. system settings 支持 `imap_config` 读写
-2. `/api/v1/email/unread` 改用该配置
-3. 新增 IMAP 连接测试端点
+**无。** 系统邮箱退场后，平台不再需要 ragent-service 新增 `imap_config` 读写、IMAP 测试端点，也不需要修改 `/api/v1/email/unread`。
 
-若 ragent-service 无法配合，模块 A 降级为"完全迁入本仓库"方案：复用自定义邮箱的加密存储模式，为系统邮箱建立每租户一条的 `system` 记录，调度器 `system` 路径改走 `/api/v1/email/unread-config`。
+本次仅依赖 ragent-service 已有的两个端点，均在现有代码中正常使用：
+- `POST /api/v1/email/unread-config`（自定义邮箱收信，`mailbox-client.ts` 已在用）
+- `POST /api/v1/email/send`（结果邮件发送，`actions.ts` 已在用，本次不改）
 
-## 九、待确认的语义问题（不阻塞本次实现）
+## 九、已决策事项
 
-系统邮箱是**平台级共享**的（超管维护），但分组键与去重键均为 `userId:mailboxKey`。因此同一封进入系统邮箱的邮件，**不同用户的自动化可以各自触发一次，互不竞争优先级**。
+**系统邮箱退场**（2026-09-11 确认）：不再提供平台级共享监听邮箱，所有邮件触发自动化必须绑定用户自己配置的邮箱。
 
-- 现状语义：按用户隔离（与"自定义邮箱仅创建者本人"的决策一致）——本次实现**保持现状**。
-- 若期望"整个平台对同一封邮件只触发一个自动化"，需将分组键与去重键改为不含 `userId`，影响面较大，另行评估。
-- 附带影响：N 个用户共用系统邮箱时，会各自独立拉取 IMAP（每 10 秒 N 次连接），大用户量下需关注。
+- **理由**：原设计下系统邮箱为平台级共享但分组按用户隔离，同一封邮件会被 N 个用户各自的自动化各触发一次（例如三人各建"客户询价处理"→ 一封询价被处理 3 次，可能重复回信或重复建单）。
+- **取舍**：失去了"管理员配置一次、全员可用"的便利，非技术用户需要自己提供企业邮箱授权码。这是有意的选择。
+- **迁移**：存量 system 自动化被置为 paused 并给出 UI 提示（模块 A）。
 
 ## 十、建议实施顺序
 
-按"先修地基、再做界面、最后接外部依赖"排列，每步可独立验证：
+按"先修地基、再做界面、最后下线共享概念"排列，每步可独立验证：
 
 1. **模块 D.5 规则逻辑去重**（抽 `mail-rules.ts` + 单测）——纯重构，无行为变更，为后续修改提供单一事实来源
 2. **模块 D.1/D.2/D.7 服务端校验与死代码清理**——不依赖任何 UI，独立可测
 3. **模块 B 向导内联邮箱配置**（含 D.6 冲突检测隔离）——主路径，用户价值最高
 4. **模块 C 轻量邮箱管理入口**（含 PUT 端点、游标重置/清理、D.3/D.4）
-5. **模块 E 健壮性改进**（健康表、状态标记、通知派生、密钥前置条件、保留期）
-6. **模块 A 系统邮箱 IMAP 配置**——依赖 ragent-service 配合，可与其他模块并行推进，但**须先确认外部依赖可行性**
+5. **模块 E 健壮性改进**（状态列、通知派生、密钥前置条件、保留期）
+6. **模块 A 系统邮箱下线与迁移**——**放在最后**：等自定义邮箱配置路径完全可用后再下线，避免出现"旧路已断、新路未通"的空窗
 
 ## 十一、验收标准
 
@@ -191,4 +226,5 @@
 - 多邮箱场景下冲突检测与优先级预测与实际调度行为一致
 - 邮箱连接失败可被用户感知（通知 + 状态标记），而非仅存在于服务端日志
 - 规则匹配逻辑单一来源，前后端行为不可能分叉
+- 系统邮箱下线后，存量用户通过暂停状态 + 提示条明确知道需要重新配置
 - `pnpm test` 与 `pnpm check:ci` 通过
