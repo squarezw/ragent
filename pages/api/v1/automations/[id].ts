@@ -80,6 +80,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (code === "MAILBOX_NOT_OWNED") {
       return res.status(400).json({ detail: "监听邮箱不存在或无权使用" });
     }
+    if (code === "MAILBOX_SYSTEM_RETIRED") {
+      return res.status(400).json({ detail: "系统邮箱已下线，请配置监听邮箱" });
+    }
 
     const scheduleMessage = scheduleErrorResponse(code);
     if (scheduleMessage) return res.status(400).json({ detail: scheduleMessage });

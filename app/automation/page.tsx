@@ -3989,7 +3989,7 @@ export default function AutomationPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <InfoItem
                       label={tt("监听邮箱", "Monitored Mailbox")}
-                      value={emailContextText(drawerRun.triggerContext.mailbox, tt("系统邮箱", "System Mailbox"))}
+                      value={emailContextText(drawerRun.triggerContext.mailbox, tt("未知", "Unknown"))}
                     />
                     <InfoItem
                       label={tt("监听范围", "Monitoring Scope")}

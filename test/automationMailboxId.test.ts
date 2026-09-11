@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MAILBOX_ID_REQUIRED,
+  MAILBOX_LABEL_REQUIRED,
   MAILBOX_NEW_OPTION,
+  MAILBOX_SYSTEM_RETIRED,
   automationMailboxLabel,
   defaultMailboxSelection,
   isMailboxSelectionUnresolved,
@@ -11,7 +13,9 @@ import {
   mailboxSelectValue,
   normalizeMailboxId,
   requireMailboxId,
+  requireMailboxLabel,
   selectMailboxScopedAutomations,
+  storedMailboxLabel,
   type MailboxOption,
 } from "../lib/automation/mailbox-id.ts";
 
@@ -51,7 +55,7 @@ test("requireMailboxId: 合法取值通过", () => {
 });
 
 test("requireMailboxId: 缺失 mailboxId 时抛出可识别错误，而非回退 system", () => {
-  for (const value of [undefined, null, "system", "mailbox:7", 0, "7"]) {
+  for (const value of [undefined, null, "mailbox:7", 0, "7"]) {
     assert.throws(
       () => requireMailboxId(value),
       (error: Error) => error.message === MAILBOX_ID_REQUIRED,
@@ -62,6 +66,51 @@ test("requireMailboxId: 缺失 mailboxId 时抛出可识别错误，而非回退
 
 test("requireMailboxId: 错误信息指明缺失的 mailboxId 字段", () => {
   assert.throws(() => requireMailboxId(undefined), /MAILBOX_ID_REQUIRED/);
+});
+
+// ── 模块 A：系统邮箱下线 ──────────────────────────────────────────────
+
+test("A.4 requireMailboxId: 提交已下线的系统邮箱哨兵值时抛 MAILBOX_SYSTEM_RETIRED", () => {
+  // 单独一个错误码，接口据此回「系统邮箱已下线，请配置监听邮箱」，而不是通用的"缺少邮箱"。
+  for (const value of ["system", " system ", "system "]) {
+    assert.throws(
+      () => requireMailboxId(value),
+      (error: Error) => error.message === MAILBOX_SYSTEM_RETIRED,
+      `${JSON.stringify(value)} 应判定为已下线的系统邮箱`
+    );
+  }
+});
+
+test("A.4 requireMailboxId: 其他非法值仍走通用错误码，不被哨兵值判断吞掉", () => {
+  for (const value of [undefined, null, "mailbox:7", "systems", 0, ""]) {
+    assert.throws(
+      () => requireMailboxId(value),
+      (error: Error) => error.message === MAILBOX_ID_REQUIRED,
+      `${JSON.stringify(value ?? null)} 应走 MAILBOX_ID_REQUIRED`
+    );
+  }
+});
+
+test("A.5 requireMailboxLabel: 展示名缺失时抛错，不兜底成已下线的邮箱名", () => {
+  assert.equal(requireMailboxLabel("销售部邮箱 · sales@corp.com"), "销售部邮箱 · sales@corp.com");
+  assert.equal(requireMailboxLabel("  财务邮箱 · finance@corp.com  "), "财务邮箱 · finance@corp.com");
+
+  for (const value of [undefined, null, "", "   "]) {
+    assert.throws(
+      () => requireMailboxLabel(value),
+      (error: Error) => error.message === MAILBOX_LABEL_REQUIRED,
+      `${JSON.stringify(value ?? null)} 应抛错`
+    );
+  }
+});
+
+test("A.5 storedMailboxLabel: 展示层缺失时返回 null，由调用方显示「未配置」", () => {
+  assert.equal(storedMailboxLabel("销售部邮箱 · sales@corp.com"), "销售部邮箱 · sales@corp.com");
+  assert.equal(storedMailboxLabel("  财务邮箱  "), "财务邮箱");
+
+  for (const value of [undefined, null, "", "   "]) {
+    assert.equal(storedMailboxLabel(value), null, `${JSON.stringify(value ?? null)} 应返回 null`);
+  }
 });
 
 test("mailboxGroupKey: 分组键为 userId:mailboxId", () => {
@@ -172,7 +221,7 @@ test("automationMailboxLabel: 名单里查不到时退回服务端派生的存�
 });
 
 test("automationMailboxLabel: 遗留行不再回退到「系统邮箱」", () => {
-  // automationRowToApi 对遗留行返回 mailboxId: null，mailboxLabel 兜底为"系统邮箱"。
+  // 遗留行没有整数 mailboxId；它旧的存储名（哪怕正是"系统邮箱"）也不作为展示来源。
   assert.equal(automationMailboxLabel({ mailboxId: null, mailboxLabel: "系统邮箱" }, mailboxOptions), null);
   assert.equal(automationMailboxLabel({ mailboxId: undefined }, mailboxOptions), null);
   assert.equal(automationMailboxLabel({ mailboxId: 0 }, mailboxOptions), null);

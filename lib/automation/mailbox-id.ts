@@ -2,8 +2,9 @@
  * 邮件触发监听邮箱的标识与展示名处理。
  *
  * 历史格式 `mailbox:<id>`（以及作为哨兵的 `"system"`）已废弃：mailboxId 一律是
- * 指向 `automation_mailboxes` 的正整数。任何读取该标识的地方都不再做隐式回退，
- * 缺失或非法时抛出可识别的 MAILBOX_ID_REQUIRED，避免静默落到已下线的系统邮箱分支。
+ * 指向 `automation_mailboxes` 的正整数。任何读取该标识的地方都不再做隐式回退：缺失或
+ * 非法抛 MAILBOX_ID_REQUIRED，恰为已下线的哨兵值抛 MAILBOX_SYSTEM_RETIRED，展示层
+ * 则返回 null 由调用方显示「未配置」——都不再静默落到已下线的系统邮箱。
  *
  * 本模块是零依赖纯函数模块：服务端 store、邮箱记录的 API 映射（`mailboxes.ts`）
  * 与 node:test 用例共用它，因此不允许引入 `pg`、`lib/env` 等需要运行环境的依赖。
@@ -14,16 +15,60 @@ export const MAILBOX_ID_REQUIRED = "MAILBOX_ID_REQUIRED";
 /** 监听邮箱不存在，或不属于当前用户（模块 D.2 归属校验失败）。 */
 export const MAILBOX_NOT_OWNED = "MAILBOX_NOT_OWNED";
 
+/** 模块 A：提交的正是已下线的平台系统邮箱哨兵值，需要专门的用户提示。 */
+export const MAILBOX_SYSTEM_RETIRED = "MAILBOX_SYSTEM_RETIRED";
+
+/** 模块 A：监听邮箱展示名缺失（遗留行没有存储名）。 */
+export const MAILBOX_LABEL_REQUIRED = "MAILBOX_LABEL_REQUIRED";
+
+/** 已下线的系统邮箱哨兵值：`mailboxKey` 时代用它表示"平台共享监听邮箱"。 */
+const RETIRED_SYSTEM_MAILBOX_KEY = "system";
+
 /** 归一化邮箱标识：仅接受正整数，其余（含遗留的 `mailbox:<id>`、`"system"`）返回 null。 */
 export function normalizeMailboxId(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
-/** 读取邮箱标识：取不到合法值时抛错，而不是回退到 "system"。 */
+/**
+ * 读取邮箱标识：取不到合法值时抛错，而不是回退到 "system"。
+ *
+ * 模块 A：取值恰为已下线的哨兵值 `"system"` 时抛出 MAILBOX_SYSTEM_RETIRED。它同样是非法
+ * 标识，但需要单独识别——旧客户端仍会提交它，接口据此给出「系统邮箱已下线」的专门提示，
+ * 而不是通用的"缺少监听邮箱"。正整数 id 不会与之冲突。
+ */
 export function requireMailboxId(value: unknown): number {
   const mailboxId = normalizeMailboxId(value);
-  if (mailboxId === null) throw new Error(MAILBOX_ID_REQUIRED);
+  if (mailboxId === null) {
+    if (typeof value === "string" && value.trim() === RETIRED_SYSTEM_MAILBOX_KEY) {
+      throw new Error(MAILBOX_SYSTEM_RETIRED);
+    }
+    throw new Error(MAILBOX_ID_REQUIRED);
+  }
   return mailboxId;
+}
+
+/**
+ * 调度器读取监听邮箱展示名：缺失时抛错，没有已下线系统邮箱的兜底（模块 A）。
+ *
+ * 存储名在创建/更新时按邮箱记录派生（模块 D.3），因此正常数据必然有值；取不到说明该行是
+ * 遗留或被改坏的数据。此时抛错比显示一个错误的邮箱名更好：调用方按"用户:邮箱"分组捕获，
+ * 只影响这一组，其他邮箱与其他触发类型的自动化不受影响。
+ */
+export function requireMailboxLabel(value: unknown): string {
+  const label = String(value ?? "").trim();
+  if (!label) throw new Error(MAILBOX_LABEL_REQUIRED);
+  return label;
+}
+
+/**
+ * 展示层读取监听邮箱展示名：缺失时返回 null，由调用方显示「未配置」，不回退到系统邮箱。
+ *
+ * 与 `requireMailboxLabel` 只差在失败方式：列表接口与运行详情不能因为一行遗留数据的展示名
+ * 缺失就整体报错（那会连带影响同一响应里其他触发类型的自动化）。
+ */
+export function storedMailboxLabel(value: unknown): string | null {
+  const label = String(value ?? "").trim();
+  return label || null;
 }
 
 /** 调度分组键（决定优先级竞争与去重范围）：同一用户同一监听邮箱为同一组。 */

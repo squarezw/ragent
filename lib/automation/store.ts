@@ -4,6 +4,7 @@ import {
   mailboxLabelFromRow,
   normalizeMailboxId,
   requireMailboxId,
+  storedMailboxLabel,
 } from "@/lib/automation/mailbox-id";
 import { mailRulesBriefSummary } from "@/lib/automation/mail-rules";
 import {
@@ -320,6 +321,16 @@ export async function ensureAutomationTables() {
 
       CREATE INDEX IF NOT EXISTS idx_automation_notification_states_user
         ON automation_notification_states(user_id, updated_at DESC);
+
+      -- 模块 A：系统邮箱下线的防御性清理。WHERE 严格限定"邮件触发"且 mailboxKey 等于
+      -- 'system'：等于判断不匹配 NULL，其他触发类型与自定义邮箱的 mailboxId 行都不受影响。
+      -- 预期影响 0 行（该功能从未被实际使用）；保留它是为了万一有残留行时不让它在下面的
+      -- 调度器里每 10 秒报一次错——那种行没有整数 mailboxId，扫描时必然抛 MAILBOX_ID_REQUIRED。
+      -- 语句天然幂等。注意 initPromise 的语义：成功时每个进程只跑一次，**失败后**每次 store
+      -- 调用都会把整块 SQL 重跑一遍——所以这条语句必须不可能失败，否则会拖垮所有自动化入口。
+      DELETE FROM automation_tasks
+      WHERE trigger_type = '邮件触发'
+        AND trigger_config->>'mailboxKey' = 'system';
     `);
   })().catch((error) => {
     initPromise = null;
@@ -2553,7 +2564,7 @@ export function automationRowToApi(row: any) {
     row.trigger_type === "定时触发"
       ? `${scheduleSummary} · ${scheduleTimezone}`
       : row.trigger_type === "邮件触发"
-        ? `${config.mailboxLabel || "系统邮箱"} · ${mailRulesBriefSummary(config.rules)} · 优先级 ${normalizeEmailPriority(config.priority)}`
+        ? `${storedMailboxLabel(config.mailboxLabel) ?? "监听邮箱未配置"} · ${mailRulesBriefSummary(config.rules)} · 优先级 ${normalizeEmailPriority(config.priority)}`
         : row.trigger_type === "Webhook / API"
           ? "由外部系统通过 Webhook / API 触发"
           : "上游自动化完成后触发";
@@ -2610,10 +2621,11 @@ export function automationRowToApi(row: any) {
     scheduleMissingDayPolicy:
       config.missingDayPolicy === "skip" ? "skip" : "last_day",
     scheduleDate,
-    // 展示层不再回退到 "system"：遗留数据没有 mailboxId 时原样返回 null，
-    // 真正依赖该标识的路径（调度器、游标、去重、创建/更新）会显式报错。
+    // 展示层不再回退到已下线的系统邮箱：遗留数据没有 mailboxId / 存储名时原样返回
+    // null，交由前端显示「监听邮箱未配置」；真正依赖该标识的路径（调度器、游标、
+    // 去重、创建/更新）会显式报错。
     mailboxId: normalizeMailboxId(config.mailboxId),
-    mailboxLabel: config.mailboxLabel || "系统邮箱",
+    mailboxLabel: storedMailboxLabel(config.mailboxLabel) ?? undefined,
     mailFolder: config.folder || "INBOX",
     mailRuleMode: (config.ruleMode === "any" ? "any" : "all") as EmailRuleMode,
     mailRules: normalizeEmailRules(config.rules),

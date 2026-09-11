@@ -28,6 +28,7 @@ import {
   mailboxGroupKey,
   normalizeMailboxId,
   requireMailboxId,
+  requireMailboxLabel,
 } from "@/lib/automation/mailbox-id";
 import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
 import {
@@ -267,6 +268,9 @@ async function fetchConfiguredMailboxUnread(
 
 async function executeEmailAutomation(task: any, message: InboxMessage) {
   const config = task.trigger_config || {};
+  // 模块 A：展示名在创建/更新时按邮箱记录派生（模块 D.3），这里取不到即数据有问题，
+  // 显式抛错而不是兜底成一个已下线的邮箱名。抛错由分组扫描按组记录，不影响其他分组。
+  const mailboxLabel = requireMailboxLabel(config.mailboxLabel);
   const attachments = Array.isArray(message.attachments) && message.attachments.length > 0
     ? message.attachments.join("、")
     : "无";
@@ -281,7 +285,7 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     String(task.task || ""),
     "",
     "【本次收到的新邮件】",
-    `监听邮箱：${config.mailboxLabel || "系统邮箱"}`,
+    `监听邮箱：${mailboxLabel}`,
     `发件人：${message.from || "未知"}`,
     `收件人：${message.to || "未知"}`,
     `主题：${message.subject || "无主题"}`,
@@ -301,7 +305,7 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     uid: Number(message.uid),
     messageId: message.message_id || undefined,
     mailboxId: requireMailboxId(config.mailboxId),
-    mailbox: config.mailboxLabel || "系统邮箱",
+    mailbox: mailboxLabel,
     folder: config.folder || "INBOX",
     matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
     priority: Number(config.priority ?? 50),
