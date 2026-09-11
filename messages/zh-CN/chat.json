@@ -119,5 +119,15 @@
   "previewMayNotEmbed": "该网站可能拒绝在此嵌入。您可以在新标签页中打开它。",
   "openInNewTab": "在新标签页打开",
   "closePreview": "关闭预览",
-  "imageLoadFailed": "图片加载失败，请在新标签页中打开。"
+  "imageLoadFailed": "图片加载失败，请在新标签页中打开。",
+  "dxfPreview": "图纸预览",
+  "dxfLoading": "正在加载图纸…",
+  "dxfFailed": "图纸加载失败，链接可能已过期或文件格式不受支持。",
+  "dxfFit": "适合窗口",
+  "dxfLayers": "图层",
+  "dxfNote": "二维预览，字体、标注和布局可能与 CAD 存在差异。",
+  "dxfEmpty": "未找到可显示的图形。",
+  "dxfDownload": "正在下载",
+  "dxfParse": "正在处理图纸",
+  "dxfOmitted": "部分剖面填充无法显示。"
 }

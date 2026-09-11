@@ -32,3 +32,8 @@ test("signed skill artifact HTML delivery links can use the web preview", () => 
     }
   );
 });
+
+test("DXF links are detected before signed query strings", () => {
+  assert.equal(toPreviewResource("url", "https://example.com/DRAWING.DXF?signature=x")?.kind, "dxf");
+  assert.equal(toPreviewResource("url", "/api/oss/chat/test.dxf")?.kind, "dxf");
+});
