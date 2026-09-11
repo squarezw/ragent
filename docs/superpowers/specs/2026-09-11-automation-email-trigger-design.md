@@ -12,7 +12,7 @@
 
 本方案让用户在**创建自动化时直接配置监听邮箱**，并**下线"系统邮箱"这一共享概念**（已确认决策），同时修复上述缺陷。
 
-**关键收益**：系统邮箱退场后，每个邮箱都归属于唯一用户，分组键 `${userId}:${mailboxKey}` 不再可能跨用户碰撞——彻底消除了"同一封邮件被多个用户各自处理"的重复触发风险，且**不再需要 ragent-service 配合开发**（原方案的最大外部依赖）。
+**关键收益**：系统邮箱退场后，每个邮箱都归属于唯一用户，分组键 `${userId}:${mailboxId}` 不再可能跨用户碰撞——彻底消除了"同一封邮件被多个用户各自处理"的重复触发风险，且**不再需要 ragent-service 配合开发**（原方案的最大外部依赖）。同时，由于功能从未使用、三张邮件表为空，可以趁此窗口把 `mailbox:<id>` 字符串键统一为整数 `mailboxId`，拆掉为"system"服务的编码脚手架。
 
 ## 二、范围
 
@@ -87,6 +87,7 @@ WHERE trigger_type='邮件触发'
 - 这是本方案唯一的破坏性语句，仍需在 review 时确认 WHERE 范围（防的是误伤其他任务，与存量数据无关）。
 
 2. **关联数据清理**：同样清理 `automation_email_mailbox_cursors`、`automation_email_processed_messages`、`automation_email_rule_events` 中 `mailbox_key='system'` 的行（预期同为 0 行）。
+   **执行时机**：这三张表的清理**必须在模块 D.1 的列类型变更之前执行**（见 D.1 的顺序要求）——`system` 无法转换为整数，顺序颠倒会导致迁移失败。因此本模块的 SQL 虽然在功能上属于"下线"，其数据清理语句需随 D.1 一起、排在其前面进入 `ensureAutomationTables()`。
 
 3. **运行历史**：`automation_runs` 表无外键级联，即便有历史运行记录也不受影响。
 
@@ -109,10 +110,10 @@ WHERE trigger_type='邮件触发'
                 ⚠ 该邮箱已被 N 个自动化使用，修改凭据会影响它们
 ```
 
-- 选中"＋ 配置新邮箱…"展开内联表单；测试通过后调 `POST /api/v1/automation-mailboxes` 保存，从响应的 `key` 字段取得 `mailbox:<id>` 写入本次自动化的 `mailboxKey`。
+- 选中"＋ 配置新邮箱…"展开内联表单；测试通过后调 `POST /api/v1/automation-mailboxes` 保存，从响应的 `id` 写入本次自动化的 `mailboxId`。
 - 邮箱来源：`GET /api/v1/automation-mailboxes`（已存在）。
 - 无已保存邮箱时，下拉默认落在"＋ 配置新邮箱…"并自动展开表单（避免空状态死路）。
-- `buildAutomationPayload()` 的 `mailboxKey`/`mailboxLabel` 从选择派生，移除写死逻辑。
+- `buildAutomationPayload()` 的 `mailboxId`/`mailboxLabel` 从选择派生，移除写死逻辑。
 - `triggerDetail()`（`page.tsx:1292`）与 `localizedTriggerDetail`（`page.tsx:1101`）中的硬编码"系统邮箱"改为使用选中的邮箱标签。
 - 邮件模板描述（`page.tsx:387`、`411`）中的"系统邮箱"改为"监听邮箱"。
 - `resetWizard()` / `openEditDialog()` / `useTemplate()` 同步处理邮箱字段。
@@ -132,22 +133,41 @@ WHERE trigger_type='邮件触发'
 - **编辑邮箱时必须重置游标**（见模块 D）。
 - 新组件使用 next-intl `useTranslations` + `messages/` 文案，遵守 AGENTS.md 规范；不改动自动化页存量 `tt()` 文案。
 
-### 模块 D：服务端校验与一致性修复
+### 模块 D：数据一致性与服务端校验
 
-1. **mailboxKey 归属校验**：`store.ts` 的 `createAutomation`（725-727）与 `updateAutomation`（875-877）邮件分支中，`mailboxKey` 必须形如 `mailbox:<id>`，并调用 `getAutomationMailboxForUser(userId, id)` 校验归属，不存在或为 `system` 则抛错。
-2. **mailboxLabel 服务端派生**：忽略客户端传入的 `mailboxLabel`，一律由邮箱记录派生（避免伪造显示）。
-3. **游标重置**：邮箱的 IMAP 主机 / 账号 / 文件夹变更后，UID 基线完全不同，必须将该 `mailboxKey` 的游标置为 `initialized=false`，否则会漏邮件或重复处理。
-4. **删除邮箱清理游标**：`deleteAutomationMailbox` 中一并删除 `automation_email_mailbox_cursors` 对应行，避免 id 复用导致游标串号。
-5. **规则逻辑去重**：抽取 `lib/automation/mail-rules.ts` 纯函数模块，承载 `doesMailRuleMatch` / `mailRulesSummary` / `mailRuleText` / 字段取值提取，以及规范化类型定义。调度器（`automation-scheduler.ts:242-297`）与前端测试器（`page.tsx:322-371`）均改为 import 该模块，消除双份维护。
-6. **前端冲突检测按邮箱隔离**：`mailConflictCandidates`（`page.tsx:663-681`）与 `mailRuleTestResult`（`page.tsx:683-754`）的过滤条件增加 `mailboxKey` 相等判断，并随邮箱选择联动重算。**修复原因**：调度器只在同一 `userId:mailboxKey` 分组内做优先级竞争，前端跨邮箱比较会误报冲突并预测错误的 winner。
-7. **死代码清理**：删除 `pages/api/automation/check-email.ts`、`pages/api/automation/send-email.ts`、`pages/api/v1/automation-email/claim.ts`（全仓库含文档均无引用；调度器直接调用 store 函数，不经 HTTP）、`page.tsx:462` 的 `LEGACY_DEMO_AUTOMATION_NAMES`。
+**D.1 键格式统一为 mailboxId（数据模型改造，本模块其余各项与其他模块的前提）**
+
+`mailbox:<id>` 字符串编码的唯一存在理由是让 `"system"` 能成为一个合法值。system 退场后，每个键都只是被编码成字符串的整数，这层编码成为纯粹累赘。趁三张表均为空（功能从未使用）一次改到位：
+
+- `trigger_config.mailboxKey: "mailbox:12"` → `trigger_config.mailboxId: 12`（整数）
+- 三张表的 `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`：`automation_email_mailbox_cursors`（主键）、`automation_email_processed_messages`（唯一键）、`automation_email_rule_events`（唯一键）
+- 删除调度器的 `mailboxIdFromKey()` 正则解析；分组键由 `${userId}:${mailboxKey}` 改为 `${userId}:${mailboxId}`
+- 邮箱记录 API 的 `key: "mailbox:${id}"` 字段取消，直接暴露 `id`
+
+**注**：表为空，列类型变更安全。`ensureAutomationTables()` 使用 `CREATE TABLE IF NOT EXISTS`，不会修改已存在的表结构，因此需要显式 `ALTER TABLE ... RENAME COLUMN` + `ALTER COLUMN ... TYPE INTEGER` 语句（同函数内已有 `ALTER TABLE ADD COLUMN IF NOT EXISTS` 的迁移先例）。
+
+> ⚠️ **SQL 语句顺序要求**：模块 A.2 的遗留数据清理（删除 `mailbox_key='system'` 行）**必须排在本节的列类型变更之前**。`system` 是非数字字符串，若先执行 `ALTER COLUMN ... TYPE INTEGER`，PostgreSQL 会在这些行上转换失败并中止迁移。`ensureAutomationTables()` 内的语句顺序应为：建表 → 清理遗留 system 行 → 列重命名与类型变更。
+
+**D.2 mailboxId 归属校验**：`store.ts` 的 `createAutomation`（725-727）与 `updateAutomation`（875-877）邮件分支中，`mailboxId` 必须是正整数，并调用 `getAutomationMailboxForUser(userId, mailboxId)` 校验归属，不存在则抛错（不再有 `system` 特例）。
+
+**D.3 mailboxLabel 服务端派生**：忽略客户端传入的 `mailboxLabel`，一律由邮箱记录派生（避免伪造显示）。
+
+**D.4 游标重置**：邮箱的 IMAP 主机 / 账号 / 文件夹变更后，UID 基线完全不同，必须将该邮箱的游标置为 `initialized=false`，否则会漏邮件或重复处理。
+
+**D.5 删除邮箱清理游标**：`deleteAutomationMailbox` 中一并删除 `automation_email_mailbox_cursors` 对应行，避免 id 复用导致游标串号。
+
+**D.6 规则逻辑去重**：抽取 `lib/automation/mail-rules.ts` 纯函数模块，承载 `doesMailRuleMatch` / `mailRulesSummary` / `mailRuleText` / 字段取值提取，以及规范化类型定义。调度器（`automation-scheduler.ts:242-297`）与前端测试器（`page.tsx:322-371`）均改为 import 该模块，消除双份维护。
+
+**D.7 前端冲突检测按邮箱隔离**：`mailConflictCandidates`（`page.tsx:663-681`）与 `mailRuleTestResult`（`page.tsx:683-754`）的过滤条件增加 `mailboxId` 相等判断，并随邮箱选择联动重算。**修复原因**：调度器只在同一 `userId:mailboxId` 分组内做优先级竞争，前端跨邮箱比较会误报冲突并预测错误的 winner。
+
+**D.8 死代码清理**：删除 `pages/api/automation/check-email.ts`、`pages/api/automation/send-email.ts`、`pages/api/v1/automation-email/claim.ts`（全仓库含文档均无引用；调度器直接调用 store 函数，不经 HTTP）、`page.tsx:462` 的 `LEGACY_DEMO_AUTOMATION_NAMES`。
 
 ### 模块 E：健壮性改进
 
 1. **邮箱状态与告警**：`automation_mailboxes` 新增 `last_error` / `last_error_at` 列。连接失败时更新状态为 `error` 并记录错误；成功后恢复 `connected`。
 2. **连接失败通知**：现有通知机制是从 `automation_runs` / `automation_run_actions` **实时派生**的，没有通知表可插入，且邮箱连接失败时没有 run 记录。因此：
    - `listAutomationNotifications` 的派生逻辑新增第三段查询，来源为 `automation_mailboxes` 中 `status='error'` 的记录，kind 复用已有的 `email_failed`。
-   - **eventKey 固定为 `mailbox:<id>:error`（不含时间戳）**：因此邮箱恢复前该提醒只存在一条、状态稳定；邮箱恢复后提醒自动消失。前端的 toast 去重（`page.tsx:593` 的 `toastedNotificationKeysRef`，按 eventKey 去重）已能防止重复弹窗，无需额外的服务端去抖逻辑。
+   - **eventKey 固定为 `mailbox-error:${mailboxId}`（不含时间戳）**：因此邮箱恢复前该提醒只存在一条、状态稳定；邮箱恢复后提醒自动消失。前端的 toast 去重（`page.tsx:593` 的 `toastedNotificationKeysRef`，按 eventKey 去重）已能防止重复弹窗，无需额外的服务端去抖逻辑。
    - **注**：系统邮箱退场后所有邮箱都有 `automation_mailboxes` 行，因此无需新建独立的健康状态表。
 3. **加密密钥前置条件**：`AUTOMATION_MAILBOX_SECRET` 当前不在 `env.example` 中，代码回退到 `JWT_SECRET`（`mailboxes.ts:51`）。**风险**：未显式配置时，轮换 `JWT_SECRET` 会导致所有已存邮箱密码永久无法解密（AES-GCM 认证失败）。处理：写入 `env.example` 并标注为部署前置条件；解密失败时返回明确错误码而非 500。
 4. **去重表保留期**：`automation_email_processed_messages` 无界增长，增加定时清理（保留 30 天，随调度器每日执行一次）。
@@ -157,21 +177,21 @@ WHERE trigger_type='邮件触发'
 | 表 | 变更 | 用途 |
 |---|---|---|
 | `automation_mailboxes` | 新增 `last_error` / `last_error_at` 列 | 邮箱连接状态与告警（模块 E.1） |
-| `automation_tasks` | 幂等防御性清理：删除 system 邮箱任务（预期 0 行） | 系统邮箱下线（模块 A.1） |
-| `automation_email_mailbox_cursors` | 无结构变更 | 删除/编辑邮箱时清理或重置（模块 D.3、D.4）；清理 `mailbox_key='system'` 历史行（模块 A.2） |
-| `automation_email_processed_messages` | 无结构变更 | 清理 `mailbox_key='system'` 历史行（模块 A.2）；30 天保留期（模块 E.4） |
-| `automation_email_rule_events` | 无结构变更 | 清理 `mailbox_key='system'` 历史行（模块 A.2） |
+| `automation_tasks` | `trigger_config.mailboxKey`（字符串）→ `mailboxId`（整数）；幂等防御性清理 system 邮箱任务（预期 0 行） | 键格式统一（模块 D.1）；系统邮箱下线（模块 A.1） |
+| `automation_email_mailbox_cursors` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（主键列） | 键格式统一（模块 D.1） |
+| `automation_email_processed_messages` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
+| `automation_email_rule_events` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
 
-**无新增表。** 由于每个邮箱归属唯一用户，游标表与去重表的 `created_by_user_id` 键保持不变，无需 schema 变更。
+**无新增表。** 三张邮件表的列类型变更需显式 `ALTER TABLE`（`CREATE TABLE IF NOT EXISTS` 不改动已存在的表），因表为空故变更安全。
 
 ## 六、API 变更
 
 | 端点 | 变更 |
 |---|---|
-| `GET/POST /api/v1/automation-mailboxes` | 已存在，无变更 |
+| `GET/POST /api/v1/automation-mailboxes` | 已存在；响应取消 `key: "mailbox:<id>"` 字段，直接暴露整数 `id` |
 | `PUT /api/v1/automation-mailboxes/[id]` | **新增**（编辑，含真实连接验证、密码留空保留原值、游标重置） |
 | `DELETE /api/v1/automation-mailboxes/[id]` | 已存在；增加游标清理 |
-| `POST/PUT /api/v1/automations` | 增加 mailboxKey 归属校验、拒绝 system、label 服务端派生 |
+| `POST/PUT /api/v1/automations` | 增加 mailboxId 归属校验、拒绝 system、label 服务端派生 |
 | `GET /api/v1/automation-email/stats` | 无变更（前端在用） |
 | `POST /api/v1/automation-email/claim` | **删除**（死代码） |
 | `/api/system` 的 `smtp_config` | **不变**（发信，与本次无关） |
@@ -190,9 +210,9 @@ WHERE trigger_type='邮件触发'
 5. 不同邮箱的两个自动化 → **不产生**冲突提示
 6. 编辑邮箱主机 → 确认游标重置、不重复处理历史邮件
 7. 删除被引用的邮箱 → 409 拦截提示
-8. 尝试创建 `mailboxKey="system"` 的自动化 → 被拒绝并提示
+8. 尝试提交 `mailboxId` 指向他人邮箱或非法值 → 被拒绝并提示
 9. 清理语句执行后，**其他触发类型的自动化与自定义邮箱自动化均不受影响**（这是删除语句的关键回归点）
-10. 邮箱连接失败 → 通知中心出现提醒（10 分钟去抖）+ 状态标记为 error
+10. 邮箱连接失败 → 通知中心出现一条提醒（邮箱恢复后自动消失）+ 状态标记为 error
 
 ## 八、外部依赖
 
@@ -210,16 +230,20 @@ WHERE trigger_type='邮件触发'
 - **取舍**：失去了"管理员配置一次、全员可用"的便利，非技术用户需要自己提供企业邮箱授权码。这是有意的选择。
 - **存量处置**：**该功能从未被实际使用**（已确认），因此无存量数据、无兼容负担、无需发布说明或备份。仅保留一条防御性清理语句（模块 A）。
 
+**键格式统一为 mailboxId**（2026-09-11 确认）：`mailbox:<id>` 字符串编码的唯一存在理由是让 `"system"` 成为合法值；system 退场后该编码成为累赘。趁三张表为空一次改到位（模块 D.1）。**这是唯一一次无需数据迁移即可变更该结构的窗口。**
+
 ## 十、建议实施顺序
 
-按"先修地基、再做界面、最后下线共享概念"排列，每步可独立验证：
+按"先改数据模型、再修地基、然后做界面、最后下线共享概念"排列，每步可独立验证：
 
-1. **模块 D.5 规则逻辑去重**（抽 `mail-rules.ts` + 单测）——纯重构，无行为变更，为后续修改提供单一事实来源
-2. **模块 D.1/D.2/D.7 服务端校验与死代码清理**——不依赖任何 UI，独立可测
-3. **模块 B 向导内联邮箱配置**（含 D.6 冲突检测隔离）——主路径，用户价值最高
-4. **模块 C 轻量邮箱管理入口**（含 PUT 端点、游标重置/清理、D.3/D.4）
-5. **模块 E 健壮性改进**（状态列、通知派生、密钥前置条件、保留期）
-6. **模块 A 系统邮箱下线**——放在最后，与模块 B/C 同一次发布（无存量数据，仅为保持"新路先通、再断旧路"的稳妥顺序）
+1. **模块 D.1 键格式统一为 mailboxId**（含三张表列类型变更）+ **模块 A.2 遗留数据清理**——**必须最先做**：归属校验、分组键、游标逻辑都建立在 D.1 之上，后做会导致大量返工；而 A.2 的清理 SQL 必须排在 D.1 的列类型变更之前（`system` 无法转换为整数）
+2. **模块 D.6 规则逻辑去重**（抽 `mail-rules.ts` + 单测）——纯重构，无行为变更，为后续修改提供单一事实来源
+3. **模块 D.2/D.3/D.8 服务端校验与死代码清理**——不依赖任何 UI，独立可测
+4. **模块 B 向导内联邮箱配置**（含 D.7 冲突检测隔离）——主路径，用户价值最高
+5. **模块 C 轻量邮箱管理入口**（含 PUT 端点、D.4 游标重置、D.5 游标清理）
+6. **模块 E 健壮性改进**（状态列、通知派生、密钥前置条件、保留期）
+7. **模块 A 系统邮箱下线（代码部分）**——放在最后，与模块 B/C 同一次发布：删除 `fetchSystemMailboxUnread`、`mailboxKey === "system"` 分支及各处 `|| "system"` 兜底。
+   **注**：模块 A 在实施上是拆开的——A.2 的数据清理 SQL 属第 1 步，A 的代码下线属本步。这样既保证了迁移顺序正确，又保持了"新路先通、再断旧路"。
 
 ## 十一、验收标准
 
@@ -228,5 +252,6 @@ WHERE trigger_type='邮件触发'
 - 多邮箱场景下冲突检测与优先级预测与实际调度行为一致
 - 邮箱连接失败可被用户感知（通知 + 状态标记），而非仅存在于服务端日志
 - 规则匹配逻辑单一来源，前后端行为不可能分叉
-- 系统邮箱下线后，代码中不再存在任何 system 分支或 `\|\| "system"` 兜底；存量 system 自动化被准确删除且未误伤其他任务
+- 系统邮箱下线后，代码中不再存在任何 system 分支或 `\|\| "system"` 兜底，也不再存在 `mailbox:<id>` 字符串编解码
+- 防御性清理语句的 WHERE 范围经确认，不会误伤其他触发类型的自动化
 - `pnpm test` 与 `pnpm check:ci` 通过
