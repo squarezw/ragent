@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { mailboxErrorDisplayText } from "../lib/automation/mailbox-errors.ts";
 import {
   MAILBOX_ERROR_EVENT_KEY_PREFIX,
   MAILBOX_ERROR_MAX_LENGTH,
@@ -193,6 +194,34 @@ test("邮箱列表接口下发 lastError（抽屉「最后错误」的唯一数�
 
   assert.match(functionBody(source, "mailboxRowToApi"), /lastError:\s*row\.last_error/);
   assert.match(functionBody(source, "mailboxRowToApi"), /lastErrorAt:\s*row\.last_error_at/);
+});
+
+test("错误码在落库/展示前换成用户可读文案，而不是裸错误码", () => {
+  // 凭据失效（模块 E.3：密钥被换过）与密钥未配置都是"已知原因"，用户看到的是该怎么办。
+  assert.equal(
+    mailboxErrorDisplayText(new Error("MAILBOX_CREDENTIAL_INVALID")),
+    "邮箱凭据已失效，请重新填写授权码或密码"
+  );
+  assert.equal(
+    mailboxErrorDisplayText(new Error("AUTOMATION_MAILBOX_SECRET_MISSING")),
+    "服务端尚未配置邮箱凭证加密密钥"
+  );
+  // 上游 IMAP 失败带回的是真实原因，不在表里，原样保留（改写只会丢信息）。
+  assert.equal(mailboxErrorDisplayText(new Error("登录失败: 授权码错误")), "登录失败: 授权码错误");
+  assert.equal(mailboxErrorDisplayText(undefined), "");
+});
+
+test("连接失败写库前先做映射（否则通知与「最后错误」会显示 MAILBOX_CREDENTIAL_INVALID）", () => {
+  const body = functionBody(
+    readFileSync(MAILBOXES, "utf8"),
+    "markAutomationMailboxConnectionError"
+  );
+
+  assert.match(
+    body,
+    /mailboxErrorDisplayText\(/,
+    "last_error 是抽屉「最后错误」与通知中心的同一份文案来源，裸错误码必须在写入前翻译掉"
+  );
 });
 
 test("状态写入挂在真实连接路径上：连不上记 error，连上了恢复 connected（E.1）", () => {

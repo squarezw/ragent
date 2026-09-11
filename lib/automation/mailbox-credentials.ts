@@ -15,6 +15,8 @@ const CIPHER = "aes-256-gcm";
 const VERSION = "v1";
 /** GCM 的推荐 IV 长度（96 bit）。每次加密都必须是新的随机值，否则会泄露明文异或关系。 */
 const IV_BYTES = 12;
+/** 凭据无法解密（格式非法、密钥不符、密文被改动）时对外统一使用的错误码。 */
+const CREDENTIAL_INVALID_ERROR = "MAILBOX_CREDENTIAL_INVALID";
 
 /** 派生 32 字节密钥：密钥原文允许任意长度（JWT_SECRET 常常很长），统一 sha256 收敛。 */
 function deriveKey(secret: string) {
@@ -32,18 +34,27 @@ export function encryptMailboxPassword(secret: string, value: string): string {
 export function decryptMailboxPassword(secret: string, value: string): string {
   const [version, ivText, tagText, encryptedText] = String(value || "").split(":");
   if (version !== VERSION || !ivText || !tagText || !encryptedText) {
-    throw new Error("MAILBOX_CREDENTIAL_INVALID");
+    throw new Error(CREDENTIAL_INVALID_ERROR);
   }
 
-  const decipher = crypto.createDecipheriv(
-    CIPHER,
-    deriveKey(secret),
-    Buffer.from(ivText, "base64")
-  );
-  // 先设认证标签再解密：密钥不符或密文被改动时 final() 会抛错，不会返回脏明文。
-  decipher.setAuthTag(Buffer.from(tagText, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(encryptedText, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
+  // 认证失败（密钥不符、密文被改动）必须收敛成同一个可识别的错误码，而不是把 Node 的
+  // 「Unsupported state or unable to authenticate data」抛出去：那句 OpenSSL 措辞既不在
+  // 接口错误映射表里、也不在连接失败的启发式里，会一路落成 500（模块 E.3 说的正是这个场景
+  // ——密钥被换过之后所有已存凭据失效，用户要看到的是一句能照做的话）。
+  try {
+    const decipher = crypto.createDecipheriv(
+      CIPHER,
+      deriveKey(secret),
+      Buffer.from(ivText, "base64")
+    );
+    // 先设认证标签再解密：密钥不符或密文被改动时 final() 会抛错，不会返回脏明文。
+    decipher.setAuthTag(Buffer.from(tagText, "base64"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedText, "base64")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch (error) {
+    // 原始原因挂在 cause 上：运维排查（"是不是换过密钥"）需要它，用户不需要。
+    throw new Error(CREDENTIAL_INVALID_ERROR, { cause: error });
+  }
 }

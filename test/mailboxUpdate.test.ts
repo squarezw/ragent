@@ -6,9 +6,12 @@
  * 密码本身，而不是"函数被调用过"。
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   mailboxUpdateInputFromBody,
+  mailboxUpdateSuppliesPassword,
   normalizeMailboxConfig,
   resolveMailboxUpdate,
   type MailboxConfig,
@@ -195,4 +198,25 @@ test("编辑请求体: imapSecure 只收布尔；非文本字段与非法 body �
   assert.deepEqual(mailboxUpdateInputFromBody(null), {});
   assert.deepEqual(mailboxUpdateInputFromBody("not-an-object"), {});
   assert.deepEqual(mailboxUpdateInputFromBody(undefined), {});
+});
+
+test("编辑请求是否带新密码：空串与未提供都算「没带」，与 resolveMailboxUpdate 同一判定", () => {
+  assert.equal(mailboxUpdateSuppliesPassword({ password: "new-auth-code" }), true);
+  assert.equal(mailboxUpdateSuppliesPassword({ password: "  " }), true);
+  assert.equal(mailboxUpdateSuppliesPassword({ password: "" }), false);
+  assert.equal(mailboxUpdateSuppliesPassword({ name: "只改名" }), false);
+  assert.equal(mailboxUpdateSuppliesPassword(undefined), false);
+  assert.equal(mailboxUpdateSuppliesPassword(null), false);
+});
+
+test("带新密码的编辑不去解密旧密文（否则密钥被换过后用户永远自救不了）", () => {
+  // 密钥轮换后旧密文必然解不开，而用户此刻提交的正是"重新填写授权码"这件事本身：
+  // 若在合并前先解密旧密文，接口会一直报「凭据已失效」，用户照提示重填还是同一条错误。
+  const source = readFileSync(join(process.cwd(), "lib/automation/mailboxes.ts"), "utf8");
+
+  assert.match(
+    source,
+    /mailboxConnectionFromRow\(\s*existingRow\s*,\s*mailboxUpdateSuppliesPassword\(input\)\s*\?/,
+    "更新路径必须按「请求是否带新密码」决定要不要解密既有密文"
+  );
 });

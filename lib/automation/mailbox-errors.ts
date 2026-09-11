@@ -22,6 +22,19 @@ const CONNECTION_ERROR_HINTS = ["IMAP", "登录", "连接", "认证", "AUTHENTIC
 /** 邮箱地址在本用户下唯一（UNIQUE(created_by_user_id, email)）时的唯一约束冲突。 */
 const UNIQUE_VIOLATION = "23505";
 
+/**
+ * 错误码 → 用户可读文案；不在表里的（通常是上游 IMAP 带回的真实原因）原样返回。
+ *
+ * 与 `mailboxApiError` 共用同一张表：**写进 `automation_mailboxes.last_error`、进而显示在
+ * 抽屉「最后错误」与通知中心里的文案，必须与接口返回的是同一句话**。只映射接口那一侧的话，
+ * 同一个故障会在两个地方说两种话——接口说「请重新填写授权码」，通知里却写着
+ * `MAILBOX_CREDENTIAL_INVALID`（模块 E.1/E.2 的写入点因此必须先过这里）。
+ */
+export function mailboxErrorDisplayText(error: unknown): string {
+  const code = String((error as { message?: unknown })?.message ?? "").trim();
+  return MAILBOX_ERROR_MESSAGES[code] || code;
+}
+
 export function mailboxApiError(error: unknown): { status: number; detail: string } {
   const code = String((error as { message?: unknown })?.message ?? "");
   const known = MAILBOX_ERROR_MESSAGES[code];

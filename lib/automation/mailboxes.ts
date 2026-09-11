@@ -6,7 +6,9 @@ import {
 } from "@/lib/automation/mailbox-credentials";
 import { mailboxLabelFromRow } from "@/lib/automation/mailbox-id";
 import { mailboxErrorText } from "@/lib/automation/mailbox-health";
+import { mailboxErrorDisplayText } from "@/lib/automation/mailbox-errors";
 import {
+  mailboxUpdateSuppliesPassword,
   normalizeMailboxConfig,
   resolveMailboxUpdate,
   type MailboxConfigInput,
@@ -237,7 +239,10 @@ export async function markAutomationMailboxConnectionError(
   mailboxId: number,
   error: unknown,
 ) {
-  const message = mailboxErrorText(error instanceof Error ? error.message : error) || "邮箱连接失败";
+  // 先翻译成用户可读文案再落库：`last_error` 是抽屉「最后错误」与通知中心的同一份文案来源，
+  // 不能让 `MAILBOX_CREDENTIAL_INVALID` 这类错误码原样出现在界面上（模块 E.3 的一半价值
+  // 就在于这句「请重新填写授权码」真的能被人看懂并照做）。
+  const message = mailboxErrorText(mailboxErrorDisplayText(error)) || "邮箱连接失败";
 
   try {
     await ensureAutomationMailboxTable();
@@ -273,11 +278,18 @@ export async function markAutomationMailboxConnected(userId: number, mailboxId: 
   }
 }
 
-export function mailboxConnectionFromRow(row: any) {
+/**
+ * 邮箱行 → 连接参数。
+ *
+ * `options.password` 用于**顶替**行内密文解出的密码，只在确实有新密码时传（见
+ * `updateAutomationMailbox`）：传了就不去解密旧密文。不传则按原样解密，解不开即抛
+ * `MAILBOX_CREDENTIAL_INVALID`。
+ */
+export function mailboxConnectionFromRow(row: any, options: { password?: string } = {}) {
   return {
     email: String(row.email || ""),
     username: String(row.username || ""),
-    password: decryptPassword(String(row.password_ciphertext || "")),
+    password: options.password ?? decryptPassword(String(row.password_ciphertext || "")),
     imapHost: String(row.imap_host || ""),
     imapPort: Number(row.imap_port || 993),
     imapSecure: row.imap_secure !== false,
@@ -306,7 +318,17 @@ export async function updateAutomationMailbox(
   if (!existingRow) return null;
 
   const { config, cursorResetRequired } = resolveMailboxUpdate(
-    { name: String(existingRow.name || ""), ...mailboxConnectionFromRow(existingRow) },
+    {
+      name: String(existingRow.name || ""),
+      // 请求里带了新密码就不去解密旧密文：密钥被换过之后旧密文必然解不开，而用户此刻提交的
+      // 正是"重新填写授权码"这件事本身。先解密的话，接口会一直报「凭据已失效」，用户照提示
+      // 重填还是同一条错误——那是模块 E.3 承诺的唯一自救路径，不能是死循环。
+      // 没带新密码时照旧解密（合并结果要用它），解不开就如实报 400 而不是 500。
+      ...mailboxConnectionFromRow(
+        existingRow,
+        mailboxUpdateSuppliesPassword(input) ? { password: String(input.password) } : {},
+      ),
+    },
     input,
   );
 

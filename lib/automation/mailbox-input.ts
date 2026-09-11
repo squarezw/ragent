@@ -150,6 +150,18 @@ export function resolveMailboxUpdate(
 }
 
 /**
+ * 编辑请求是否带来了可用的**新密码**（空串与未提供都算"没带"，与 `resolveMailboxUpdate`
+ * 的判定同源）。
+ *
+ * 调用方据此决定要不要去解密既有密文：带了新密码时旧密文不会被用到，而它此刻可能根本
+ * 解不开（模块 E.3：密钥被换过）。先解密会让用户卡在"照提示重新填写授权码 → 还是同一条
+ * 凭据失效错误"的循环里。
+ */
+export function mailboxUpdateSuppliesPassword(input?: MailboxConfigInput | null): boolean {
+  return String(input?.password ?? "") !== "";
+}
+
+/**
  * 模块 D.4：UID 基线由 IMAP 主机 + 账号 + 文件夹共同决定，三者任一变化都意味着
  * "这就是另一个收件箱了"，必须把游标打回未初始化；否则调度器会拿旧基线去比新邮箱的
  * UID，要么漏邮件、要么重复处理。
