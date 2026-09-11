@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import pool from "@/lib/db";
+import { mailboxLabelFromRow } from "@/lib/automation/mailbox-id";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
 export type AutomationMailboxInput = {
@@ -113,7 +114,7 @@ export function mailboxRowToApi(row: any) {
     imapSecure: row.imap_secure !== false,
     folder: row.folder || "INBOX",
     status: row.status || "connected",
-    label: row.name && row.name !== row.email ? `${row.name} · ${row.email}` : row.email,
+    label: mailboxLabelFromRow(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
   };

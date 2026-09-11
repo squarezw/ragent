@@ -1,6 +1,12 @@
 import pool from "@/lib/db";
-import { normalizeMailboxId, requireMailboxId } from "@/lib/automation/mailbox-id";
+import {
+  MAILBOX_NOT_OWNED,
+  mailboxLabelFromRow,
+  normalizeMailboxId,
+  requireMailboxId,
+} from "@/lib/automation/mailbox-id";
 import { mailRulesBriefSummary } from "@/lib/automation/mail-rules";
+import { getAutomationMailboxForUser } from "@/lib/automation/mailboxes";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
 export type AutomationTriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
@@ -712,6 +718,19 @@ function normalizeEmailPriority(value: any) {
   return Math.max(0, Math.min(100, Math.round(parsed)));
 }
 
+/**
+ * 取监听邮箱并校验归属（模块 D.2）。
+ *
+ * 邮箱不存在、或存在但不属于该用户，一律拒绝：客户端不得把自动化指向别人的监听邮箱。
+ * 归属判断复用 `getAutomationMailboxForUser` 的 `id + created_by_user_id` 过滤，不另写权限逻辑。
+ * 不再有 `"system"` 特例——该值只会作为非法 id 被 `requireMailboxId` 拒绝。
+ */
+async function requireOwnedMailbox(userId: number, value: unknown) {
+  const mailbox = await getAutomationMailboxForUser(userId, requireMailboxId(value));
+  if (!mailbox) throw new Error(MAILBOX_NOT_OWNED);
+  return mailbox;
+}
+
 export async function createAutomation(userId: number, input: any) {
   await ensureAutomationTables();
   const tenantId = await getUserTenantId(userId);
@@ -756,9 +775,11 @@ export async function createAutomation(userId: number, input: any) {
     Object.assign(triggerConfig, schedule);
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
   } else if (triggerType === "邮件触发") {
+    const mailbox = await requireOwnedMailbox(userId, input.mailboxId ?? input.triggerConfig?.mailboxId);
     Object.assign(triggerConfig, {
-      mailboxId: requireMailboxId(input.mailboxId ?? input.triggerConfig?.mailboxId),
-      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? "系统邮箱"),
+      mailboxId: Number(mailbox.id),
+      // 展示名一律由邮箱记录派生，客户端传入的 mailboxLabel 忽略（模块 D.3）
+      mailboxLabel: mailboxLabelFromRow(mailbox),
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode) === "any" ? "any" : "all",
       rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules),
@@ -906,9 +927,14 @@ export async function updateAutomation(userId: number, id: number, input: any) {
     }
     triggerConfig = schedule;
   } else if (triggerType === "邮件触发") {
+    const mailbox = await requireOwnedMailbox(
+      userId,
+      input.mailboxId ?? input.triggerConfig?.mailboxId ?? triggerConfig.mailboxId,
+    );
     triggerConfig = {
-      mailboxId: requireMailboxId(input.mailboxId ?? input.triggerConfig?.mailboxId ?? triggerConfig.mailboxId),
-      mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? triggerConfig.mailboxLabel ?? "系统邮箱"),
+      mailboxId: Number(mailbox.id),
+      // 展示名一律由邮箱记录派生，客户端传入的 mailboxLabel 忽略（模块 D.3）
+      mailboxLabel: mailboxLabelFromRow(mailbox),
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? triggerConfig.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode ?? triggerConfig.ruleMode) === "any" ? "any" : "all",
       rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules ?? triggerConfig.rules),

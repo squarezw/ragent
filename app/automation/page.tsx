@@ -340,15 +340,6 @@ const AUTOMATION_TEMPLATE_EN: Record<
   },
 };
 
-const LEGACY_DEMO_AUTOMATION_NAMES = new Set([
-  "每日经营日报",
-  "客户询价处理",
-  "订单风险检测",
-  "销售日报分析",
-  "售后投诉分级",
-  "库存异常检查",
-]);
-
 const initialRunRecords: RunRecord[] = [];
 function StatusBadge({ status, text }: { status: AutomationStatus | RunStatus; text: string }) {
   const cls =
