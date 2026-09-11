@@ -43,6 +43,7 @@ docker/certs/
 .pnpm-store/
 .claude/
 .data/
+.superpowers/
 
 # OnlyOffice custom fonts live in docker/onlyoffice/fonts/ on each
 # deployment. Keep the directory (via .keep) but never commit the
