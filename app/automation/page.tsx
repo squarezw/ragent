@@ -34,6 +34,22 @@ import {
   type MailRuleSet,
   type MailTriggerRule,
 } from "@/lib/automation/mail-rules";
+import {
+  MAILBOX_NEW_OPTION,
+  automationMailboxLabel,
+  mailboxOptionLabel,
+  mailboxSelectValue,
+  normalizeMailboxId,
+  selectMailboxScopedAutomations,
+  type MailboxOption,
+} from "@/lib/automation/mailbox-id";
+import {
+  EMPTY_MAILBOX_FORM,
+  firstMailboxFormIssue,
+  mailboxCreatePayload,
+  type MailboxFormIssue,
+  type MailboxFormState,
+} from "@/lib/automation/mailbox-form";
 
 type AutomationStatus = "running" | "paused" | "error";
 type RunStatus =
@@ -251,6 +267,12 @@ function splitMailTestAttachments(value: string) {
     .filter(Boolean);
 }
 
+// 接口错误文案提取：不使用 any，避免新增 lint 诊断。
+function apiErrorDetail(error: unknown) {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === "string" ? detail : "";
+}
+
 const initialAutomations: Automation[] = [];
 
 const automationTemplates: AutomationTemplate[] = [
@@ -265,7 +287,7 @@ const automationTemplates: AutomationTemplate[] = [
   {
     id: "customer-inquiry-mail",
     name: "客户询价处理",
-    description: "系统邮箱收到新邮件后，由数字员工提取客户需求并生成处理建议。",
+    description: "监听邮箱收到新邮件后，由数字员工提取客户需求并生成处理建议。",
     trigger: "邮件触发",
     strategy: "自动执行",
     task: "读取新邮件中的发件人、主题、正文和附件信息，提取客户需求、产品、数量与交期，并生成清晰的处理建议。",
@@ -289,7 +311,7 @@ const automationTemplates: AutomationTemplate[] = [
   {
     id: "complaint-processing",
     name: "售后投诉处理",
-    description: "系统邮箱收到售后邮件后自动分析投诉内容并输出处理建议。",
+    description: "监听邮箱收到售后邮件后自动分析投诉内容并输出处理建议。",
     trigger: "邮件触发",
     strategy: "需要确认后执行",
     task: "分析新收到的售后邮件，识别投诉类型、紧急程度和核心诉求，并生成建议处理方案。",
@@ -315,7 +337,7 @@ const AUTOMATION_TEMPLATE_EN: Record<
   },
   "customer-inquiry-mail": {
     name: "Customer Inquiry Processing",
-    description: "When the system mailbox receives a new email, a digital employee extracts customer needs and generates handling suggestions.",
+    description: "When the monitored mailbox receives a new email, a digital employee extracts customer needs and generates handling suggestions.",
     task: "Read the sender, subject, body, and attachment information from the new email. Extract customer needs, products, quantity, and delivery date, then generate clear handling suggestions.",
   },
   "order-risk-check": {
@@ -330,7 +352,7 @@ const AUTOMATION_TEMPLATE_EN: Record<
   },
   "complaint-processing": {
     name: "After-sales Complaint Processing",
-    description: "Automatically analyze after-sales emails received by the system mailbox and generate handling suggestions.",
+    description: "Automatically analyze after-sales emails received by the monitored mailbox and generate handling suggestions.",
     task: "Analyze the newly received after-sales email, identify the complaint type, urgency, and core request, and generate a recommended handling plan.",
   },
   "inventory-check": {
@@ -497,7 +519,16 @@ export default function AutomationPage() {
 
   const [mailResultEmail, setMailResultEmail] = useState("");
   const [resultEmailIncludeAttachments, setResultEmailIncludeAttachments] = useState(true);
-  // 邮件触发固定使用系统设置中的单一系统邮箱，不允许在自动化页面新增或切换邮箱。
+  // 监听邮箱由用户自己配置（系统邮箱已下线）：mailboxId 指向 automation_mailboxes，
+  // mailboxFormOpen 表示"正在内联配置新邮箱"，此时尚未有可提交的 mailboxId。
+  const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
+  const [mailboxesLoaded, setMailboxesLoaded] = useState(false);
+  const [mailboxId, setMailboxId] = useState<number | null>(null);
+  const [mailboxFormOpen, setMailboxFormOpen] = useState(false);
+  const [mailboxForm, setMailboxForm] = useState<MailboxFormState>(EMPTY_MAILBOX_FORM);
+  const [mailboxFormIssue, setMailboxFormIssue] = useState<MailboxFormIssue | null>(null);
+  const [mailboxSaveError, setMailboxSaveError] = useState("");
+  const [mailboxTesting, setMailboxTesting] = useState(false);
   const [mailRuleMode, setMailRuleMode] = useState<MailRuleMode>("all");
   const [mailRules, setMailRules] = useState<MailTriggerRule[]>([]);
   const [mailPriority, setMailPriority] = useState(50);
@@ -532,14 +563,40 @@ export default function AutomationPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
+  const mailboxPickerValue = mailboxSelectValue(mailboxId, mailboxFormOpen);
+
+  const selectedMailbox = useMemo(
+    () => (mailboxFormOpen ? null : mailboxes.find((item) => item.id === mailboxId) ?? null),
+    [mailboxFormOpen, mailboxId, mailboxes],
+  );
+
+  // 调度器实际监听的是邮箱记录里的文件夹，这里同步派生，避免运行详情显示错文件夹。
+  const mailFolderValue = String(selectedMailbox?.folder || "").trim() || "INBOX";
+
+  // 该邮箱被多少个邮件自动化引用：与删除接口的依赖检查口径一致。
+  const selectedMailboxDependents = useMemo(() => {
+    if (!selectedMailbox) return 0;
+    return automations.filter(
+      (item) => item.trigger === "邮件触发" && normalizeMailboxId(item.mailboxId) === selectedMailbox.id,
+    ).length;
+  }, [automations, selectedMailbox]);
+
+  // D.7：冲突检测与命中预测只在同一监听邮箱内比较——调度器的分组键是
+  // `${userId}:${mailboxId}`，跨邮箱比较会误报冲突并预测错误的 winner。
+  // 正在配置新邮箱时没有可比较的分组，候选为空。
+  const mailboxScopedAutomations = useMemo(
+    () =>
+      selectMailboxScopedAutomations(automations, {
+        mailboxId: mailboxFormOpen ? null : mailboxId,
+        excludeId: editingAutomationId,
+      }),
+    [automations, editingAutomationId, mailboxFormOpen, mailboxId],
+  );
+
   const mailConflictCandidates = useMemo(() => {
     if (trigger !== "邮件触发") return [];
 
-    return automations
-      .filter((item) => {
-        if (item.id === editingAutomationId) return false;
-        return item.trigger === "邮件触发" && item.status === "running";
-      })
+    return mailboxScopedAutomations
       .map((item) => ({
         item,
         level: mailConflictLevel({ rules: mailRules, mode: mailRuleMode }, automationMailRuleSet(item)),
@@ -550,7 +607,7 @@ export default function AutomationPage() {
         if (a.priority !== b.priority) return b.priority - a.priority;
         return a.item.id - b.item.id;
       });
-  }, [automations, editingAutomationId, mailRuleMode, mailRules, trigger]);
+  }, [mailRuleMode, mailRules, mailboxScopedAutomations, trigger]);
 
   const mailRuleTestResult = useMemo(() => {
     if (trigger !== "邮件触发") return null;
@@ -570,11 +627,7 @@ export default function AutomationPage() {
     const currentMatched = doesMailRuleSetMatch({ rules: mailRules, mode: mailRuleMode }, message);
     const currentId = editingAutomationId ?? Number.MAX_SAFE_INTEGER;
 
-    const candidates = automations
-      .filter((item) => {
-        if (item.id === editingAutomationId) return false;
-        return item.trigger === "邮件触发" && item.status === "running";
-      })
+    const candidates = mailboxScopedAutomations
       .filter((item) => doesMailRuleSetMatch(automationMailRuleSet(item), message))
       .map((item) => ({
         id: item.id,
@@ -605,7 +658,6 @@ export default function AutomationPage() {
       matchedCandidates: candidates,
     };
   }, [
-    automations,
     editingAutomationId,
     mailPriority,
     mailRuleMode,
@@ -615,6 +667,7 @@ export default function AutomationPage() {
     mailTestFrom,
     mailTestSubject,
     mailTestTo,
+    mailboxScopedAutomations,
     name,
     trigger,
   ]);
@@ -765,6 +818,38 @@ export default function AutomationPage() {
     return () => {
       window.clearInterval(runTimer);
       window.clearInterval(notificationTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    // 监听邮箱列表：供向导内联选择/配置使用。一条都没有（或列表拉取失败）时直接
+    // 展开内联表单，避免用户卡在"没有邮箱可选"的空状态。
+    async function loadMailboxOptions() {
+      try {
+        const response = await axios.get("/api/v1/automation-mailboxes");
+        const items = Array.isArray(response.data?.items)
+          ? (response.data.items as MailboxOption[])
+          : [];
+        if (!alive) return;
+
+        setMailboxes(items);
+        setMailboxId((current) =>
+          current !== null && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+        );
+        setMailboxFormOpen((open) => open || items.length === 0);
+      } catch (error) {
+        console.error("加载监听邮箱列表失败:", error);
+        if (alive) setMailboxFormOpen(true);
+      } finally {
+        if (alive) setMailboxesLoaded(true);
+      }
+    }
+
+    loadMailboxOptions();
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -964,11 +1049,19 @@ export default function AutomationPage() {
               { value: "{{trigger.timezone}}", label: tt("触发时区", "Trigger timezone") },
             ];
 
+  /** 已保存自动化要显示的监听邮箱名：解析不到时明确说"未配置"，不再回退到系统邮箱。 */
+  function automationMailboxText(item: Automation) {
+    return (
+      automationMailboxLabel(item, mailboxes) ??
+      tt("监听邮箱未配置", "Mailbox not configured")
+    );
+  }
+
   function localizedTriggerDetail(item: Automation) {
     if (item.trigger === "邮件触发") {
       const ruleText = mailRulesSummary(automationMailRuleSet(item));
       const priority = Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50;
-      return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
+      return `${automationMailboxText(item)} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
     }
     if (item.trigger === "Webhook / API") {
       return tt("由外部系统通过 Webhook / API 触发", "Triggered by an external system through Webhook / API");
@@ -1030,6 +1123,82 @@ export default function AutomationPage() {
     return value;
   }
 
+  function resetMailboxForm() {
+    setMailboxForm(EMPTY_MAILBOX_FORM);
+    setMailboxFormIssue(null);
+    setMailboxSaveError("");
+  }
+
+  function handleMailboxSelectionChange(value: string) {
+    setMailboxSaveError("");
+    if (value === MAILBOX_NEW_OPTION) {
+      // 只展开表单、保留原有选择：取消配置时可以回到原邮箱。
+      setMailboxFormOpen(true);
+      return;
+    }
+
+    const next = normalizeMailboxId(Number(value));
+    if (next === null) return;
+    setMailboxFormOpen(false);
+    setMailboxId(next);
+  }
+
+  function cancelMailboxForm() {
+    setMailboxFormOpen(false);
+    resetMailboxForm();
+    setMailboxId((current) => current ?? mailboxes[0]?.id ?? null);
+  }
+
+  function mailboxFormIssueText(issue: MailboxFormIssue) {
+    if (issue === "email") return tt("请输入正确的邮箱地址", "Please enter a valid email address");
+    if (issue === "username") return tt("请填写邮箱登录账号", "Please enter the mailbox login account");
+    if (issue === "password") return tt("请填写邮箱授权码或密码", "Please enter the mailbox password");
+    if (issue === "imapHost") return tt("请填写 IMAP 服务器", "Please enter the IMAP server");
+    return tt("IMAP 端口不正确", "Invalid IMAP port");
+  }
+
+  /**
+   * 保存内联配置的监听邮箱。
+   *
+   * 服务端在写入前会真实连接一次 IMAP，连接失败即 400——不可达的邮箱无法保存，
+   * 这是有意接受的约束（安全优先）：这里只把失败原因显示在表单里，不提供跳过校验
+   * 或"仍然保存"的路径。
+   */
+  async function saveMailboxFromForm() {
+    const issue = firstMailboxFormIssue(mailboxForm);
+    setMailboxFormIssue(issue);
+    setMailboxSaveError("");
+    if (issue) return;
+
+    setMailboxTesting(true);
+    try {
+      const response = await axios.post("/api/v1/automation-mailboxes", mailboxCreatePayload(mailboxForm));
+      const created = response.data as MailboxOption;
+      const createdId = normalizeMailboxId(created?.id);
+      if (createdId === null) {
+        setMailboxSaveError(tt("监听邮箱保存失败", "Failed to save the mailbox"));
+        return;
+      }
+
+      setMailboxes((items) => [created, ...items.filter((item) => item.id !== createdId)]);
+      setMailboxId(createdId);
+      setMailboxFormOpen(false);
+      resetMailboxForm();
+      toast.success(tt("监听邮箱已保存", "Mailbox saved"));
+    } catch (error) {
+      console.error("保存监听邮箱失败:", error);
+      setMailboxSaveError(
+        apiErrorDetail(error) ||
+          tt(
+            "邮箱连接失败，请检查 IMAP 服务器、账号与授权码",
+            "Connection failed. Check the IMAP server, account, and password.",
+          ),
+      );
+    } finally {
+      setMailboxTesting(false);
+    }
+  }
+
   function resetWizard() {
     setStep(1);
     setName("");
@@ -1050,6 +1219,10 @@ export default function AutomationPage() {
     setScheduleDate("");
     setMailResultEmail("");
     setResultEmailIncludeAttachments(true);
+    // 监听邮箱：默认选中第一条已保存邮箱；一条都没有时直接展开内联表单。
+    setMailboxId(mailboxes[0]?.id ?? null);
+    setMailboxFormOpen(mailboxes.length === 0);
+    resetMailboxForm();
     setMailRuleMode("all");
     setMailRules([]);
     setMailPriority(50);
@@ -1101,6 +1274,16 @@ export default function AutomationPage() {
     setScheduleDate(item.scheduleDate || "");
     setMailResultEmail(item.resultEmail || "");
     setResultEmailIncludeAttachments(item.resultEmailIncludeAttachments === true);
+    // 监听邮箱：能解析到已保存邮箱时直接选中；遗留行（旧字符串键，没有整数
+    // mailboxId）或名单里已查不到该邮箱时展开配置表单，提示用户重新选择，
+    // 而不是在提交时静默下发空值（服务端会以「请为邮件触发选择监听邮箱」拒绝）。
+    const savedMailboxId = normalizeMailboxId(item.mailboxId);
+    setMailboxId(savedMailboxId);
+    setMailboxFormOpen(
+      savedMailboxId === null ||
+        (mailboxesLoaded && !mailboxes.some((mailbox) => mailbox.id === savedMailboxId)),
+    );
+    resetMailboxForm();
     setMailRuleMode(item.mailRuleMode === "any" ? "any" : "all");
     setMailRules(Array.isArray(item.mailRules) ? item.mailRules : []);
     setMailPriority(Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50);
@@ -1157,7 +1340,10 @@ export default function AutomationPage() {
     }
     if (trigger === "邮件触发") {
       const ruleText = mailRulesSummary({ rules: mailRules, mode: mailRuleMode });
-      return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${mailPriority}`;
+      const mailboxText = selectedMailbox
+        ? mailboxOptionLabel(selectedMailbox)
+        : tt("未选择监听邮箱", "No mailbox selected");
+      return `${mailboxText} · ${ruleText} · ${tt("优先级", "Priority")} ${mailPriority}`;
     }
     if (trigger === "Webhook / API") {
       return "由外部系统通过 Webhook / API 触发";
@@ -1168,6 +1354,9 @@ export default function AutomationPage() {
   }
 
   function buildAutomationPayload() {
+    // 监听邮箱完全由向导内的选择派生：正在配置新邮箱时视为未选择（提交前会被拦下）。
+    const mailboxIdForPayload = mailboxFormOpen ? null : normalizeMailboxId(mailboxId);
+
     return {
       name: name.trim(),
       appId: selectedApp?.id,
@@ -1208,9 +1397,12 @@ export default function AutomationPage() {
         trigger === "定时触发" && schedulePeriod === "仅一次"
           ? scheduleDate || undefined
           : undefined,
-      // 邮件触发的监听邮箱为整数 mailboxId，由向导内的邮箱选择器下发；选择器接入前不下发该字段，服务端会明确拒绝。
-      mailboxLabel: trigger === "邮件触发" ? "系统邮箱" : undefined,
-      mailFolder: trigger === "邮件触发" ? "INBOX" : undefined,
+      // 监听邮箱为整数 mailboxId，指向 automation_mailboxes；服务端会校验归属，
+      // 并按邮箱记录重新派生 mailboxLabel（客户端传入的 label 不作为展示来源）。
+      mailboxId: trigger === "邮件触发" ? mailboxIdForPayload ?? undefined : undefined,
+      mailboxLabel:
+        trigger === "邮件触发" && selectedMailbox ? mailboxOptionLabel(selectedMailbox) : undefined,
+      mailFolder: trigger === "邮件触发" ? mailFolderValue : undefined,
       mailRuleMode: trigger === "邮件触发" ? mailRuleMode : undefined,
       mailRules: trigger === "邮件触发" ? mailRules : undefined,
       mailPriority: trigger === "邮件触发" ? mailPriority : undefined,
@@ -1221,6 +1413,26 @@ export default function AutomationPage() {
       passPreviousResult:
         trigger === "自动化完成触发" ? passPreviousResult : undefined,
     };
+  }
+
+  /** 邮件触发的监听邮箱必须来自邮箱列表（服务端同样会校验归属），未选定时不允许保存。 */
+  function validateMailboxSelection() {
+    if (mailboxFormOpen) {
+      toast.error(
+        tt(
+          "请先完成监听邮箱配置并测试连接，再保存自动化",
+          "Configure and test the monitored mailbox before saving",
+        ),
+      );
+      return false;
+    }
+
+    if (normalizeMailboxId(mailboxId) === null) {
+      toast.error(tt("请为邮件触发选择监听邮箱", "Please choose a monitored mailbox for the email trigger"));
+      return false;
+    }
+
+    return true;
   }
 
   function validateScheduleConfiguration() {
@@ -1286,6 +1498,11 @@ export default function AutomationPage() {
         setStep(2);
         return;
       }
+
+      if (!validateMailboxSelection()) {
+        setStep(2);
+        return;
+      }
     }
 
     try {
@@ -1347,6 +1564,11 @@ export default function AutomationPage() {
       const invalidRule = mailRules.find((rule) => rule.field !== "是否包含附件" && rule.operator !== "是否存在" && !rule.value.trim());
       if (invalidRule) {
         toast.error(tt("请填写完整的邮件触发条件", "Please complete all email trigger conditions"));
+        setStep(2);
+        return;
+      }
+
+      if (!validateMailboxSelection()) {
         setStep(2);
         return;
       }
@@ -2882,24 +3104,119 @@ export default function AutomationPage() {
                     {trigger === "邮件触发" && (
                       <>
                         <Field label={tt("监听邮箱", "Monitored Mailbox")} compact>
-                          <div className="rounded-lg border bg-background px-3 py-2.5">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-medium">
-                                  {tt("系统邮箱（系统设置）", "System Mailbox (System Settings)")}
-                                </div>
-                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                                  {tt(
-                                    "邮件触发固定监听管理员在「系统设置」中配置的系统邮箱，不在自动化页面新增或切换邮箱。",
-                                    "Email triggers always monitor the system mailbox configured by an administrator in System Settings. Mailboxes cannot be added or switched here.",
-                                  )}
-                                </div>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                                {tt("固定监听", "Fixed")}
-                              </span>
+                          <select
+                            value={mailboxPickerValue}
+                            onChange={(e) => handleMailboxSelectionChange(e.target.value)}
+                            className="input-base"
+                          >
+                            {mailboxes.map((option) => (
+                              <option key={option.id} value={String(option.id)}>
+                                {mailboxOptionLabel(option)}
+                              </option>
+                            ))}
+                            <option value={MAILBOX_NEW_OPTION}>
+                              {tt("＋ 配置新邮箱…", "＋ Configure a new mailbox…")}
+                            </option>
+                          </select>
+
+                          {selectedMailboxDependents > 0 && !mailboxFormOpen && (
+                            <div className="mt-1.5 text-xs leading-5 text-destructive">
+                              {tt(
+                                `⚠ 该邮箱已被 ${selectedMailboxDependents} 个自动化使用，修改凭据会影响它们`,
+                                `⚠ This mailbox is used by ${selectedMailboxDependents} automations; changing its credentials affects them all`,
+                              )}
                             </div>
-                          </div>
+                          )}
+
+                          {mailboxFormOpen && (
+                            <div className="mt-3 space-y-3 rounded-lg border bg-background p-3">
+                              <div className="text-xs font-medium">
+                                {tt("配置新邮箱", "Configure a new mailbox")}
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                <input
+                                  value={mailboxForm.email}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, email: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("邮箱地址，例如 sales@corp.com", "Email address, e.g. sales@corp.com")}
+                                />
+                                <input
+                                  value={mailboxForm.name}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, name: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("名称（选填），例如 销售部邮箱", "Name (optional), e.g. Sales mailbox")}
+                                />
+                                <input
+                                  value={mailboxForm.imapHost}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, imapHost: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("IMAP 服务器，例如 imap.exmail.qq.com", "IMAP server, e.g. imap.exmail.qq.com")}
+                                />
+                                <input
+                                  value={mailboxForm.imapPort}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, imapPort: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("端口，默认 993", "Port, default 993")}
+                                />
+                                <input
+                                  value={mailboxForm.username}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, username: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("登录账号，通常为邮箱地址", "Login account, usually the email address")}
+                                />
+                                <input
+                                  type="password"
+                                  value={mailboxForm.password}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, password: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("密码或授权码", "Password or app password")}
+                                />
+                                <input
+                                  value={mailboxForm.folder}
+                                  onChange={(e) => setMailboxForm((form) => ({ ...form, folder: e.target.value }))}
+                                  className="input-base"
+                                  placeholder={tt("监听文件夹，默认 INBOX", "Monitored folder, default INBOX")}
+                                />
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void saveMailboxFromForm()}
+                                  disabled={mailboxTesting}
+                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {mailboxTesting
+                                    ? tt("连接中…", "Connecting…")
+                                    : tt("测试连接", "Test connection")}
+                                </button>
+                                {mailboxes.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={cancelMailboxForm}
+                                    className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted/40"
+                                  >
+                                    {tt("取消", "Cancel")}
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="text-xs leading-5 text-muted-foreground">
+                                {tt(
+                                  "平台会先真实连接该邮箱验证凭据，通过后立即保存并选中；连接失败的邮箱不会被保存。",
+                                  "The platform connects to the mailbox to verify the credentials, then saves and selects it. Mailboxes that fail to connect are never saved.",
+                                )}
+                              </div>
+
+                              {(mailboxFormIssue || mailboxSaveError) && (
+                                <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
+                                  {mailboxFormIssue ? mailboxFormIssueText(mailboxFormIssue) : mailboxSaveError}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
                             {tt(
                               "监听邮箱与任务完成后的通知邮箱相互独立。",
@@ -2910,12 +3227,12 @@ export default function AutomationPage() {
 
                         <Field label={tt("监听文件夹", "Monitored Folder")} compact>
                           <div className="rounded-lg border bg-background px-3 py-2.5 text-sm">
-                            {tt("收件箱（INBOX）", "Inbox (INBOX)")}
+                            {mailFolderDisplay(mailboxFormOpen ? mailboxForm.folder : selectedMailbox?.folder)}
                           </div>
                           <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
                             {tt(
-                              "当前仅监听系统邮箱的收件箱中新到达的邮件。",
-                              "Currently, only new messages arriving in the system mailbox inbox are monitored.",
+                              "监听文件夹来自所选邮箱的配置，同一邮箱上的所有自动化共用同一文件夹。",
+                              "The monitored folder comes from the selected mailbox; all automations on that mailbox share it.",
                             )}
                           </div>
                         </Field>

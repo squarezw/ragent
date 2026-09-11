@@ -43,3 +43,91 @@ export function mailboxLabelFromRow(row: { name?: unknown; email?: unknown } | n
   const email = String(row?.email ?? "");
   return name && name !== email ? `${name} · ${email}` : email;
 }
+
+/*
+ * 以下为向导端（"use client"）的选择与展示派生逻辑（模块 B / D.7）。
+ * 放在本模块是因为它们判断的是同一件事——邮箱标识与展示名，且必须与上面的
+ * 分组键、邮箱列表接口（mailboxes.ts 的 mailboxRowToApi）保持一致，不能各写一份。
+ */
+
+/** 下拉中「＋ 配置新邮箱…」的哨兵值：mailboxId 恒为正整数，不会与之冲突。 */
+export const MAILBOX_NEW_OPTION = "new";
+
+/** 下拉的显示值：选中已保存邮箱时是它的 id，配置新邮箱时是哨兵值。 */
+export function mailboxSelectValue(mailboxId: number | null, formOpen: boolean): string {
+  if (formOpen) return MAILBOX_NEW_OPTION;
+  const id = normalizeMailboxId(mailboxId);
+  return id === null ? MAILBOX_NEW_OPTION : String(id);
+}
+
+/** 邮箱列表接口（`mailboxes.ts` 的 mailboxRowToApi）返回项的可见字段。 */
+export type MailboxOption = {
+  id: number;
+  label?: string;
+  name?: string;
+  email?: string;
+  username?: string;
+  imapHost?: string;
+  imapPort?: number;
+  imapSecure?: boolean;
+  folder?: string;
+  status?: string;
+};
+
+/** 参与邮件触发的自动化最小视图（page.tsx 的 Automation 是它的超集）。 */
+export type MailboxScopedAutomation = {
+  id: number;
+  trigger: string;
+  status: string;
+  mailboxId?: number | null;
+};
+
+/** 下拉项展示名：优先用接口给的 label，缺失时按与接口一致的规则派生。 */
+export function mailboxOptionLabel(option: MailboxOption): string {
+  const label = String(option?.label ?? "").trim();
+  return label || mailboxLabelFromRow(option);
+}
+
+/**
+ * D.7：与当前选择监听同一邮箱、同属邮件触发且正在运行的其他自动化。
+ *
+ * 没有选中邮箱时（含"正在配置新邮箱"）返回空候选——此时不存在可比较的分组。
+ * `mailboxId` 缺失的遗留行（旧字符串键）不属于任何分组，因此不会被误判为冲突。
+ * 与 `mailboxGroupKey` 的范围一致：只有同一 `userId:mailboxId` 才做优先级竞争。
+ */
+export function selectMailboxScopedAutomations<T extends MailboxScopedAutomation>(
+  items: readonly T[],
+  options: { mailboxId: number | null; excludeId?: number | null },
+): T[] {
+  const mailboxId = normalizeMailboxId(options.mailboxId);
+  if (mailboxId === null) return [];
+
+  return items.filter(
+    (item) =>
+      item.id !== options.excludeId &&
+      item.trigger === "邮件触发" &&
+      item.status === "running" &&
+      normalizeMailboxId(item.mailboxId) === mailboxId,
+  );
+}
+
+/**
+ * 自动化列表 / 运行详情要显示的监听邮箱名。
+ *
+ * 返回 null 表示该自动化没有可解析的监听邮箱（遗留行，或名单里查不到且自身也没有
+ * 存储名）：调用方据此给出「未配置」提示，而不是回退到已下线的"系统邮箱"。
+ * 优先按 id 现查名单，邮箱改名后展示名跟着更新；查不到时退回服务端派生的存储名。
+ */
+export function automationMailboxLabel(
+  item: { mailboxId?: number | null; mailboxLabel?: string },
+  mailboxes: readonly MailboxOption[],
+): string | null {
+  const mailboxId = normalizeMailboxId(item?.mailboxId);
+  if (mailboxId === null) return null;
+
+  const matched = mailboxes.find((option) => normalizeMailboxId(option.id) === mailboxId);
+  if (matched) return mailboxOptionLabel(matched);
+
+  const stored = String(item?.mailboxLabel ?? "").trim();
+  return stored || null;
+}

@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MAILBOX_ID_REQUIRED,
+  MAILBOX_NEW_OPTION,
+  automationMailboxLabel,
   mailboxGroupKey,
+  mailboxOptionLabel,
+  mailboxSelectValue,
   normalizeMailboxId,
   requireMailboxId,
+  selectMailboxScopedAutomations,
+  type MailboxOption,
 } from "../lib/automation/mailbox-id.ts";
 
 test("normalizeMailboxId: 正整数原样返回", () => {
@@ -67,4 +73,106 @@ test("mailboxGroupKey: 不再出现 mailbox: 字符串编码", () => {
 test("mailboxGroupKey: 不同用户或不同邮箱不会落进同一分组", () => {
   const keys = new Set([mailboxGroupKey(1, 2), mailboxGroupKey(1, 3), mailboxGroupKey(2, 2)]);
   assert.equal(keys.size, 3);
+});
+
+// ── 模块 B / D.7：向导邮箱下拉的选择与展示派生 ──────────────────────────
+
+test("mailboxSelectValue: 选中已保存邮箱时下拉落在该 id 上", () => {
+  assert.equal(mailboxSelectValue(12, false), "12");
+  assert.equal(mailboxSelectValue(12, true), MAILBOX_NEW_OPTION);
+});
+
+test("mailboxSelectValue: 未选择邮箱或正在配置新邮箱时落在「＋ 配置新邮箱…」", () => {
+  assert.equal(mailboxSelectValue(null, false), MAILBOX_NEW_OPTION);
+  assert.equal(mailboxSelectValue(null, true), MAILBOX_NEW_OPTION);
+  assert.equal(mailboxSelectValue(0, false), MAILBOX_NEW_OPTION);
+  assert.equal(mailboxSelectValue(1.5, false), MAILBOX_NEW_OPTION);
+});
+
+test("mailboxOptionLabel: 优先用接口 label，缺失时按 name · email 派生", () => {
+  assert.equal(mailboxOptionLabel({ id: 7, label: "销售部邮箱 · sales@corp.com" }), "销售部邮箱 · sales@corp.com");
+  assert.equal(mailboxOptionLabel({ id: 8, name: "财务邮箱", email: "finance@corp.com" }), "财务邮箱 · finance@corp.com");
+  assert.equal(mailboxOptionLabel({ id: 9, name: "finance@corp.com", email: "finance@corp.com" }), "finance@corp.com");
+});
+
+const mailboxOptions: MailboxOption[] = [
+  { id: 7, label: "销售部邮箱 · sales@corp.com", name: "销售部邮箱", email: "sales@corp.com" },
+  { id: 8, label: "售后邮箱 · support@corp.com", name: "售后邮箱", email: "support@corp.com" },
+];
+
+test("D.7 selectMailboxScopedAutomations: 只返回同一监听邮箱下正在运行的邮件自动化", () => {
+  const scoped = selectMailboxScopedAutomations(
+    [
+      { id: 1, trigger: "邮件触发", status: "running", mailboxId: 7 },
+      { id: 2, trigger: "邮件触发", status: "running", mailboxId: 8 },
+      { id: 3, trigger: "邮件触发", status: "paused", mailboxId: 7 },
+      { id: 4, trigger: "定时触发", status: "running", mailboxId: 7 },
+      { id: 5, trigger: "邮件触发", status: "running", mailboxId: 7 },
+    ],
+    { mailboxId: 7 },
+  );
+
+  assert.deepEqual(scoped.map((item) => item.id), [1, 5]);
+});
+
+test("D.7 selectMailboxScopedAutomations: 不同邮箱的自动化互不算冲突", () => {
+  const items = [
+    { id: 1, trigger: "邮件触发", status: "running", mailboxId: 7 },
+    { id: 2, trigger: "邮件触发", status: "running", mailboxId: 8 },
+  ];
+
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: 7 }).map((item) => item.id), [1]);
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: 8 }).map((item) => item.id), [2]);
+});
+
+test("D.7 selectMailboxScopedAutomations: 未选择邮箱时没有候选", () => {
+  const items = [{ id: 1, trigger: "邮件触发", status: "running", mailboxId: 7 }];
+
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: null }), []);
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: 0 }), []);
+});
+
+test("D.7 selectMailboxScopedAutomations: 遗留行（无整数 mailboxId）不参与任何分组", () => {
+  const scoped = selectMailboxScopedAutomations(
+    [
+      { id: 1, trigger: "邮件触发", status: "running", mailboxId: null },
+      { id: 2, trigger: "邮件触发", status: "running" },
+      { id: 3, trigger: "邮件触发", status: "running", mailboxId: 7 },
+    ],
+    { mailboxId: 7 },
+  );
+
+  assert.deepEqual(scoped.map((item) => item.id), [3]);
+});
+
+test("D.7 selectMailboxScopedAutomations: 正在编辑的自动化自身不进入候选", () => {
+  const items = [
+    { id: 1, trigger: "邮件触发", status: "running", mailboxId: 7 },
+    { id: 2, trigger: "邮件触发", status: "running", mailboxId: 7 },
+  ];
+
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: 7, excludeId: 2 }).map((item) => item.id), [1]);
+  assert.deepEqual(selectMailboxScopedAutomations(items, { mailboxId: 7, excludeId: null }).map((item) => item.id), [1, 2]);
+});
+
+test("automationMailboxLabel: 按 id 现查名单，邮箱改名后展示名同步更新", () => {
+  assert.equal(
+    automationMailboxLabel({ mailboxId: 7, mailboxLabel: "旧名字 · sales@corp.com" }, mailboxOptions),
+    "销售部邮箱 · sales@corp.com",
+  );
+});
+
+test("automationMailboxLabel: 名单里查不到时退回服务端派生的存储名", () => {
+  assert.equal(
+    automationMailboxLabel({ mailboxId: 7, mailboxLabel: "销售部邮箱 · sales@corp.com" }, []),
+    "销售部邮箱 · sales@corp.com",
+  );
+});
+
+test("automationMailboxLabel: 遗留行不再回退到「系统邮箱」", () => {
+  // automationRowToApi 对遗留行返回 mailboxId: null，mailboxLabel 兜底为"系统邮箱"。
+  assert.equal(automationMailboxLabel({ mailboxId: null, mailboxLabel: "系统邮箱" }, mailboxOptions), null);
+  assert.equal(automationMailboxLabel({ mailboxId: undefined }, mailboxOptions), null);
+  assert.equal(automationMailboxLabel({ mailboxId: 0 }, mailboxOptions), null);
+  assert.equal(automationMailboxLabel({ mailboxId: 7 }, mailboxOptions), "销售部邮箱 · sales@corp.com");
 });
