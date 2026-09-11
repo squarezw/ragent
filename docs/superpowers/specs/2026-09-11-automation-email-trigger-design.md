@@ -19,7 +19,7 @@
 **纳入**：
 - 向导 step 2 内联配置监听邮箱（主路径）
 - 自动化页轻量邮箱管理入口（改密码 / 删除 / 看状态）
-- **系统邮箱下线** + 存量自动化迁移
+- **系统邮箱下线** + 存量 system 自动化删除
 - 服务端校验、冲突检测隔离、连接失败告警、规则逻辑去重、死代码清理
 
 **不纳入（YAGNI）**：
@@ -70,31 +70,34 @@
 
 ## 四、模块设计
 
-### 模块 A：系统邮箱下线与迁移
+### 模块 A：系统邮箱下线与存量删除
 
-由于系统邮箱退场是**破坏性变更**，必须保证存量用户不静默失效。
+系统邮箱退场是**破坏性变更**。已确认：**存量 system 自动化直接删除**，不做暂停过渡、不保留任何兼容路径。
 
-1. **存量迁移**（在 `ensureAutomationTables()` 中追加一次性迁移 SQL，与现有 `ALTER TABLE ... IF NOT EXISTS` 的迁移惯例一致）：
+1. **存量删除**（在 `ensureAutomationTables()` 中追加一次性迁移，与现有 `ALTER TABLE ... IF NOT EXISTS` 的迁移惯例一致）：
 
 ```sql
-UPDATE automation_tasks
-SET status='paused', updated_at=NOW()
+DELETE FROM automation_tasks
 WHERE trigger_type='邮件触发'
-  AND status='running'
   AND trigger_config->>'mailboxKey' = 'system';
 ```
 
-该语句天然幂等（执行后不再有 running 的 system 任务）。
+约束与安全要求：
+- WHERE 条件严格限定 `trigger_type='邮件触发'` 且 `mailboxKey` **等于** `'system'`——等于判断不会匹配 NULL，确保不触及自定义邮箱自动化与其他触发类型。
+- 实施时先 `SELECT count(*)` 记录待删条数并打日志，再执行 DELETE，最后记录实际删除条数，便于事后核对。这是本方案中唯一的破坏性语句，实现时需重点 review。
+- 天然幂等：首次执行后不再有匹配行。
 
-2. **用户可见提示**：暂停是静默的，必须让用户知道原因。
-   - 自动化列表卡片 / 详情抽屉：对 `mailboxKey === 'system'` 的任务显示醒目提示条「系统邮箱已下线，请重新配置监听邮箱」+「立即配置」按钮（直接打开向导 step 2）。
-   - 存量任务被暂停后状态徽标显示"已暂停"，配合上述提示条解释原因。
+2. **关联数据清理**：同时清理 `automation_email_mailbox_cursors`、`automation_email_processed_messages`、`automation_email_rule_events` 中 `mailbox_key='system'` 的历史行——这些键在新模型下永不再被写入。
 
-3. **拒绝新建/更新为 system**：`mailboxKey` 不再接受 `"system"`，返回明确错误「系统邮箱已下线，请配置监听邮箱」。
+3. **运行历史保留**：`automation_runs` 表无外键级联（`deleteAutomation` 同样只删除任务行），历史运行记录不受影响。
 
-4. **代码清理**：删除 `fetchSystemMailboxUnread` 与 `mailboxKey === "system"` 分支；`fetchConfiguredMailboxUnread` 简化为唯一路径。所有 `|| "system"` / `|| "系统邮箱"` 兜底改为显式校验并抛错（避免静默落入已下线分支）。
+4. **拒绝新建/更新为 system**：`mailboxKey` 不再接受 `"system"`，返回明确错误「系统邮箱已下线，请配置监听邮箱」。
 
-5. **保留防循环判断**（`automation-scheduler.ts:483`）：结果邮件可能从用户自己的邮箱发出，主题前缀判断仍需保留。
+5. **代码清理**：删除 `fetchSystemMailboxUnread` 与 `mailboxKey === "system"` 分支；`fetchConfiguredMailboxUnread` 简化为唯一路径。所有 `|| "system"` / `|| "系统邮箱"` 兜底改为显式校验并抛错（避免静默落入已下线分支）。
+
+6. **发布要求**：删除必须与模块 B/C **同一次发布**上线——存量任务被删除后，用户需要新的配置路径才能重建自动化。需在发布说明中明确告知：**该变更会导致存量邮件触发自动化被删除，用户需重新创建**。
+
+7. **保留防循环判断**（`automation-scheduler.ts:483`）：结果邮件可能从用户自己的邮箱发出，主题前缀判断仍需保留。
 
 ### 模块 B：向导内联邮箱配置（主路径）
 
@@ -157,8 +160,10 @@ WHERE trigger_type='邮件触发'
 | 表 | 变更 | 用途 |
 |---|---|---|
 | `automation_mailboxes` | 新增 `last_error` / `last_error_at` 列 | 邮箱连接状态与告警（模块 E.1） |
-| `automation_tasks` | 一次性迁移：system 邮箱任务置为 paused | 系统邮箱下线（模块 A.1） |
-| `automation_email_mailbox_cursors` | 无结构变更 | 删除/编辑邮箱时清理或重置（模块 D.3、D.4） |
+| `automation_tasks` | 一次性迁移：**删除** system 邮箱任务 | 系统邮箱下线（模块 A.1） |
+| `automation_email_mailbox_cursors` | 无结构变更 | 删除/编辑邮箱时清理或重置（模块 D.3、D.4）；清理 `mailbox_key='system'` 历史行（模块 A.2） |
+| `automation_email_processed_messages` | 无结构变更 | 清理 `mailbox_key='system'` 历史行（模块 A.2）；30 天保留期（模块 E.4） |
+| `automation_email_rule_events` | 无结构变更 | 清理 `mailbox_key='system'` 历史行（模块 A.2） |
 
 **无新增表。** 由于每个邮箱归属唯一用户，游标表与去重表的 `created_by_user_id` 键保持不变，无需 schema 变更。
 
@@ -189,7 +194,8 @@ WHERE trigger_type='邮件触发'
 6. 编辑邮箱主机 → 确认游标重置、不重复处理历史邮件
 7. 删除被引用的邮箱 → 409 拦截提示
 8. 尝试创建 `mailboxKey="system"` 的自动化 → 被拒绝并提示
-9. 存量 system 自动化 → 启动后为 paused 状态，列表显示"系统邮箱已下线"提示条
+9. 存量 system 自动化 → 迁移后从列表消失，**其他触发类型的自动化与自定义邮箱自动化均不受影响**（这是删除语句的关键回归点）
+10. 迁移后 `mailbox_key='system'` 的游标/去重/路由事件行全部清空
 10. 邮箱连接失败 → 通知中心出现提醒（10 分钟去抖）+ 状态标记为 error
 
 ## 八、外部依赖
@@ -206,7 +212,7 @@ WHERE trigger_type='邮件触发'
 
 - **理由**：原设计下系统邮箱为平台级共享但分组按用户隔离，同一封邮件会被 N 个用户各自的自动化各触发一次（例如三人各建"客户询价处理"→ 一封询价被处理 3 次，可能重复回信或重复建单）。
 - **取舍**：失去了"管理员配置一次、全员可用"的便利，非技术用户需要自己提供企业邮箱授权码。这是有意的选择。
-- **迁移**：存量 system 自动化被置为 paused 并给出 UI 提示（模块 A）。
+- **存量处置**：已确认**直接删除**（不做暂停过渡、不保留兼容路径）。运行历史保留，用户需重新创建自动化（模块 A）。
 
 ## 十、建议实施顺序
 
@@ -217,7 +223,7 @@ WHERE trigger_type='邮件触发'
 3. **模块 B 向导内联邮箱配置**（含 D.6 冲突检测隔离）——主路径，用户价值最高
 4. **模块 C 轻量邮箱管理入口**（含 PUT 端点、游标重置/清理、D.3/D.4）
 5. **模块 E 健壮性改进**（状态列、通知派生、密钥前置条件、保留期）
-6. **模块 A 系统邮箱下线与迁移**——**放在最后**：等自定义邮箱配置路径完全可用后再下线，避免出现"旧路已断、新路未通"的空窗
+6. **模块 A 系统邮箱下线与存量删除**——**放在最后**，且必须与模块 B/C **同一次发布**：删除后用户需要新的配置路径才能重建自动化，不能出现"旧路已断、新路未通"的空窗
 
 ## 十一、验收标准
 
@@ -226,5 +232,5 @@ WHERE trigger_type='邮件触发'
 - 多邮箱场景下冲突检测与优先级预测与实际调度行为一致
 - 邮箱连接失败可被用户感知（通知 + 状态标记），而非仅存在于服务端日志
 - 规则匹配逻辑单一来源，前后端行为不可能分叉
-- 系统邮箱下线后，存量用户通过暂停状态 + 提示条明确知道需要重新配置
+- 系统邮箱下线后，代码中不再存在任何 system 分支或 `\|\| "system"` 兜底；存量 system 自动化被准确删除且未误伤其他任务
 - `pnpm test` 与 `pnpm check:ci` 通过
