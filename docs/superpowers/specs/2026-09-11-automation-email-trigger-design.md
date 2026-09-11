@@ -88,8 +88,7 @@ WHERE trigger_type='邮件触发'
 - **预期影响 0 行**。保留这条语句是防御性的：万一实际存在残留行，避免其在新代码下每 10 秒产生一次调度错误日志。天然幂等。
 - 这是本方案唯一的破坏性语句，仍需在 review 时确认 WHERE 范围（防的是误伤其他任务，与存量数据无关）。
 
-2. **关联数据清理**：同样清理 `automation_email_mailbox_cursors`、`automation_email_processed_messages`、`automation_email_rule_events` 中 `mailbox_key='system'` 的行（预期同为 0 行）。
-   **执行时机**：这三张表的清理**必须在模块 D.1 的列类型变更之前执行**（见 D.1 的顺序要求）——`system` 无法转换为整数，顺序颠倒会导致迁移失败。因此本模块的 SQL 虽然在功能上属于"下线"，其数据清理语句需随 D.1 一起、排在其前面进入 `ensureAutomationTables()`。
+2. **关联数据清理**：三张邮件表（cursors / processed_messages / rule_events）**无需单独清理**——它们由模块 D.1 的空表重建一并替换（`system` 行随旧表一起消失）。
 
 3. **运行历史**：`automation_runs` 表无外键级联，即便有历史运行记录也不受影响。
 
@@ -146,9 +145,33 @@ WHERE trigger_type='邮件触发'
 - 删除调度器的 `mailboxIdFromKey()` 正则解析；分组键由 `${userId}:${mailboxKey}` 改为 `${userId}:${mailboxId}`
 - 邮箱记录 API 的 `key: "mailbox:${id}"` 字段取消，直接暴露 `id`
 
-**注**：表为空，列类型变更安全。`ensureAutomationTables()` 使用 `CREATE TABLE IF NOT EXISTS`，不会修改已存在的表结构，因此需要显式 `ALTER TABLE ... RENAME COLUMN` + `ALTER COLUMN ... TYPE INTEGER` 语句（同函数内已有 `ALTER TABLE ADD COLUMN IF NOT EXISTS` 的迁移先例）。
+**实现方式：重建空表，不做迁移。**
 
-> ⚠️ **SQL 语句顺序要求**：模块 A.2 的遗留数据清理（删除 `mailbox_key='system'` 行）**必须排在本节的列类型变更之前**。`system` 是非数字字符串，若先执行 `ALTER COLUMN ... TYPE INTEGER`，PostgreSQL 会在这些行上转换失败并中止迁移。`ensureAutomationTables()` 内的语句顺序应为：建表 → 清理遗留 system 行 → 列重命名与类型变更。
+`CREATE TABLE IF NOT EXISTS` 对已存在的表不执行任何操作，因此仅修改 `CREATE` 语句**不会**改变现有表结构。而这三张表很可能已经存在——`ensureAutomationTables()` 不止在启动时执行，它在 31 处 store 函数开头都会调用；只要平台使用过**任何**自动化（包括与邮件无关的定时触发），这三张表就已被按旧结构建出。
+
+由于表为空，最简做法是**删除空表后由 `CREATE TABLE IF NOT EXISTS` 按新结构重建**，而非编写迁移：
+
+```sql
+-- 三张表各一段；仅当旧结构存在且表为空时删除
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'automation_email_mailbox_cursors'
+               AND column_name = 'mailbox_key')
+     AND NOT EXISTS (SELECT 1 FROM automation_email_mailbox_cursors LIMIT 1)
+  THEN
+    DROP TABLE automation_email_mailbox_cursors;
+  END IF;
+END $$;
+```
+
+- **自我失效**：执行过一次后列名已变，条件不再成立，此后每次启动均为 no-op。
+- **非破坏性**：只删除空表；**若检测到表非空则抛错中止**，而非静默跳过——静默跳过会留下新旧列并存的错配，比启动报错更难排查。
+- **并发安全**：`DROP TABLE` 取锁后会重新检查，不会误删。
+
+本方案**不需要**：`ALTER COLUMN ... TYPE INTEGER`、`RENAME COLUMN`、expand-contract 展开、版本化迁移表、独立迁移脚本。上面的列变化是**新表的结构定义**，直接写在 `CREATE TABLE` 语句里即可。
+
+**注**：`automation_tasks` 不能删（其中含定时触发等其他类型的真实数据），其 `trigger_config` 内遗留的 `mailboxKey` 由模块 A 的 `DELETE` 清理——那是数据清理，不涉及 DDL。
 
 **D.2 mailboxId 归属校验**：`store.ts` 的 `createAutomation`（725-727）与 `updateAutomation`（875-877）邮件分支中，`mailboxId` 必须是正整数，并调用 `getAutomationMailboxForUser(userId, mailboxId)` 校验归属，不存在则抛错（不再有 `system` 特例）。
 
@@ -180,11 +203,11 @@ WHERE trigger_type='邮件触发'
 |---|---|---|
 | `automation_mailboxes` | 新增 `last_error` / `last_error_at` 列 | 邮箱连接状态与告警（模块 E.1） |
 | `automation_tasks` | `trigger_config.mailboxKey`（字符串）→ `mailboxId`（整数）；幂等防御性清理 system 邮箱任务（预期 0 行） | 键格式统一（模块 D.1）；系统邮箱下线（模块 A.1） |
-| `automation_email_mailbox_cursors` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（主键列） | 键格式统一（模块 D.1） |
-| `automation_email_processed_messages` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
-| `automation_email_rule_events` | `mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
+| `automation_email_mailbox_cursors` | 空表重建：`mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（主键列） | 键格式统一（模块 D.1） |
+| `automation_email_processed_messages` | 空表重建：`mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
+| `automation_email_rule_events` | 空表重建：`mailbox_key VARCHAR(128)` → `mailbox_id INTEGER`（唯一键列） | 键格式统一（模块 D.1） |
 
-**无新增表。** 三张邮件表的列类型变更需显式 `ALTER TABLE`（`CREATE TABLE IF NOT EXISTS` 不改动已存在的表），因表为空故变更安全。
+**无新增表，无迁移脚本。** 三张邮件表通过"空表删除 + `CREATE TABLE IF NOT EXISTS` 重建"完成结构变化（模块 D.1），非空则抛错中止。
 
 ## 六、API 变更
 
@@ -255,14 +278,13 @@ WHERE trigger_type='邮件触发'
 
 按"先改数据模型、再修地基、然后做界面、最后下线共享概念"排列，每步可独立验证：
 
-1. **模块 D.1 键格式统一为 mailboxId**（含三张表列类型变更）+ **模块 A.2 遗留数据清理**——**必须最先做**：归属校验、分组键、游标逻辑都建立在 D.1 之上，后做会导致大量返工；而 A.2 的清理 SQL 必须排在 D.1 的列类型变更之前（`system` 无法转换为整数）
+1. **模块 D.1 键格式统一为 mailboxId**（含三张空表重建）——**必须最先做**：归属校验、分组键、游标逻辑都建立在 D.1 之上，后做会导致大量返工
 2. **模块 D.6 规则逻辑去重**（抽 `mail-rules.ts` + 单测）——纯重构，无行为变更，为后续修改提供单一事实来源
 3. **模块 D.2/D.3/D.8 服务端校验与死代码清理**——不依赖任何 UI，独立可测
 4. **模块 B 向导内联邮箱配置**（含 D.7 冲突检测隔离）——主路径，用户价值最高
 5. **模块 C 轻量邮箱管理入口**（含 PUT 端点、D.4 游标重置、D.5 游标清理）
 6. **模块 E 健壮性改进**（状态列、通知派生、密钥前置条件、保留期）
-7. **模块 A 系统邮箱下线（代码部分）**——放在最后，与模块 B/C 同一次发布：删除 `fetchSystemMailboxUnread`、`mailboxKey === "system"` 分支及各处 `|| "system"` 兜底。
-   **注**：模块 A 在实施上是拆开的——A.2 的数据清理 SQL 属第 1 步，A 的代码下线属本步。这样既保证了迁移顺序正确，又保持了"新路先通、再断旧路"。
+7. **模块 A 系统邮箱下线**——放在最后，与模块 B/C 同一次发布：删除 `fetchSystemMailboxUnread`、`mailboxKey === "system"` 分支及各处 `|| "system"` 兜底，并加入 `automation_tasks` 的防御性清理语句
 
 ## 十一、验收标准
 
