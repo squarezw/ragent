@@ -161,6 +161,9 @@ export function mailboxUpdateSuppliesPassword(input?: MailboxConfigInput | null)
   return String(input?.password ?? "") !== "";
 }
 
+/** 决定 UID 基线的三个字段：IMAP 主机 / 登录账号 / 文件夹。邮箱记录与配置都按它比较。 */
+export type MailboxIdentity = Pick<MailboxConfig, "imapHost" | "username" | "folder">;
+
 /**
  * 模块 D.4：UID 基线由 IMAP 主机 + 账号 + 文件夹共同决定，三者任一变化都意味着
  * "这就是另一个收件箱了"，必须把游标打回未初始化；否则调度器会拿旧基线去比新邮箱的
@@ -171,11 +174,30 @@ export function mailboxUpdateSuppliesPassword(input?: MailboxConfigInput | null)
  *
  * 两侧都按写入时的规则归一化再比较：主机大小写、文件夹首尾空格、空文件夹等于 INBOX
  * 都不算变更，避免"只改了个大小写就重置"。
+ *
+ * **创建（POST 是按 email 就地更新的 upsert）与编辑（PUT）两条路径共用本判定**：写入
+ * 会移动 UID 基线这件事与"改的是哪个字段"有关，与"走的是哪个端点"无关，各写一份比较
+ * 必然漂移。
  */
-function mailboxIdentityChanged(existing: MailboxConfig, next: MailboxConfig): boolean {
+export function mailboxIdentityChanged(existing: MailboxIdentity, next: MailboxIdentity): boolean {
   return (
     normalizedHost(existing?.imapHost) !== normalizedHost(next?.imapHost) ||
     String(existing?.username ?? "").trim() !== String(next?.username ?? "").trim() ||
     normalizedFolder(existing?.folder) !== normalizedFolder(next?.folder)
   );
+}
+
+/**
+ * 创建路径（POST 的 upsert）是否需要重置游标：**该地址已有记录，且这次写入移动了 UID 基线**。
+ *
+ * 没有既有行时返回 false：那是真正的插入，新记录此刻还没有游标行可重置。
+ * 判定委托给 `mailboxIdentityChanged`，与 PUT 路径的 `cursorResetRequired` 同源——
+ * 创建走的是 `ON CONFLICT (created_by_user_id, email) DO UPDATE`，它同样会改写主机/账号/
+ * 文件夹，因此同样会让旧游标高水位变成"新服务器上永远追不上的值"。
+ */
+export function createMailboxCursorResetRequired(
+  existing: MailboxIdentity | null | undefined,
+  next: MailboxIdentity
+): boolean {
+  return !!existing && mailboxIdentityChanged(existing, next);
 }

@@ -9,7 +9,9 @@
  * - 少写 `last_uid=0` 更隐蔽：游标"看起来"重置了（initialized=false 确实写进去了），但
  *   `saveAutomationEmailMailboxCursor` 用 `GREATEST(旧值, 新值)` 写回，重建基线时会把旧基线
  *   写回去，此后 `uid > last_uid` 恒不成立，新邮件全部被过滤；
- * - 少写 `created_by_user_id` 的范围限定，删除/重置会波及他人同 id 的游标行（游标串号）。
+ * - 少写 `created_by_user_id` 的范围限定，删除/重置会波及他人同 id 的游标行（游标串号）；
+ * - 只给编辑（PUT）路径接上重置、漏掉创建（POST 的 upsert）路径：后者同样按 email 就地
+ *   改写主机/账号/文件夹，漏掉的后果是旧高水位留在新服务器上，新邮件被静默丢弃。
  *
  * 与 test/skillsProxyQuery.test.ts 同一手法：钉住那一行的内容，而不是验证 SQL 的执行结果
  * （执行行为已在抛弃库上做过集成验证，但那不可提交、因此没有回归价值）。
@@ -127,5 +129,57 @@ test("D.4 只在身份变化时重置，D.5 只在删除成功后清理", () => 
     source,
     /if\s*\(\s*deleted\s*\)\s*await\s+deleteAutomationMailboxCursor\(/,
     "D.5 只能在删除真的发生（deleted）后清理：依赖检查返回 409 时邮箱还在，游标必须保留"
+  );
+});
+
+/**
+ * 创建路径（POST）也走 D.4。
+ *
+ * 创建接口按 `(created_by_user_id, email)` 做 upsert，因此"重填一个已登记的地址、却换了
+ * 主机/账号/文件夹"走的就是这条路径。它的失败是静默的：旧高水位留在新服务器上，所有
+ * `uid <= 旧值` 的邮件被丢弃，而状态仍显示「已连接」——没有任何可观测的报错入口，只能靠
+ * 这组断言钉住。
+ */
+test("D.4 创建路径：既有行在 upsert 之前取出，身份变了才在写入之后重置游标", () => {
+  const create = functionBody(source, "createAutomationMailbox");
+
+  const insertAt = create.search(/INSERT INTO automation_mailboxes/);
+  assert.ok(insertAt >= 0, "创建路径应当仍是一条 INSERT ... ON CONFLICT 的 upsert");
+  assert.match(
+    create.slice(insertAt),
+    /ON CONFLICT\s*\(\s*created_by_user_id\s*,\s*email\s*\)/i,
+    "upsert 的冲突目标变了：既有行是按 (created_by_user_id, email) 查的，必须与之一致"
+  );
+
+  // 先查既有行：upsert 之后旧身份已被覆盖，此时的比较恒为 false，游标就永远不会被重置。
+  const lookupAt = create.indexOf("findAutomationMailboxByEmail(");
+  assert.ok(
+    lookupAt >= 0 && lookupAt < insertAt,
+    "既有行必须在 upsert **之前**取出：写入之后旧主机/账号/文件夹已经查不回来了"
+  );
+
+  // 判定必须来自单源 helper，不能在这里内联一份比较（否则它与 PUT 路径必然漂移）。
+  assert.match(
+    create,
+    /createMailboxCursorResetRequired\(/,
+    "创建路径的游标重置判定应当复用 mailbox-input.ts 的 helper（与 PUT 路径同源）"
+  );
+
+  const reset = /if\s*\(\s*cursorResetRequired\s*\)\s*\{\s*await\s+resetAutomationMailboxCursor\(/.exec(
+    create
+  );
+  assert.ok(
+    reset,
+    "创建路径缺少 `if (cursorResetRequired) { await resetAutomationMailboxCursor(...) }`：" +
+      "身份变了却不重置，调度器会拿旧基线比新邮箱的 UID，静默漏掉全部新邮件"
+  );
+  assert.ok(
+    (reset?.index ?? -1) > insertAt,
+    "重置必须在 upsert **成功之后**：写失败时既有基线必须原样保留"
+  );
+  assert.match(
+    create.slice(reset?.index ?? 0, (reset?.index ?? 0) + 120),
+    /resetAutomationMailboxCursor\(\s*userId\s*,/,
+    "重置要按邮箱归属用户限定范围（游标主键含 created_by_user_id，否则会波及他人同 id 的游标行）"
   );
 });

@@ -6,7 +6,11 @@ import {
   requireMailboxId,
   storedMailboxLabel,
 } from "@/lib/automation/mailbox-id";
-import { mailRulesBriefSummary } from "@/lib/automation/mail-rules";
+import {
+  MAIL_RULE_FIELDS,
+  MAIL_RULE_OPERATORS,
+  mailRulesBriefSummary,
+} from "@/lib/automation/mail-rules";
 import {
   ensureAutomationMailboxTable,
   getAutomationMailboxForUser,
@@ -723,17 +727,10 @@ type EmailTriggerRule = {
 function normalizeEmailRules(input: any): EmailTriggerRule[] {
   if (!Array.isArray(input)) return [];
 
-  const allowedFields = new Set([
-    "发件人",
-    "发件人域名",
-    "收件人",
-    "邮件主题",
-    "邮件正文",
-    "是否包含附件",
-    "附件名称",
-    "附件类型",
-  ]);
-  const allowedOperators = new Set(["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"]);
+  // 白名单直接取自 mail-rules.ts 的规范化清单——前端下拉就是从同一份清单渲染的。
+  // 各写一份的话，新增字段会出现"向导里能选、能提交、写库时被这里静默丢弃"的前后端分叉。
+  const allowedFields = new Set<string>(MAIL_RULE_FIELDS);
+  const allowedOperators = new Set<string>(MAIL_RULE_OPERATORS);
 
   return input
     .map((rule: any, index: number) => ({

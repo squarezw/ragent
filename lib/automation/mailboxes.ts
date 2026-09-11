@@ -8,10 +8,12 @@ import { mailboxLabelFromRow } from "@/lib/automation/mailbox-id";
 import { mailboxErrorText } from "@/lib/automation/mailbox-health";
 import { mailboxErrorDisplayText } from "@/lib/automation/mailbox-errors";
 import {
+  createMailboxCursorResetRequired,
   mailboxUpdateSuppliesPassword,
   normalizeMailboxConfig,
   resolveMailboxUpdate,
   type MailboxConfigInput,
+  type MailboxIdentity,
 } from "@/lib/automation/mailbox-input";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
@@ -174,11 +176,44 @@ export async function listAutomationMailboxes(userId: number) {
   return result.rows;
 }
 
+/** 既有行 → 身份三要素。与 PUT 路径共用 `mailboxIdentityChanged`，不另写比较。 */
+function mailboxIdentityFromRow(row: {
+  imap_host?: unknown;
+  username?: unknown;
+  folder?: unknown;
+}): MailboxIdentity {
+  return {
+    imapHost: String(row.imap_host || ""),
+    username: String(row.username || ""),
+    folder: String(row.folder || "INBOX"),
+  };
+}
+
+/** 按 upsert 的冲突目标 `(created_by_user_id, email)` 取既有行；没有则返回 null。 */
+async function findAutomationMailboxByEmail(userId: number, email: string) {
+  const result = await pool.query(
+    `SELECT * FROM automation_mailboxes
+     WHERE created_by_user_id=$1 AND email=$2
+     LIMIT 1`,
+    [userId, email],
+  );
+  return result.rows[0] || null;
+}
+
 export async function createAutomationMailbox(userId: number, input: AutomationMailboxInput) {
   await ensureAutomationMailboxTable();
   const tenantId = await getUserTenantId(userId);
   const config = normalizeMailboxConfig(input);
   const encrypted = encryptPassword(config.password);
+
+  // 模块 D.4 对创建路径同样成立：本函数是按 `(created_by_user_id, email)` 的 upsert，
+  // 用户重填一个已登记的地址、却换了主机/账号/文件夹时走的就是这条路径，既有记录的 UID
+  // 基线当场失效。既有行必须在写入**之前**取出——upsert 之后旧身份就查不回来了。
+  const existingRow = await findAutomationMailboxByEmail(userId, config.email);
+  const cursorResetRequired = createMailboxCursorResetRequired(
+    existingRow ? mailboxIdentityFromRow(existingRow) : null,
+    config,
+  );
 
   const result = await pool.query(
     `INSERT INTO automation_mailboxes (
@@ -211,6 +246,14 @@ export async function createAutomationMailbox(userId: number, input: AutomationM
       config.folder,
     ],
   );
+
+  // 只有写成功了才动游标（与 PUT 路径同一顺序、同一理由）：写失败时基线必须原样保留。
+  // 少了这一步的后果是静默的——旧高水位留在新服务器上，所有 `uid <= 旧值` 的邮件被
+  // 无声丢弃，而状态仍显示「已连接」。
+  if (cursorResetRequired) {
+    await resetAutomationMailboxCursor(userId, Number(result.rows[0].id));
+  }
+
   return result.rows[0];
 }
 
@@ -377,12 +420,22 @@ export async function updateAutomationMailbox(
 
 export async function deleteAutomationMailbox(userId: number, mailboxId: number) {
   await ensureAutomationMailboxTable();
-  // 依赖检查按 trigger_config.mailboxId（整数）匹配：键格式统一后旧的 mailbox:<id> 字符串已不存在。
+  // 依赖检查认两种引用，两者都是"这条自动化绑着某个邮箱"：
+  // 1. 键格式统一后的 `trigger_config.mailboxId`（整数，与 $2::text 比较）；
+  // 2. **任何仍带 `mailboxKey` 的遗留行**。A.1 的清理只删 `mailboxKey='system'`，其余遗留键
+  //    （`mailbox:<id>`）会原样留下，它们同样是邮件触发、同样依赖着某条邮箱记录。
+  //    这里只做**键存在性**判断（jsonb 的 `?` 操作符），不取值、不解码：§十一 禁止的是字符串
+  //    编解码，而不是"这一行有没有旧键"这个事实。遗留行无法归属到具体某个整数 id，因此按
+  //    最保守的方向处理——算作每个邮箱的依赖，宁可拒删（409 有提示），不可漏判（删掉后
+  //    那条自动化的邮箱就没了）。
   const dependentResult = await pool.query(
     `SELECT id, name FROM automation_tasks
      WHERE created_by_user_id=$1
        AND trigger_type='邮件触发'
-       AND trigger_config->>'mailboxId'=$2::text
+       AND (
+         trigger_config->>'mailboxId'=$2::text
+         OR trigger_config ? 'mailboxKey'
+       )
      ORDER BY id`,
     [userId, mailboxId],
   );

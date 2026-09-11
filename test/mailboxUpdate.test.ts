@@ -10,12 +10,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  createMailboxCursorResetRequired,
   mailboxUpdateInputFromBody,
   mailboxUpdateSuppliesPassword,
   normalizeMailboxConfig,
   resolveMailboxUpdate,
   type MailboxConfig,
   type MailboxConfigInput,
+  type MailboxIdentity,
 } from "../lib/automation/mailbox-input.ts";
 
 function existingConfig(overrides: Partial<MailboxConfig> = {}): MailboxConfig {
@@ -35,6 +37,11 @@ function existingConfig(overrides: Partial<MailboxConfig> = {}): MailboxConfig {
 /** 只改一个字段的编辑请求。 */
 function update(input: MailboxConfigInput) {
   return resolveMailboxUpdate(existingConfig(), input);
+}
+
+/** 既有邮箱记录的身份三要素（mailboxes.ts 的 mailboxIdentityFromRow 的等价物）。 */
+function identityOf(config: MailboxConfig): MailboxIdentity {
+  return { imapHost: config.imapHost, username: config.username, folder: config.folder };
 }
 
 test("密码留空: 提供了空串时保留原密码，而不是把凭据覆盖为空", () => {
@@ -134,6 +141,51 @@ test("D.4 游标重置: 同一份配置原样提交不重置（编辑器点一�
 
   assert.deepEqual(config, existingConfig());
   assert.equal(cursorResetRequired, false);
+});
+
+test("创建路径 (D.4): 同一邮箱地址重填但换了主机/账号/文件夹 → 必须重置游标", () => {
+  // 创建接口是按 (created_by_user_id, email) 的 upsert：用户重填一个已登记的地址、
+  // 却指向另一个收件箱时，旧的高水位会留在新服务器上，此后的新邮件全被静默丢弃
+  // （状态仍显示「已连接」），因此这三条与 PUT 路径一样必须重置。
+  const existing = identityOf(existingConfig());
+
+  assert.equal(
+    createMailboxCursorResetRequired(existing, existingConfig({ imapHost: "imap2.corp.com" })),
+    true
+  );
+  assert.equal(
+    createMailboxCursorResetRequired(existing, existingConfig({ username: "sales2@corp.com" })),
+    true
+  );
+  assert.equal(
+    createMailboxCursorResetRequired(existing, existingConfig({ folder: "Alerts" })),
+    true
+  );
+});
+
+test("创建路径 (D.4): 全新地址不重置——那是真正的插入，还没有游标行", () => {
+  assert.equal(createMailboxCursorResetRequired(null, existingConfig()), false);
+  assert.equal(createMailboxCursorResetRequired(undefined, existingConfig()), false);
+});
+
+test("创建路径 (D.4): 身份没变不重置——重填同一邮箱只是更新凭据/名称/端口", () => {
+  const existing = identityOf(existingConfig());
+
+  assert.equal(
+    createMailboxCursorResetRequired(
+      existing,
+      existingConfig({ password: "new-code", name: "改名了", imapPort: 143 })
+    ),
+    false
+  );
+  // 写法差异同样不算变更（与 PUT 路径同一套归一化规则）。
+  assert.equal(
+    createMailboxCursorResetRequired(
+      identityOf(existingConfig({ folder: "" })),
+      existingConfig({ imapHost: " IMAP.CORP.COM " })
+    ),
+    false
+  );
 });
 
 test("编辑校验: 合并后的配置仍按创建时的规则校验，非法取值抛可识别的错误码", () => {

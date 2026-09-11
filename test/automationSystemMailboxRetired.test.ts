@@ -11,20 +11,20 @@
  *   每个进程只跑一次，失败后每次 store 调用重试整块 SQL），挪到别处就不再执行；
  * - 防循环判断（模块 A.6）是明确的保留项——结果邮件可能从用户自己的邮箱发出，
  *   最容易被下一次"清理系统邮箱代码"顺手删掉；
- * - `||` 兜底一旦有一处冒回来，就是静默落回已下线分支的入口。
+ * - `||` / `??` 兜底一旦有一处冒回来，就是静默落回已下线分支的入口。这一条按**目录**扫描
+ *   `lib/`、`app/`、`pages/` 的全部源码，而不是一份手写文件清单：清单漏掉的那个文件，
+ *   正是下一次兜底会冒出来的地方。
  *
  * 与 test/mailboxCursorSql.test.ts 同一手法：钉住那一行的内容，而不是验证执行结果
  * （执行行为已在抛弃库上做过集成验证，但那不可提交、因此没有回归价值）。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 const STORE = join(process.cwd(), "lib/automation/store.ts");
 const SCHEDULER = join(process.cwd(), "lib/cron/automation-scheduler.ts");
-const PAGE = join(process.cwd(), "app/automation/page.tsx");
-const MAILBOX_ID = join(process.cwd(), "lib/automation/mailbox-id.ts");
 const AUTOMATIONS_INDEX = join(process.cwd(), "pages/api/v1/automations/index.ts");
 const AUTOMATIONS_ID = join(process.cwd(), "pages/api/v1/automations/[id].ts");
 
@@ -102,16 +102,41 @@ test("A.6 防循环判断保留：自己发出的结果邮件不得再次触发"
   }
 });
 
-test("§十一 不再有 system / 系统邮箱 的兜底值", () => {
-  for (const file of [STORE, SCHEDULER, PAGE, MAILBOX_ID]) {
-    const source = withoutComments(readFileSync(file, "utf8"));
-    const match = source.match(/\|\|\s*["'`](?:system|系统邮箱)["'`]/);
-    assert.equal(
-      match,
-      null,
-      `${file} 仍有兜底值 ${match?.[0]}：兜底必须改为显式校验（抛错或显示「未配置」）`
-    );
+/** 递归收集某个源码目录下的全部 .ts/.tsx（不跟随符号链接，也不会碰到构建产物目录）。 */
+function sourceFilesUnder(root: string): string[] {
+  const collected: string[] = [];
+
+  for (const entry of readdirSync(join(process.cwd(), root), { withFileTypes: true })) {
+    const relative = join(root, entry.name);
+    if (entry.isDirectory()) collected.push(...sourceFilesUnder(relative));
+    else if (/\.tsx?$/.test(entry.name)) collected.push(join(process.cwd(), relative));
   }
+
+  return collected;
+}
+
+test("§十一 不再有 system / 系统邮箱 的兜底值（|| 与 ?? 皆算，全仓库扫描）", () => {
+  // 这一条是验收标准里"不再存在任何 system 分支"的自动兜底，因此它必须覆盖**全部**业务源码，
+  // 而不是一份手写文件清单——清单漏掉的那个文件，正是下一次兜底冒出来的地方。`??` 与 `||`
+  // 同样致命：`config.mailboxLabel ?? "系统邮箱"` 就是一个静默落回已下线分支的入口。
+  const offenders: string[] = [];
+
+  for (const root of ["lib", "app", "pages"]) {
+    const files = sourceFilesUnder(root);
+    assert.ok(files.length > 0, `没有扫到 ${root}/ 下的任何源文件：扫描范围写错了，这条守卫会变成空转`);
+
+    for (const file of files) {
+      const source = withoutComments(readFileSync(file, "utf8"));
+      const match = source.match(/(?:\|\||\?\?)\s*["'`](?:system|系统邮箱)["'`]/);
+      if (match) offenders.push(`${file}: ${match[0]}`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `这些地方仍有兜底值：\n${offenders.join("\n")}\n兜底必须改为显式校验（抛错或显示「未配置」）`
+  );
 });
 
 test("A.4 创建/更新被拒时返回的是专门文案，不是通用校验失败", () => {

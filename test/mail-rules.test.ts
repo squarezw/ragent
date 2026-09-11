@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   MAIL_RULE_FIELDS,
@@ -64,6 +66,34 @@ test("MAIL_RULE_FIELDS / MAIL_RULE_OPERATORS: 规范化清单", () => {
   assert.deepEqual(
     [...MAIL_RULE_OPERATORS],
     ["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"]
+  );
+});
+
+test("服务端白名单与向导下拉同源：store.ts 从本模块的清单派生，不再内联一份", () => {
+  // 向导的下拉、提交、落库三处必须认同一份清单。store.ts 若再写一份字面量清单，新增字段就会
+  // "向导里能选、能提交、写库时被 normalizeEmailRules 静默丢弃"——这正是 spec §十一
+  // 「规则匹配逻辑单一来源，前后端行为不可能分叉」要防的分叉，而且没有任何报错入口。
+  const source = readFileSync(join(process.cwd(), "lib/automation/store.ts"), "utf8");
+
+  assert.match(
+    source,
+    /new Set<string>\(MAIL_RULE_FIELDS\)/,
+    "字段白名单应当直接取自 MAIL_RULE_FIELDS"
+  );
+  assert.match(
+    source,
+    /new Set<string>\(MAIL_RULE_OPERATORS\)/,
+    "操作符白名单应当直接取自 MAIL_RULE_OPERATORS"
+  );
+  assert.doesNotMatch(
+    source,
+    /new Set\([^)]*"发件人"/,
+    "白名单里又出现了内联的字段字面量：它必然与向导下拉分叉"
+  );
+  assert.doesNotMatch(
+    source,
+    /new Set\([^)]*"等于"/,
+    "白名单里又出现了内联的操作符字面量：它必然与向导下拉分叉"
   );
 });
 
