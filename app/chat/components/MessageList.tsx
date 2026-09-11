@@ -1,7 +1,7 @@
 import React from "react";
 import ToolActivity, { type ToolStep } from "./ToolActivity";
 import { useTranslations } from "next-intl";
-import { Bot, FileSpreadsheet, FileText, FileType, User } from "lucide-react";
+import { Bot, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import FeedbackUI from "@/app/chat/components/FeedbackUI";
 import ReferencesDisplay from "@/app/chat/components/ReferencesDisplay";
@@ -115,7 +115,7 @@ export default function MessageList({
   return (
     <div
       ref={messagesContainerRef}
-      className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4 pr-2"
+      className="flex-1 min-h-0 min-w-0 flex flex-col gap-4 overflow-y-auto pb-4 pr-2"
       style={{ overflowAnchor: "none" }}
     >
       {taskCards.length > 0 && (
@@ -129,7 +129,7 @@ export default function MessageList({
       {messages.map((msg, i) =>
         msg.role === "user" ? (
           <div key={i} className="flex justify-end">
-            <div className="flex items-start gap-2 sm:gap-3 max-w-[95%] sm:max-w-[85%]">
+            <div className="min-w-0 max-w-[95%] sm:max-w-[85%]">
               <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-3">
                 <div className="whitespace-pre-line break-words">
                   <MarkdownRenderer content={msg.content} onPreviewResource={onPreviewResource} />
@@ -151,18 +151,15 @@ export default function MessageList({
                   )}
                 </div>
               </div>
-              <div className="w-8 h-8 rounded-full bg-primary/10 hidden sm:flex items-center justify-center flex-shrink-0">
-                <User className="w-4 h-4 text-primary" />
-              </div>
             </div>
           </div>
         ) : (
           <div key={i} className="flex justify-start">
-            <div className="flex items-start gap-2 sm:gap-3 max-w-[95%] sm:max-w-[95%] w-full">
-              <div className="w-8 h-8 rounded-full bg-muted hidden sm:flex items-center justify-center flex-shrink-0">
+            <div className="flex flex-col items-start gap-2 min-w-0 w-full">
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
                 <Bot className="w-4 h-4 text-success" />
               </div>
-              <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 flex-1">
+              <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 w-full">
                 <div className="break-words">
                   <MarkdownRenderer
                     content={stripWorkflowRunStartedPrefix(msg.content)}
@@ -192,8 +189,8 @@ export default function MessageList({
       {/* Thinking state - streaming started but no content yet */}
       {isStreaming && !streamingMessage && (
         <div className="flex justify-start">
-          <div className="flex items-start gap-2 sm:gap-3 max-w-[95%] sm:max-w-[95%] w-full">
-            <div className="w-8 h-8 rounded-full bg-muted hidden sm:flex items-center justify-center flex-shrink-0 animate-pulse">
+          <div className="flex flex-col items-start gap-2 min-w-0 w-full">
+            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0 animate-pulse">
               <Bot className="w-4 h-4 text-success" />
             </div>
             <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
@@ -241,11 +238,11 @@ export default function MessageList({
       {/* Streaming message - has content */}
       {isStreaming && streamingMessage && (
         <div className="flex justify-start">
-          <div className="flex items-start gap-2 sm:gap-3 max-w-[95%] sm:max-w-[95%] w-full">
-            <div className="w-8 h-8 rounded-full bg-muted hidden sm:flex items-center justify-center flex-shrink-0">
+          <div className="flex flex-col items-start gap-2 min-w-0 w-full">
+            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
               <Bot className="w-4 h-4 text-success" />
             </div>
-            <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 flex-1">
+            <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 w-full">
               <div className="break-words">
                 <MarkdownRenderer
                   content={stripWorkflowRunStartedPrefix(streamingMessage)}

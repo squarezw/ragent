@@ -3,13 +3,11 @@ import { useTranslations } from "next-intl";
 import type { ToolStep } from "./components/ToolActivity";
 import WelcomeView from "@/app/chat/components/WelcomeView";
 import ChatInputComposite from "@/app/chat/components/ChatInputComposite";
-import ChatHeader from "@/app/chat/components/ChatHeader";
 import MessageList from "@/app/chat/components/MessageList";
 import HistoryDialog from "@/app/chat/components/HistoryDialog";
 import ReferencesDialog from "@/app/chat/components/ReferencesDialog";
 import ResourcePreviewPanel from "@/app/chat/components/ResourcePreviewPanel";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
-import { useSidebar } from "@/components/ui/sidebar";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
 import { useChatSession } from "@/hooks/useChatSession";
@@ -26,7 +24,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Attachment } from "./hooks/useFileAttachments";
 import type { TurnUsage } from "@/types/token-usage";
 import { getFileDownloadUrl } from "@/lib/fileApi";
-import { downloadChatLink, attachmentPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
+import {
+  downloadChatLink,
+  attachmentPreviewResource,
+  type PreviewResource,
+} from "@/lib/chatResourcePreview";
 
 interface Message {
   role: "user" | "assistant";
@@ -56,7 +58,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const conversationVersion = useRef(0);
+  const focusInput = useCallback(() => {
+    chatContainerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+  }, []);
   const abortControllerRef = useRef<(() => void) | null>(null);
 
   const [enableWebSearch] = useState(false);
@@ -71,9 +77,7 @@ export default function ChatPage() {
   const [referencesDialogOpen, setReferencesDialogOpen] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState<number>(-1);
   const [loadingHistorySession, setLoadingHistorySession] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [previewResource, setPreviewResource] = useState<PreviewResource | null>(null);
-  const { setOpen: setSidebarOpen } = useSidebar();
 
   // Custom hooks
   const {
@@ -167,18 +171,26 @@ export default function ChatPage() {
   }, [datasets]);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // Toggle fullscreen mode
-  const toggleFullscreen = () => {
-    const newFullscreenState = !isFullscreen;
-    setIsFullscreen(newFullscreenState);
-    setSidebarOpen(!newFullscreenState);
-  };
+    focusInput();
+    return () => {
+      conversationVersion.current += 1;
+      abortControllerRef.current?.();
+      abortControllerRef.current = null;
+    };
+  }, [focusInput]);
 
   // Start new conversation
   const startNewConversation = useCallback(() => {
+    conversationVersion.current += 1;
+    abortControllerRef.current?.();
+    abortControllerRef.current = null;
+    setLoading(false);
+    setLoadingHistorySession(false);
+    setHistoryOpen(false);
+    setReferencesDialogOpen(false);
+    setCurrentMessageIndex(-1);
+    setPreviewFile(null);
+    cancelRecording();
     setMessages([]);
     setInput("");
     setAttachments([]);
@@ -187,10 +199,18 @@ export default function ChatPage() {
     setToolSteps([]);
     setPreviewResource(null);
     setChatId(0);
-  }, [setChatId, setAttachments]);
+    requestAnimationFrame(focusInput);
+  }, [setChatId, setAttachments, setPreviewFile, cancelRecording, focusInput]);
+
+  useEffect(() => {
+    window.addEventListener("ragent:new-conversation", startNewConversation);
+    return () => window.removeEventListener("ragent:new-conversation", startNewConversation);
+  }, [startNewConversation]);
 
   const handleSend = async () => {
-    if (!input.trim() && attachments.length === 0) return;
+    if (loading || loadingHistorySession || (!input.trim() && attachments.length === 0)) return;
+    const version = conversationVersion.current;
+    const isCurrent = () => version === conversationVersion.current;
 
     const userDisplayContent = input.trim();
 
@@ -237,12 +257,15 @@ export default function ChatPage() {
 
       const result = await askStream(userDisplayContent, datasetIdsForSession, params, {
         onChunk: (chunk: string) => {
+          if (!isCurrent()) return;
           setStreamingMessage((prev) => prev + chunk);
         },
         onWorkflowRunStarted: (runId, kind) => {
+          if (!isCurrent()) return;
           attachRun(runId, kind);
         },
         onToolStatus: (status) => {
+          if (!isCurrent()) return;
           const label = status.display_name || status.skill || status.name;
           if (status.phase === "started") {
             setToolSteps((prev) => [
@@ -271,6 +294,7 @@ export default function ChatPage() {
           }
         },
         onComplete: (result: any) => {
+          if (!isCurrent()) return;
           const { answer, detail_id, reference, segment_ids, usage } = result;
           setMessages((msgs) => [
             ...msgs,
@@ -290,6 +314,7 @@ export default function ChatPage() {
           abortControllerRef.current = null;
         },
         onError: (error: any) => {
+          if (!isCurrent()) return;
           // 余额不足不是故障，是一个用户自己能解决的状态。套上「抱歉，发生了错误」
           // 会把「去充值」读成「系统坏了」—— 用户会去找运维，而不是找管理员充值。
           const insufficient = error?.code === "insufficient_balance";
@@ -319,10 +344,15 @@ export default function ChatPage() {
         },
       });
 
+      if (!isCurrent()) {
+        result?.abort?.();
+        return;
+      }
       if (result?.abort) {
         abortControllerRef.current = result.abort;
       }
     } catch (error: any) {
+      if (!isCurrent()) return;
       console.error("Send error:", error);
       setMessages((msgs) => [
         ...msgs,
@@ -340,7 +370,7 @@ export default function ChatPage() {
       abortControllerRef.current = null;
     }
 
-    inputRef.current?.focus();
+    if (isCurrent()) focusInput();
   };
 
   // Handle stop streaming
@@ -386,9 +416,18 @@ export default function ChatPage() {
 
   // Load history session
   const loadHistorySession = async (sessionId: number) => {
+    const version = ++conversationVersion.current;
+    const isCurrent = () => version === conversationVersion.current;
+    abortControllerRef.current?.();
+    abortControllerRef.current = null;
+    setLoading(false);
+    setIsStreaming(false);
+    setStreamingMessage("");
+    setToolSteps([]);
     setLoadingHistorySession(true);
     try {
       const response = await axios.get(`/api/chat/sessions/${sessionId}/details`);
+      if (!isCurrent()) return;
       const sessionData = response.data;
 
       const historyMessages: Message[] = [];
@@ -440,13 +479,14 @@ export default function ChatPage() {
       setChatId(sessionId);
 
       setTimeout(() => {
-        scrollToBottom(true);
+        if (isCurrent()) scrollToBottom(true);
       }, 100);
     } catch (error: any) {
+      if (!isCurrent()) return;
       console.error("Load history session failed:", error);
       alert(`${t("loadHistoryFailed")}: ${error.response?.data?.error || error.message}`);
     } finally {
-      setLoadingHistorySession(false);
+      if (isCurrent()) setLoadingHistorySession(false);
     }
   };
 
@@ -488,22 +528,12 @@ export default function ChatPage() {
 
   return (
     <>
-      <div className="w-full h-[calc(100vh-112px)] relative">
+      <div ref={chatContainerRef} className="w-full h-full min-h-0 relative">
         {showWelcomeView ? (
           <WelcomeView {...inputProps} />
         ) : (
-          <div className="relative flex h-full w-full">
-            <div
-              className={`flex min-w-0 flex-1 flex-col mx-auto px-1 sm:px-4 transition-all duration-300 ${
-                isFullscreen ? "max-w-6xl" : "max-w-4xl"
-              }`}
-            >
-              <ChatHeader
-                isFullscreen={isFullscreen}
-                onToggleFullscreen={toggleFullscreen}
-                onNewConversation={startNewConversation}
-              />
-
+          <div className="relative flex h-full min-h-0 w-full">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col mx-auto px-1 sm:px-4 max-w-4xl">
               <MessageList
                 messages={messages}
                 streamingMessage={streamingMessage}
@@ -515,7 +545,9 @@ export default function ChatPage() {
                 onOpenReferences={openReferencesDialog}
                 onPreviewFile={(file) => {
                   const filename = file.originalname || file.filename || "";
-                  const url = file.id ? getFileDownloadUrl(file.id, file.filename || filename) : file.sourceUrl || file.path;
+                  const url = file.id
+                    ? getFileDownloadUrl(file.id, file.filename || filename)
+                    : file.sourceUrl || file.path;
                   if (!url) return;
                   const absoluteUrl = new URL(url, window.location.origin).href;
                   const resource = attachmentPreviewResource({ filename, url: absoluteUrl });
@@ -535,13 +567,18 @@ export default function ChatPage() {
                 onCancelRun={cancelRun}
               />
 
-              <div className="flex-shrink-0 pb-4">
+              <div
+                className="flex-shrink-0"
+                style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+              >
                 <ChatInputComposite {...inputProps} placeholder={t("placeholderReply")} />
-                <p className="text-xs text-muted-foreground mt-2 text-center">{t("aiDisclaimer")}</p>
               </div>
             </div>
             {previewResource && (
-              <ResourcePreviewPanel resource={previewResource} onClose={() => setPreviewResource(null)} />
+              <ResourcePreviewPanel
+                resource={previewResource}
+                onClose={() => setPreviewResource(null)}
+              />
             )}
           </div>
         )}
