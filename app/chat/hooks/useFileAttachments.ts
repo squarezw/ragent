@@ -1,3 +1,4 @@
+import { isChatDownloadOnly, downloadChatLink } from "@/lib/chatResourcePreview";
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
@@ -115,6 +116,11 @@ export function useFileAttachments() {
   };
 
   const handlePreviewAttachment = (attachment: Attachment) => {
+    if (isChatDownloadOnly(attachment.filename, attachment.type)) {
+      const url = attachment.url || (attachment.objectKey ? getFileUrl(attachment.objectKey) : undefined);
+      if (url) downloadChatLink(url, attachment.filename);
+      return;
+    }
     const getMimetypeFromType = (type: string): string => {
       if (type.includes("PDF") || type === t("pdfDocument")) {
         return "application/pdf";

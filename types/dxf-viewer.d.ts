@@ -3,6 +3,7 @@ declare module "dxf-viewer" {
     constructor(container: HTMLElement, options: { autoResize: boolean });
     static SetupWorker(): void;
     Load(options: { url: string; fonts?: string[]; workerFactory: () => Worker; progressCbk?: (phase: string, loaded: number, total: number) => void }): Promise<void>;
+    _TransformColor(color: number): number;
     Destroy(): void;
     GetLayers(): { name: string }[];
     ShowLayer(name: string, show: boolean): void;
