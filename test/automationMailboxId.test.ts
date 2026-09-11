@@ -4,6 +4,8 @@ import {
   MAILBOX_ID_REQUIRED,
   MAILBOX_NEW_OPTION,
   automationMailboxLabel,
+  defaultMailboxSelection,
+  isMailboxSelectionUnresolved,
   mailboxGroupKey,
   mailboxOptionLabel,
   mailboxSelectValue,
@@ -175,4 +177,46 @@ test("automationMailboxLabel: 遗留行不再回退到「系统邮箱」", () =>
   assert.equal(automationMailboxLabel({ mailboxId: undefined }, mailboxOptions), null);
   assert.equal(automationMailboxLabel({ mailboxId: 0 }, mailboxOptions), null);
   assert.equal(automationMailboxLabel({ mailboxId: 7 }, mailboxOptions), "销售部邮箱 · sales@corp.com");
+});
+
+// ── 名单加载后的默认选择与"查不到"判定（评审修复：绝不静默改绑） ──────────
+
+test("defaultMailboxSelection: 还没有选择时才用名单第一条", () => {
+  assert.equal(defaultMailboxSelection(null, mailboxOptions), 7);
+  assert.equal(defaultMailboxSelection(null, []), null);
+});
+
+test("defaultMailboxSelection: 已有选择一律原样保留，即使名单里查不到", () => {
+  // 回归：老实现在这里会返回名单第一条（7），把自动化静默改绑到另一个收件箱。
+  assert.equal(defaultMailboxSelection(99, mailboxOptions), 99);
+  assert.equal(defaultMailboxSelection(99, []), 99);
+  assert.equal(defaultMailboxSelection(8, mailboxOptions), 8);
+});
+
+test("defaultMailboxSelection: 非法选择按未选择处理", () => {
+  assert.equal(defaultMailboxSelection(0, mailboxOptions), 7);
+  assert.equal(defaultMailboxSelection(1.5, mailboxOptions), 7);
+});
+
+test("isMailboxSelectionUnresolved: 名单加载完且查不到该邮箱时判定为未解析", () => {
+  assert.equal(isMailboxSelectionUnresolved(99, mailboxOptions, true), true);
+  // 名单拉取失败（已加载但为空）时同样判为未解析：此时无法确认选择，必须让用户重选。
+  assert.equal(isMailboxSelectionUnresolved(99, [], true), true);
+});
+
+test("isMailboxSelectionUnresolved: 名单里存在该邮箱时不算未解析", () => {
+  assert.equal(isMailboxSelectionUnresolved(7, mailboxOptions, true), false);
+  assert.equal(isMailboxSelectionUnresolved("7", mailboxOptions, true), false);
+});
+
+test("isMailboxSelectionUnresolved: 名单未加载完时一律不算未解析", () => {
+  // 加载窗口里"查不到"只说明数据还没到，据此展开表单会误伤正常用户。
+  assert.equal(isMailboxSelectionUnresolved(99, [], false), false);
+  assert.equal(isMailboxSelectionUnresolved(99, mailboxOptions, false), false);
+});
+
+test("isMailboxSelectionUnresolved: 未选择或非法选择不算未解析", () => {
+  assert.equal(isMailboxSelectionUnresolved(null, mailboxOptions, true), false);
+  assert.equal(isMailboxSelectionUnresolved(0, mailboxOptions, true), false);
+  assert.equal(isMailboxSelectionUnresolved(undefined as unknown as number | null, mailboxOptions, true), false);
 });

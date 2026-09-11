@@ -89,6 +89,41 @@ export function mailboxOptionLabel(option: MailboxOption): string {
 }
 
 /**
+ * 邮箱名单加载完成后的**默认**选择：只有还没有选择时才用名单里的第一条。
+ *
+ * 已有选择一律原样保留，**即使它在名单里查不到**——把查不到的选择静默换成名单第一条，
+ * 会让一次普通保存把自动化改绑到另一个收件箱（监听错邮箱、可能用错账号回信）。
+ * 查不到的选择由 `isMailboxSelectionUnresolved` 判定并要求用户重新选择。
+ */
+
+export function defaultMailboxSelection(
+  mailboxId: number | null,
+  mailboxes: readonly MailboxOption[],
+): number | null {
+  const selected = normalizeMailboxId(mailboxId);
+  if (selected !== null) return selected;
+  return normalizeMailboxId(mailboxes[0]?.id) ?? null;
+}
+
+/**
+ * 有选择、名单也加载完了，但名单里没有它：遗留行、邮箱已被删除，或名单拉取失败。
+ *
+ * 名单尚未加载完时一律返回 false——那时"查不到"只说明数据还没到，不能据此判定失败，
+ * 否则向导会在加载窗口里无故展开表单。判定为 true 时调用方必须让用户重新选择，
+ * 而不是替他选一个。
+ */
+export function isMailboxSelectionUnresolved(
+  mailboxId: number | null,
+  mailboxes: readonly MailboxOption[],
+  mailboxesLoaded: boolean,
+): boolean {
+  if (!mailboxesLoaded) return false;
+  const selected = normalizeMailboxId(mailboxId);
+  if (selected === null) return false;
+  return !mailboxes.some((option) => normalizeMailboxId(option.id) === selected);
+}
+
+/**
  * D.7：与当前选择监听同一邮箱、同属邮件触发且正在运行的其他自动化。
  *
  * 没有选中邮箱时（含"正在配置新邮箱"）返回空候选——此时不存在可比较的分组。

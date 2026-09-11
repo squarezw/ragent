@@ -37,6 +37,8 @@ import {
 import {
   MAILBOX_NEW_OPTION,
   automationMailboxLabel,
+  defaultMailboxSelection,
+  isMailboxSelectionUnresolved,
   mailboxOptionLabel,
   mailboxSelectValue,
   normalizeMailboxId,
@@ -563,11 +565,19 @@ export default function AutomationPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  const mailboxPickerValue = mailboxSelectValue(mailboxId, mailboxFormOpen);
+  // 有选择、但邮箱名单里查不到它（名单已加载完）：遗留行、邮箱被删、或名单拉取失败。
+  // 此时必须让用户重新选择——绝不把选择静默换成名单里的第一条，否则一次普通保存
+  // 就会把自动化改绑到另一个收件箱。
+  const mailboxSelectionUnresolved = isMailboxSelectionUnresolved(mailboxId, mailboxes, mailboxesLoaded);
+
+  // 内联表单是否展开：用户主动展开，或选择不可解析（必须提示重选）。
+  const mailboxFormVisible = mailboxFormOpen || mailboxSelectionUnresolved;
+
+  const mailboxPickerValue = mailboxSelectValue(mailboxId, mailboxFormVisible);
 
   const selectedMailbox = useMemo(
-    () => (mailboxFormOpen ? null : mailboxes.find((item) => item.id === mailboxId) ?? null),
-    [mailboxFormOpen, mailboxId, mailboxes],
+    () => (mailboxFormVisible ? null : mailboxes.find((item) => item.id === mailboxId) ?? null),
+    [mailboxFormVisible, mailboxId, mailboxes],
   );
 
   // 调度器实际监听的是邮箱记录里的文件夹，这里同步派生，避免运行详情显示错文件夹。
@@ -583,14 +593,14 @@ export default function AutomationPage() {
 
   // D.7：冲突检测与命中预测只在同一监听邮箱内比较——调度器的分组键是
   // `${userId}:${mailboxId}`，跨邮箱比较会误报冲突并预测错误的 winner。
-  // 正在配置新邮箱时没有可比较的分组，候选为空。
+  // 正在配置新邮箱（或选择不可解析）时没有可比较的分组，候选为空。
   const mailboxScopedAutomations = useMemo(
     () =>
       selectMailboxScopedAutomations(automations, {
-        mailboxId: mailboxFormOpen ? null : mailboxId,
+        mailboxId: mailboxFormVisible ? null : mailboxId,
         excludeId: editingAutomationId,
       }),
-    [automations, editingAutomationId, mailboxFormOpen, mailboxId],
+    [automations, editingAutomationId, mailboxFormVisible, mailboxId],
   );
 
   const mailConflictCandidates = useMemo(() => {
@@ -835,10 +845,12 @@ export default function AutomationPage() {
         if (!alive) return;
 
         setMailboxes(items);
-        setMailboxId((current) =>
-          current !== null && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
-        );
-        setMailboxFormOpen((open) => open || items.length === 0);
+        // 已有选择原样保留（查不到时由 mailboxSelectionUnresolved 让用户重选），
+        // 只有还没选择过才用名单第一条作默认值。
+        setMailboxId((current) => defaultMailboxSelection(current, items));
+        // 名单为空必须展开表单（空状态不是死路）；名单非空时不改写此前的展开状态，
+        // 那可能是用户点的"配置新邮箱"，也可能是遗留行要求重选。
+        if (items.length === 0) setMailboxFormOpen(true);
       } catch (error) {
         console.error("加载监听邮箱列表失败:", error);
         if (alive) setMailboxFormOpen(true);
@@ -1219,9 +1231,11 @@ export default function AutomationPage() {
     setScheduleDate("");
     setMailResultEmail("");
     setResultEmailIncludeAttachments(true);
-    // 监听邮箱：默认选中第一条已保存邮箱；一条都没有时直接展开内联表单。
+    // 监听邮箱：默认选中第一条已保存邮箱；确认一条都没有时直接展开内联表单。
+    // 名单尚未加载完时先不展开——此时"没有邮箱"只是数据还没到，展开会误伤
+    // 那些其实有邮箱的用户（名单到位后由 loadMailboxOptions 决定）。
     setMailboxId(mailboxes[0]?.id ?? null);
-    setMailboxFormOpen(mailboxes.length === 0);
+    setMailboxFormOpen(mailboxesLoaded && mailboxes.length === 0);
     resetMailboxForm();
     setMailRuleMode("all");
     setMailRules([]);
@@ -1274,15 +1288,12 @@ export default function AutomationPage() {
     setScheduleDate(item.scheduleDate || "");
     setMailResultEmail(item.resultEmail || "");
     setResultEmailIncludeAttachments(item.resultEmailIncludeAttachments === true);
-    // 监听邮箱：能解析到已保存邮箱时直接选中；遗留行（旧字符串键，没有整数
-    // mailboxId）或名单里已查不到该邮箱时展开配置表单，提示用户重新选择，
-    // 而不是在提交时静默下发空值（服务端会以「请为邮件触发选择监听邮箱」拒绝）。
+    // 监听邮箱：原样载入该自动化的选择。遗留行（旧字符串键，没有整数 mailboxId）
+    // 直接展开配置表单提示重选；选中的邮箱若在名单里查不到（不论名单先到还是后到），
+    // 由 mailboxSelectionUnresolved 派生展开表单并拦下保存，而不是替用户另选一个。
     const savedMailboxId = normalizeMailboxId(item.mailboxId);
     setMailboxId(savedMailboxId);
-    setMailboxFormOpen(
-      savedMailboxId === null ||
-        (mailboxesLoaded && !mailboxes.some((mailbox) => mailbox.id === savedMailboxId)),
-    );
+    setMailboxFormOpen(savedMailboxId === null);
     resetMailboxForm();
     setMailRuleMode(item.mailRuleMode === "any" ? "any" : "all");
     setMailRules(Array.isArray(item.mailRules) ? item.mailRules : []);
@@ -1354,8 +1365,9 @@ export default function AutomationPage() {
   }
 
   function buildAutomationPayload() {
-    // 监听邮箱完全由向导内的选择派生：正在配置新邮箱时视为未选择（提交前会被拦下）。
-    const mailboxIdForPayload = mailboxFormOpen ? null : normalizeMailboxId(mailboxId);
+    // 监听邮箱完全由向导内的选择派生：正在配置新邮箱、或选择已不可解析时视为未选择
+    // （两种情况下提交都会被 validateMailboxSelection 拦下）。
+    const mailboxIdForPayload = mailboxFormVisible ? null : normalizeMailboxId(mailboxId);
 
     return {
       name: name.trim(),
@@ -1417,6 +1429,16 @@ export default function AutomationPage() {
 
   /** 邮件触发的监听邮箱必须来自邮箱列表（服务端同样会校验归属），未选定时不允许保存。 */
   function validateMailboxSelection() {
+    if (mailboxSelectionUnresolved) {
+      toast.error(
+        tt(
+          "原监听邮箱已不存在或不可用，请重新选择监听邮箱",
+          "The previous monitored mailbox is unavailable. Please choose another one",
+        ),
+      );
+      return false;
+    }
+
     if (mailboxFormOpen) {
       toast.error(
         tt(
@@ -3119,7 +3141,7 @@ export default function AutomationPage() {
                             </option>
                           </select>
 
-                          {selectedMailboxDependents > 0 && !mailboxFormOpen && (
+                          {selectedMailboxDependents > 0 && !mailboxFormVisible && (
                             <div className="mt-1.5 text-xs leading-5 text-destructive">
                               {tt(
                                 `⚠ 该邮箱已被 ${selectedMailboxDependents} 个自动化使用，修改凭据会影响它们`,
@@ -3128,11 +3150,20 @@ export default function AutomationPage() {
                             </div>
                           )}
 
-                          {mailboxFormOpen && (
+                          {mailboxFormVisible && (
                             <div className="mt-3 space-y-3 rounded-lg border bg-background p-3">
                               <div className="text-xs font-medium">
                                 {tt("配置新邮箱", "Configure a new mailbox")}
                               </div>
+
+                              {mailboxSelectionUnresolved && (
+                                <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
+                                  {tt(
+                                    "该自动化原来的监听邮箱已不存在或不可用。请在上方重新选择已有邮箱，或在此配置一个新邮箱。",
+                                    "The mailbox this automation used is unavailable. Choose another saved mailbox above, or configure a new one here.",
+                                  )}
+                                </div>
+                              )}
 
                               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                                 <input
@@ -3191,7 +3222,9 @@ export default function AutomationPage() {
                                     ? tt("连接中…", "Connecting…")
                                     : tt("测试连接", "Test connection")}
                                 </button>
-                                {mailboxes.length > 0 && (
+                                {/* 选择不可解析时不给"取消"——收起后表单会立刻再次出现（提示必须保留），
+                                    用户只能重新选择一个邮箱。 */}
+                                {mailboxes.length > 0 && !mailboxSelectionUnresolved && (
                                   <button
                                     type="button"
                                     onClick={cancelMailboxForm}
@@ -3227,7 +3260,7 @@ export default function AutomationPage() {
 
                         <Field label={tt("监听文件夹", "Monitored Folder")} compact>
                           <div className="rounded-lg border bg-background px-3 py-2.5 text-sm">
-                            {mailFolderDisplay(mailboxFormOpen ? mailboxForm.folder : selectedMailbox?.folder)}
+                            {mailFolderDisplay(mailboxFormVisible ? mailboxForm.folder : selectedMailbox?.folder)}
                           </div>
                           <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
                             {tt(
