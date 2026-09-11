@@ -1,5 +1,6 @@
 import pool from "@/lib/db";
 import { normalizeMailboxId, requireMailboxId } from "@/lib/automation/mailbox-id";
+import { mailRulesBriefSummary } from "@/lib/automation/mail-rules";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
 export type AutomationTriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
@@ -709,16 +710,6 @@ function normalizeEmailPriority(value: any) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 50;
   return Math.max(0, Math.min(100, Math.round(parsed)));
-}
-
-function emailRuleSummary(config: Record<string, any>) {
-  const rules = Array.isArray(config.rules) ? config.rules : [];
-  if (rules.length === 0) return "收到新邮件即触发";
-
-  const first = rules[0] || {};
-  const firstText = `${first.field || "邮件"}${first.operator || "包含"}${first.value ? `“${first.value}”` : ""}`;
-  if (rules.length === 1) return firstText;
-  return `${firstText} 等 ${rules.length} 条`;
 }
 
 export async function createAutomation(userId: number, input: any) {
@@ -2453,7 +2444,7 @@ export function automationRowToApi(row: any) {
     row.trigger_type === "定时触发"
       ? `${scheduleSummary} · ${scheduleTimezone}`
       : row.trigger_type === "邮件触发"
-        ? `${config.mailboxLabel || "系统邮箱"} · ${emailRuleSummary(config)} · 优先级 ${normalizeEmailPriority(config.priority)}`
+        ? `${config.mailboxLabel || "系统邮箱"} · ${mailRulesBriefSummary(config.rules)} · 优先级 ${normalizeEmailPriority(config.priority)}`
         : row.trigger_type === "Webhook / API"
           ? "由外部系统通过 Webhook / API 触发"
           : "上游自动化完成后触发";

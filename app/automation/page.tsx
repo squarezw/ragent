@@ -18,6 +18,22 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  MAIL_RULE_FIELDS,
+  MAIL_RULE_OPERATORS,
+  doesMailRuleMatch,
+  doesMailRuleSetMatch,
+  mailConflictLevel,
+  mailRuleSource,
+  mailRulesSummary,
+  mailRuleText,
+  type MailRuleField,
+  type MailRuleMessage,
+  type MailRuleMode,
+  type MailRuleOperator,
+  type MailRuleSet,
+  type MailTriggerRule,
+} from "@/lib/automation/mail-rules";
 
 type AutomationStatus = "running" | "paused" | "error";
 type RunStatus =
@@ -31,32 +47,6 @@ type RunStatus =
   | "timed_out";
 type TriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
 type StrategyType = "仅生成结果" | "需要确认后执行" | "自动执行";
-type MailRuleMode = "all" | "any";
-type MailRuleField =
-  | "发件人"
-  | "发件人域名"
-  | "收件人"
-  | "邮件主题"
-  | "邮件正文"
-  | "是否包含附件"
-  | "附件名称"
-  | "附件类型";
-type MailRuleOperator = "等于" | "包含" | "不包含" | "开头是" | "结尾是" | "是否存在";
-interface MailTriggerRule {
-  id: string;
-  field: MailRuleField;
-  operator: MailRuleOperator;
-  value: string;
-}
-
-type MailRuleTestMessage = {
-  from: string;
-  to: string;
-  subject: string;
-  body: string;
-  attachments: string[];
-};
-
 interface AppOption {
   id: number;
   name: string;
@@ -226,18 +216,6 @@ const CHAIN_PROCESSED_STORAGE_KEY = "ragent_chain_processed_runs_v1";
 const WEBHOOK_POLL_INTERVAL_MS = 5000;
 
 
-const MAIL_RULE_FIELDS: MailRuleField[] = [
-  "发件人",
-  "发件人域名",
-  "收件人",
-  "邮件主题",
-  "邮件正文",
-  "是否包含附件",
-  "附件名称",
-  "附件类型",
-];
-const MAIL_RULE_OPERATORS: MailRuleOperator[] = ["等于", "包含", "不包含", "开头是", "结尾是", "是否存在"];
-
 function newMailRule(): MailTriggerRule {
   return {
     id: `mail-rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -247,47 +225,9 @@ function newMailRule(): MailTriggerRule {
   };
 }
 
-function mailRuleText(rule: MailTriggerRule) {
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    return `${rule.field}${rule.value || "是"}`;
-  }
-  return `${rule.field}${rule.operator}“${rule.value}”`;
-}
-
-function mailRulesSummary(item: Automation) {
-  const rules = Array.isArray(item.mailRules) ? item.mailRules : [];
-  if (rules.length === 0) return "收到新邮件即触发";
-  const prefix = item.mailRuleMode === "any" ? "任一" : "全部";
-  return `${prefix}：${rules.map(mailRuleText).join("；")}`;
-}
-
-function normalizedMailRule(rule: MailTriggerRule) {
-  return `${rule.field}|${rule.operator}|${String(rule.value || "").trim().toLowerCase()}`;
-}
-
-function mailRuleSetsEqual(
-  leftRules: MailTriggerRule[],
-  leftMode: MailRuleMode,
-  rightRules: MailTriggerRule[],
-  rightMode: MailRuleMode,
-) {
-  if (leftMode !== rightMode || leftRules.length !== rightRules.length) return false;
-  const left = leftRules.map(normalizedMailRule).sort();
-  const right = rightRules.map(normalizedMailRule).sort();
-  return left.every((value, index) => value === right[index]);
-}
-
-function mailConflictLevel(
-  currentRules: MailTriggerRule[],
-  currentMode: MailRuleMode,
-  other: Automation,
-): "high" | "possible" {
-  const otherRules = Array.isArray(other.mailRules) ? other.mailRules : [];
-  const otherMode = other.mailRuleMode === "any" ? "any" : "all";
-
-  if (currentRules.length === 0 || otherRules.length === 0) return "high";
-  if (mailRuleSetsEqual(currentRules, currentMode, otherRules, otherMode)) return "high";
-  return "possible";
+// Automation（接口返回）到规范化规则集的适配；规则逻辑本身在 mail-rules.ts。
+function automationMailRuleSet(item: Automation): MailRuleSet {
+  return { rules: item.mailRules, mode: item.mailRuleMode };
 }
 
 function mailFolderDisplay(value: unknown) {
@@ -302,65 +242,6 @@ function emailSourceDisplay(value: unknown) {
 function emailContextText(value: unknown, fallback = "-") {
   const text = String(value ?? "").trim();
   return text || fallback;
-}
-
-function extractMailSenderDomain(value?: string) {
-  const match = String(value || "").match(/@([^>\s,;]+)/);
-  return match?.[1]?.toLowerCase() || "";
-}
-
-function mailAttachmentExtensions(names?: string[]) {
-  return (Array.isArray(names) ? names : [])
-    .map((item) => {
-      const match = String(item).toLowerCase().match(/(\.[a-z0-9]+)$/i);
-      return match?.[1] || "";
-    })
-    .filter(Boolean)
-    .join(" ");
-}
-
-function mailRuleTestSource(rule: MailTriggerRule, message: MailRuleTestMessage) {
-  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
-  switch (rule.field) {
-    case "发件人": return String(message.from || "");
-    case "发件人域名": return extractMailSenderDomain(message.from);
-    case "收件人": return String(message.to || "");
-    case "邮件主题": return String(message.subject || "");
-    case "邮件正文": return String(message.body || "");
-    case "是否包含附件": return attachments.length > 0 ? "是" : "否";
-    case "附件名称": return attachments.join(" ");
-    case "附件类型": return mailAttachmentExtensions(attachments);
-    default: return "";
-  }
-}
-
-function doesMailRuleTestMatch(rule: MailTriggerRule, message: MailRuleTestMessage) {
-  const source = mailRuleTestSource(rule, message).toLowerCase();
-  const wanted = String(rule.value || "").trim().toLowerCase();
-
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    const exists = rule.field === "是否包含附件" ? source === "是" : source.trim().length > 0;
-    const wantExists = !["否", "false", "0", "no"].includes(wanted || "是");
-    return exists === wantExists;
-  }
-
-  if (!wanted) return false;
-  if (rule.operator === "等于") return source.trim() === wanted;
-  if (rule.operator === "包含") return source.includes(wanted);
-  if (rule.operator === "不包含") return !source.includes(wanted);
-  if (rule.operator === "开头是") return source.startsWith(wanted);
-  if (rule.operator === "结尾是") return source.endsWith(wanted);
-  return false;
-}
-
-function doMailRulesTestMatch(
-  rules: MailTriggerRule[],
-  mode: MailRuleMode,
-  message: MailRuleTestMessage,
-) {
-  if (rules.length === 0) return true;
-  const results = rules.map((rule) => doesMailRuleTestMatch(rule, message));
-  return mode === "any" ? results.some(Boolean) : results.every(Boolean);
 }
 
 function splitMailTestAttachments(value: string) {
@@ -670,7 +551,7 @@ export default function AutomationPage() {
       })
       .map((item) => ({
         item,
-        level: mailConflictLevel(mailRules, mailRuleMode, item),
+        level: mailConflictLevel({ rules: mailRules, mode: mailRuleMode }, automationMailRuleSet(item)),
         priority: Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50,
       }))
       .sort((a, b) => {
@@ -683,7 +564,7 @@ export default function AutomationPage() {
   const mailRuleTestResult = useMemo(() => {
     if (trigger !== "邮件触发") return null;
 
-    const message: MailRuleTestMessage = {
+    const message: MailRuleMessage = {
       from: mailTestFrom,
       to: mailTestTo,
       subject: mailTestSubject,
@@ -692,10 +573,10 @@ export default function AutomationPage() {
     };
     const currentRuleResults = mailRules.map((rule) => ({
       rule,
-      matched: doesMailRuleTestMatch(rule, message),
-      source: mailRuleTestSource(rule, message),
+      matched: doesMailRuleMatch(rule, message),
+      source: mailRuleSource(rule, message),
     }));
-    const currentMatched = doMailRulesTestMatch(mailRules, mailRuleMode, message);
+    const currentMatched = doesMailRuleSetMatch({ rules: mailRules, mode: mailRuleMode }, message);
     const currentId = editingAutomationId ?? Number.MAX_SAFE_INTEGER;
 
     const candidates = automations
@@ -703,13 +584,7 @@ export default function AutomationPage() {
         if (item.id === editingAutomationId) return false;
         return item.trigger === "邮件触发" && item.status === "running";
       })
-      .filter((item) =>
-        doMailRulesTestMatch(
-          Array.isArray(item.mailRules) ? item.mailRules : [],
-          item.mailRuleMode === "any" ? "any" : "all",
-          message,
-        ),
-      )
+      .filter((item) => doesMailRuleSetMatch(automationMailRuleSet(item), message))
       .map((item) => ({
         id: item.id,
         name: item.name,
@@ -1100,7 +975,7 @@ export default function AutomationPage() {
 
   function localizedTriggerDetail(item: Automation) {
     if (item.trigger === "邮件触发") {
-      const ruleText = mailRulesSummary(item);
+      const ruleText = mailRulesSummary(automationMailRuleSet(item));
       const priority = Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50;
       return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
     }
@@ -1290,12 +1165,8 @@ export default function AutomationPage() {
       return `每天 ${scheduleTime} · ${timeZoneLabel(scheduleTimezone)}`;
     }
     if (trigger === "邮件触发") {
-      const temp: Automation = {
-        id: 0, name: "", trigger: "邮件触发", triggerDetail: "", appId: null, agent: "",
-        strategy, status: "running", statusText: "", time: "", task: "", returnDetail: "",
-        mailboxLabel: "系统邮箱", mailRuleMode, mailRules, mailPriority,
-      };
-      return `${tt("系统邮箱", "System Mailbox")} · ${mailRulesSummary(temp)} · ${tt("优先级", "Priority")} ${mailPriority}`;
+      const ruleText = mailRulesSummary({ rules: mailRules, mode: mailRuleMode });
+      return `${tt("系统邮箱", "System Mailbox")} · ${ruleText} · ${tt("优先级", "Priority")} ${mailPriority}`;
     }
     if (trigger === "Webhook / API") {
       return "由外部系统通过 Webhook / API 触发";

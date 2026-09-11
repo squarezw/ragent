@@ -27,6 +27,11 @@ import {
   requireMailboxId,
 } from "@/lib/automation/mailbox-id";
 import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
+import {
+  doesMailRuleSetMatch,
+  type MailRuleSet,
+  mailRulesSummary,
+} from "@/lib/automation/mail-rules";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -50,13 +55,6 @@ type InboxMessage = {
   date?: string;
   body?: string;
   attachments?: string[];
-};
-
-type MailTriggerRule = {
-  id?: string;
-  field: string;
-  operator: string;
-  value?: string;
 };
 
 function isScheduleConfigurationError(error: unknown) {
@@ -224,76 +222,10 @@ function serverAuthorization(userId: number) {
   return `Bearer ${token}`;
 }
 
-function extractSenderDomain(value?: string) {
-  const match = String(value || "").match(/@([^>\s,;]+)/);
-  return match?.[1]?.toLowerCase() || "";
-}
-
-function attachmentExtensions(names?: string[]) {
-  return (Array.isArray(names) ? names : [])
-    .map((name) => {
-      const match = String(name).toLowerCase().match(/(\.[a-z0-9]+)$/i);
-      return match?.[1] || "";
-    })
-    .filter(Boolean)
-    .join(" ");
-}
-
-function mailRuleSource(rule: MailTriggerRule, message: InboxMessage) {
-  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
-  switch (rule.field) {
-    case "发件人": return String(message.from || "");
-    case "发件人域名": return extractSenderDomain(message.from);
-    case "收件人": return String(message.to || "");
-    case "邮件主题": return String(message.subject || "");
-    case "邮件正文": return String(message.body || "");
-    case "是否包含附件": return attachments.length > 0 ? "是" : "否";
-    case "附件名称": return attachments.join(" ");
-    case "附件类型": return attachmentExtensions(attachments);
-    default: return "";
-  }
-}
-
-function doesMailRuleMatch(rule: MailTriggerRule, message: InboxMessage) {
-  const source = mailRuleSource(rule, message).toLowerCase();
-  const wanted = String(rule.value || "").trim().toLowerCase();
-
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    const exists = rule.field === "是否包含附件" ? source === "是" : source.trim().length > 0;
-    const wantExists = !["否", "false", "0", "no"].includes(wanted || "是");
-    return exists === wantExists;
-  }
-
-  if (!wanted) return false;
-  if (rule.operator === "等于") return source.trim() === wanted;
-  if (rule.operator === "包含") return source.includes(wanted);
-  if (rule.operator === "不包含") return !source.includes(wanted);
-  if (rule.operator === "开头是") return source.startsWith(wanted);
-  if (rule.operator === "结尾是") return source.endsWith(wanted);
-  return false;
-}
-
-function mailAutomationMatches(task: any, message: InboxMessage) {
+// 任务行（automation_tasks）到规范化规则集的适配；规则逻辑本身在 mail-rules.ts。
+function mailRuleSetFromTask(task: any): MailRuleSet {
   const config = task.trigger_config || {};
-  const rules: MailTriggerRule[] = Array.isArray(config.rules) ? config.rules : [];
-  if (rules.length === 0) return true;
-  const results = rules.map((rule) => doesMailRuleMatch(rule, message));
-  return config.ruleMode === "any" ? results.some(Boolean) : results.every(Boolean);
-}
-
-function mailRuleText(rule: MailTriggerRule) {
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    return `${rule.field}${rule.value || "是"}`;
-  }
-  return `${rule.field}${rule.operator}“${rule.value || ""}”`;
-}
-
-function mailRulesSummary(task: any) {
-  const config = task.trigger_config || {};
-  const rules: MailTriggerRule[] = Array.isArray(config.rules) ? config.rules : [];
-  if (rules.length === 0) return "收到新邮件即触发";
-  const prefix = config.ruleMode === "any" ? "任一" : "全部";
-  return `${prefix}：${rules.map(mailRuleText).join("；")}`;
+  return { rules: config.rules, mode: config.ruleMode };
 }
 
 async function fetchConfiguredMailboxUnread(
@@ -349,7 +281,7 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     mailboxId: requireMailboxId(config.mailboxId),
     mailbox: config.mailboxLabel || "系统邮箱",
     folder: config.folder || "INBOX",
-    matchedRule: mailRulesSummary(task),
+    matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
     priority: Number(config.priority ?? 50),
     from: message.from,
     to: message.to,
@@ -457,7 +389,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
     if (!subject.startsWith("自动化执行结果：") && !subject.startsWith("[AI对话]")) {
       const messageKey = String(message.message_id || "").trim() || `uid:${uid}`;
       const matched = tasks
-        .filter((task) => mailAutomationMatches(task, message))
+        .filter((task) => doesMailRuleSetMatch(mailRuleSetFromTask(task), message))
         .sort((a, b) => {
           const priorityDelta = Number(b.trigger_config?.priority ?? 50) - Number(a.trigger_config?.priority ?? 50);
           return priorityDelta !== 0 ? priorityDelta : Number(a.id) - Number(b.id);
@@ -495,7 +427,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
             automationId: taskId,
             outcome,
             winnerAutomationId: winner ? Number(winner.id) : null,
-            matchedRule: mailRulesSummary(task),
+            matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
             priority: Number(task.trigger_config?.priority ?? 50),
             from: message.from,
             to: message.to,
