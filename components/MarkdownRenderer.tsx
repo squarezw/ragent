@@ -156,7 +156,7 @@ export function MarkdownRenderer({
             />
           ),
           img: ({ node, src, alt, className: imageClassName, ...props }) => {
-            const resource = toPreviewResource("image", src, alt);
+            const resource = toPreviewResource("image", typeof src === "string" ? src : undefined, alt);
             const image = (
               // Chat content can reference arbitrary external image hosts, so it cannot use Next image optimization.
               // biome-ignore lint/performance/noImgElement: external chat images need direct rendering
