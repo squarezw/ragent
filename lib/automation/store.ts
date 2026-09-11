@@ -1,4 +1,5 @@
 import pool from "@/lib/db";
+import { normalizeMailboxId, requireMailboxId } from "@/lib/automation/mailbox-id";
 import { getUserTenantId } from "@/lib/tenantMapping";
 
 export type AutomationTriggerType = "定时触发" | "邮件触发" | "Webhook / API" | "自动化完成触发";
@@ -30,6 +31,49 @@ export async function ensureAutomationTables() {
 
   initPromise = (async () => {
     await pool.query(`
+      -- 三张邮件表按“mailbox_id INTEGER”新结构重建（不做数据迁移）。
+      -- 仅在旧列 mailbox_key 仍存在时介入：表为空则删除后由下面的 CREATE TABLE 重建；
+      -- 表非空则直接报错中止，避免留下新旧列并存的错配。旧列消失后条件不再成立，
+      -- 因此这段是自失效且幂等的——本函数会被反复调用，新结构下必须保持静默 no-op。
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'automation_email_mailbox_cursors'
+                     AND column_name = 'mailbox_key') THEN
+          IF NOT EXISTS (SELECT 1 FROM automation_email_mailbox_cursors LIMIT 1) THEN
+            DROP TABLE automation_email_mailbox_cursors;
+          ELSE
+            RAISE EXCEPTION 'automation_email_mailbox_cursors 仍含旧列 mailbox_key 且表中已有数据，请先清空该表后再启动';
+          END IF;
+        END IF;
+      END $$;
+
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'automation_email_processed_messages'
+                     AND column_name = 'mailbox_key') THEN
+          IF NOT EXISTS (SELECT 1 FROM automation_email_processed_messages LIMIT 1) THEN
+            DROP TABLE automation_email_processed_messages;
+          ELSE
+            RAISE EXCEPTION 'automation_email_processed_messages 仍含旧列 mailbox_key 且表中已有数据，请先清空该表后再启动';
+          END IF;
+        END IF;
+      END $$;
+
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'automation_email_rule_events'
+                     AND column_name = 'mailbox_key') THEN
+          IF NOT EXISTS (SELECT 1 FROM automation_email_rule_events LIMIT 1) THEN
+            DROP TABLE automation_email_rule_events;
+          ELSE
+            RAISE EXCEPTION 'automation_email_rule_events 仍含旧列 mailbox_key 且表中已有数据，请先清空该表后再启动';
+          END IF;
+        END IF;
+      END $$;
+
       CREATE TABLE IF NOT EXISTS automation_tasks (
         id SERIAL PRIMARY KEY,
         tenant_id INTEGER,
@@ -179,11 +223,11 @@ export async function ensureAutomationTables() {
       CREATE TABLE IF NOT EXISTS automation_email_processed_messages (
         id SERIAL PRIMARY KEY,
         created_by_user_id INTEGER NOT NULL,
-        mailbox_key VARCHAR(128) NOT NULL,
+        mailbox_id INTEGER NOT NULL,
         message_key VARCHAR(500) NOT NULL,
         automation_id INTEGER NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(created_by_user_id, mailbox_key, message_key)
+        UNIQUE(created_by_user_id, mailbox_id, message_key)
       );
 
       CREATE INDEX IF NOT EXISTS idx_automation_email_processed_owner
@@ -192,11 +236,11 @@ export async function ensureAutomationTables() {
 
       CREATE TABLE IF NOT EXISTS automation_email_mailbox_cursors (
         created_by_user_id INTEGER NOT NULL,
-        mailbox_key VARCHAR(128) NOT NULL,
+        mailbox_id INTEGER NOT NULL,
         last_uid BIGINT NOT NULL DEFAULT 0,
         initialized BOOLEAN NOT NULL DEFAULT FALSE,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (created_by_user_id, mailbox_key)
+        PRIMARY KEY (created_by_user_id, mailbox_id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_automation_email_cursor_updated
@@ -205,7 +249,7 @@ export async function ensureAutomationTables() {
       CREATE TABLE IF NOT EXISTS automation_email_rule_events (
         id SERIAL PRIMARY KEY,
         created_by_user_id INTEGER NOT NULL,
-        mailbox_key VARCHAR(128) NOT NULL,
+        mailbox_id INTEGER NOT NULL,
         message_key VARCHAR(500) NOT NULL,
         message_uid BIGINT,
         automation_id INTEGER NOT NULL,
@@ -218,14 +262,14 @@ export async function ensureAutomationTables() {
         subject TEXT,
         message_date TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(created_by_user_id, mailbox_key, message_key, automation_id)
+        UNIQUE(created_by_user_id, mailbox_id, message_key, automation_id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_automation
         ON automation_email_rule_events(created_by_user_id, automation_id, created_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_automation_email_rule_events_mailbox
-        ON automation_email_rule_events(created_by_user_id, mailbox_key, created_at DESC);
+        ON automation_email_rule_events(created_by_user_id, mailbox_id, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS automation_notification_preferences (
         user_id INTEGER PRIMARY KEY,
@@ -722,7 +766,7 @@ export async function createAutomation(userId: number, input: any) {
     nextRunAt = status === "running" ? computeNextRunAt(schedule) : null;
   } else if (triggerType === "邮件触发") {
     Object.assign(triggerConfig, {
-      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? "system"),
+      mailboxId: requireMailboxId(input.mailboxId ?? input.triggerConfig?.mailboxId),
       mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? "系统邮箱"),
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode) === "any" ? "any" : "all",
@@ -872,7 +916,7 @@ export async function updateAutomation(userId: number, id: number, input: any) {
     triggerConfig = schedule;
   } else if (triggerType === "邮件触发") {
     triggerConfig = {
-      mailboxKey: String(input.mailboxKey ?? input.triggerConfig?.mailboxKey ?? triggerConfig.mailboxKey ?? "system"),
+      mailboxId: requireMailboxId(input.mailboxId ?? input.triggerConfig?.mailboxId ?? triggerConfig.mailboxId),
       mailboxLabel: String(input.mailboxLabel ?? input.triggerConfig?.mailboxLabel ?? triggerConfig.mailboxLabel ?? "系统邮箱"),
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? triggerConfig.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode ?? triggerConfig.ruleMode) === "any" ? "any" : "all",
@@ -1956,23 +2000,23 @@ export async function rejectRunReview(
 
 export async function claimAutomationEmailMessage(
   userId: number,
-  mailboxKey: string,
+  mailboxId: number,
   messageKey: string,
   automationId: number
 ) {
   await ensureAutomationTables();
 
-  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeMailboxId = requireMailboxId(mailboxId);
   const safeMessageKey = String(messageKey || "").trim();
   if (!safeMessageKey) throw new Error("EMAIL_MESSAGE_KEY_REQUIRED");
 
   const result = await pool.query(
     `INSERT INTO automation_email_processed_messages (
-      created_by_user_id, mailbox_key, message_key, automation_id
+      created_by_user_id, mailbox_id, message_key, automation_id
     ) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (created_by_user_id, mailbox_key, message_key) DO NOTHING
+    ON CONFLICT (created_by_user_id, mailbox_id, message_key) DO NOTHING
     RETURNING id`,
-    [userId, safeMailboxKey, safeMessageKey.slice(0, 500), automationId]
+    [userId, safeMailboxId, safeMessageKey.slice(0, 500), automationId]
   );
 
   return result.rows.length > 0;
@@ -1986,7 +2030,7 @@ export type AutomationEmailRuleOutcome =
 
 export type AutomationEmailRuleEvaluationInput = {
   userId: number;
-  mailboxKey: string;
+  mailboxId: number;
   messageKey: string;
   messageUid?: number;
   automationId: number;
@@ -2008,7 +2052,7 @@ export async function recordAutomationEmailRuleEvaluations(
     .filter((item) => Number.isInteger(Number(item.userId)) && Number.isInteger(Number(item.automationId)))
     .map((item) => ({
       ...item,
-      mailboxKey: String(item.mailboxKey || "system").trim() || "system",
+      mailboxId: requireMailboxId(item.mailboxId),
       messageKey: String(item.messageKey || "").trim().slice(0, 500),
     }))
     .filter((item) => item.messageKey);
@@ -2021,7 +2065,7 @@ export async function recordAutomationEmailRuleEvaluations(
     const start = params.length;
     params.push(
       item.userId,
-      item.mailboxKey,
+      item.mailboxId,
       item.messageKey,
       Number.isFinite(Number(item.messageUid)) ? Number(item.messageUid) : null,
       item.automationId,
@@ -2040,11 +2084,11 @@ export async function recordAutomationEmailRuleEvaluations(
 
   await pool.query(
     `INSERT INTO automation_email_rule_events (
-       created_by_user_id, mailbox_key, message_key, message_uid,
+       created_by_user_id, mailbox_id, message_key, message_uid,
        automation_id, outcome, winner_automation_id, matched_rule, priority,
        from_address, to_address, subject, message_date, created_at
      ) VALUES ${values.join(",")}
-     ON CONFLICT (created_by_user_id, mailbox_key, message_key, automation_id) DO NOTHING`,
+     ON CONFLICT (created_by_user_id, mailbox_id, message_key, automation_id) DO NOTHING`,
     params,
   );
 }
@@ -2067,7 +2111,7 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
 
   const recentResult = await pool.query(
     `SELECT
-       id, mailbox_key, message_key, message_uid, automation_id, outcome,
+       id, mailbox_id, message_key, message_uid, automation_id, outcome,
        winner_automation_id, matched_rule, priority,
        from_address, to_address, subject, message_date, created_at
      FROM automation_email_rule_events
@@ -2087,7 +2131,7 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
     duplicate: Number(row.duplicate || 0),
     recent: recentResult.rows.map((item: any) => ({
       id: Number(item.id),
-      mailboxKey: item.mailbox_key,
+      mailboxId: Number(item.mailbox_id),
       messageKey: item.message_key,
       messageUid: item.message_uid == null ? undefined : Number(item.message_uid),
       automationId: Number(item.automation_id),
@@ -2466,7 +2510,9 @@ export function automationRowToApi(row: any) {
     scheduleMissingDayPolicy:
       config.missingDayPolicy === "skip" ? "skip" : "last_day",
     scheduleDate,
-    mailboxKey: config.mailboxKey || "system",
+    // 展示层不再回退到 "system"：遗留数据没有 mailboxId 时原样返回 null，
+    // 真正依赖该标识的路径（调度器、游标、去重、创建/更新）会显式报错。
+    mailboxId: normalizeMailboxId(config.mailboxId),
     mailboxLabel: config.mailboxLabel || "系统邮箱",
     mailFolder: config.folder || "INBOX",
     mailRuleMode: (config.ruleMode === "any" ? "any" : "all") as EmailRuleMode,
@@ -2550,16 +2596,16 @@ export async function listActiveEmailAutomationsForScheduler() {
 
 export async function getAutomationEmailMailboxCursor(
   userId: number,
-  mailboxKey: string
+  mailboxId: number
 ) {
   await ensureAutomationTables();
-  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeMailboxId = requireMailboxId(mailboxId);
   const result = await pool.query(
     `SELECT last_uid, initialized, updated_at
      FROM automation_email_mailbox_cursors
-     WHERE created_by_user_id=$1 AND mailbox_key=$2
+     WHERE created_by_user_id=$1 AND mailbox_id=$2
      LIMIT 1`,
-    [userId, safeMailboxKey]
+    [userId, safeMailboxId]
   );
 
   const row = result.rows[0];
@@ -2572,24 +2618,24 @@ export async function getAutomationEmailMailboxCursor(
 
 export async function saveAutomationEmailMailboxCursor(
   userId: number,
-  mailboxKey: string,
+  mailboxId: number,
   lastUid: number,
   initialized = true
 ) {
   await ensureAutomationTables();
-  const safeMailboxKey = String(mailboxKey || "system").trim() || "system";
+  const safeMailboxId = requireMailboxId(mailboxId);
   const safeUid = Number.isFinite(Number(lastUid)) ? Math.max(0, Math.floor(Number(lastUid))) : 0;
 
   const result = await pool.query(
     `INSERT INTO automation_email_mailbox_cursors (
-       created_by_user_id, mailbox_key, last_uid, initialized, updated_at
+       created_by_user_id, mailbox_id, last_uid, initialized, updated_at
      ) VALUES ($1,$2,$3,$4,NOW())
-     ON CONFLICT (created_by_user_id, mailbox_key) DO UPDATE SET
+     ON CONFLICT (created_by_user_id, mailbox_id) DO UPDATE SET
        last_uid=GREATEST(automation_email_mailbox_cursors.last_uid, EXCLUDED.last_uid),
        initialized=automation_email_mailbox_cursors.initialized OR EXCLUDED.initialized,
        updated_at=NOW()
      RETURNING *`,
-    [userId, safeMailboxKey, safeUid, initialized]
+    [userId, safeMailboxId, safeUid, initialized]
   );
 
   return result.rows[0] || null;

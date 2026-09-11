@@ -21,6 +21,11 @@ import {
   getAutomationMailboxForUser,
   mailboxConnectionFromRow,
 } from "@/lib/automation/mailboxes";
+import {
+  mailboxGroupKey,
+  normalizeMailboxId,
+  requireMailboxId,
+} from "@/lib/automation/mailbox-id";
 import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
 
 declare global {
@@ -219,11 +224,6 @@ function serverAuthorization(userId: number) {
   return `Bearer ${token}`;
 }
 
-function mailboxIdFromKey(mailboxKey: string) {
-  const match = String(mailboxKey || "").match(/^mailbox:(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
 function extractSenderDomain(value?: string) {
   const match = String(value || "").match(/@([^>\s,;]+)/);
   return match?.[1]?.toLowerCase() || "";
@@ -296,40 +296,13 @@ function mailRulesSummary(task: any) {
   return `${prefix}：${rules.map(mailRuleText).join("；")}`;
 }
 
-async function fetchSystemMailboxUnread(userId: number, afterUid?: number) {
-  const backendUrl = requiredEnv("EXTERNAL_API_BASE_URL").replace(/\/+$/, "");
-  const params = new URLSearchParams();
-  if (Number.isInteger(afterUid)) params.set("after_uid", String(afterUid));
-  const response = await fetch(
-    `${backendUrl}/api/v1/email/unread${params.toString() ? `?${params.toString()}` : ""}`,
-    { headers: { Authorization: serverAuthorization(userId) } }
-  );
-
-  const raw = await response.text();
-  let data: any = raw;
-  try { data = raw ? JSON.parse(raw) : null; } catch { /* keep raw */ }
-
-  if (!response.ok) {
-    const detail = typeof data === "object" && data?.detail ? data.detail : String(data || `HTTP ${response.status}`);
-    throw new Error(detail);
-  }
-  return data ?? { success: true, latest_uid: 0, messages: [] };
-}
-
 async function fetchConfiguredMailboxUnread(
   userId: number,
-  mailboxKey: string,
+  mailboxId: number,
   afterUid?: number
 ) {
-  if (mailboxKey === "system") {
-    return fetchSystemMailboxUnread(userId, afterUid);
-  }
-
-  const mailboxId = mailboxIdFromKey(mailboxKey);
-  if (!mailboxId) throw new Error(`监听邮箱标识无效：${mailboxKey}`);
-
   const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
-  if (!mailbox) throw new Error(`监听邮箱不存在：${mailboxKey}`);
+  if (!mailbox) throw new Error(`监听邮箱不存在：${mailboxId}`);
 
   return fetchMailboxUnread({
     authorization: serverAuthorization(userId),
@@ -373,7 +346,7 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     firedAt: new Date().toISOString(),
     uid: Number(message.uid),
     messageId: message.message_id || undefined,
-    mailboxKey: config.mailboxKey || "system",
+    mailboxId: requireMailboxId(config.mailboxId),
     mailbox: config.mailboxLabel || "系统邮箱",
     folder: config.folder || "INBOX",
     matchedRule: mailRulesSummary(task),
@@ -453,12 +426,13 @@ async function processEmailMailboxGroup(tasks: any[]) {
 
   const userId = Number(tasks[0].created_by_user_id);
   const config = tasks[0].trigger_config || {};
-  const mailboxKey = String(config.mailboxKey || "system").trim() || "system";
-  const cursor = await getAutomationEmailMailboxCursor(userId, mailboxKey);
+  // 遗留数据缺少整数 mailboxId 时直接抛错（不再回退 system），错误由 scanEmailAutomations 按分组记录。
+  const mailboxId = requireMailboxId(config.mailboxId);
+  const cursor = await getAutomationEmailMailboxCursor(userId, mailboxId);
 
   const data = await fetchConfiguredMailboxUnread(
     userId,
-    mailboxKey,
+    mailboxId,
     cursor.initialized ? cursor.lastUid : undefined
   );
 
@@ -467,7 +441,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
 
   // 第一次建立服务端基线，不处理历史邮件。
   if (!cursor.initialized) {
-    await saveAutomationEmailMailboxCursor(userId, mailboxKey, latestUid, true);
+    await saveAutomationEmailMailboxCursor(userId, mailboxId, latestUid, true);
     return;
   }
 
@@ -494,7 +468,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
       if (winner) {
         claimed = await claimAutomationEmailMessage(
           userId,
-          mailboxKey,
+          mailboxId,
           messageKey,
           Number(winner.id)
         );
@@ -515,7 +489,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
 
           return {
             userId,
-            mailboxKey,
+            mailboxId,
             messageKey,
             messageUid: uid,
             automationId: taskId,
@@ -537,7 +511,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
     }
 
     // 无论是否命中规则都推进游标；规则调整不会回溯历史邮件。
-    await saveAutomationEmailMailboxCursor(userId, mailboxKey, uid, true);
+    await saveAutomationEmailMailboxCursor(userId, mailboxId, uid, true);
   }
 }
 
@@ -551,8 +525,10 @@ export async function scanEmailAutomations() {
 
     for (const task of tasks) {
       const userId = Number(task.created_by_user_id);
-      const mailboxKey = String(task.trigger_config?.mailboxKey || "system").trim() || "system";
-      const key = `${userId}:${mailboxKey}`;
+      // 分组键：同一用户同一监听邮箱为一组（决定优先级竞争与去重范围）。
+      // 遗留数据没有整数 mailboxId，单独归组后由 processEmailMailboxGroup 抛错。
+      const mailboxId = normalizeMailboxId(task.trigger_config?.mailboxId);
+      const key = mailboxId === null ? `${userId}:MAILBOX_ID_REQUIRED` : mailboxGroupKey(userId, mailboxId);
       const current = groups.get(key) || [];
       current.push(task);
       groups.set(key, current);
@@ -564,7 +540,7 @@ export async function scanEmailAutomations() {
       } catch (error) {
         const first = groupTasks[0];
         console.error(
-          `[Automation Email] mailbox scan failed: user=${first?.created_by_user_id} mailbox=${first?.trigger_config?.mailboxKey || "system"}`,
+          `[Automation Email] mailbox scan failed: user=${first?.created_by_user_id} automation=${first?.id} mailboxId=${first?.trigger_config?.mailboxId ?? "(缺失)"}`,
           error
         );
       }

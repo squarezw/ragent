@@ -12,11 +12,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const automationId = Number(req.body?.automationId);
-  const mailboxKey = String(req.body?.mailboxKey || "system").trim() || "system";
+  const mailboxId = Number(req.body?.mailboxId);
   const messageKey = String(req.body?.messageKey || "").trim();
 
   if (!Number.isInteger(automationId) || automationId <= 0) {
     return res.status(400).json({ detail: "自动化 ID 无效" });
+  }
+  if (!Number.isInteger(mailboxId) || mailboxId <= 0) {
+    return res.status(400).json({ detail: "监听邮箱 ID 无效" });
   }
   if (!messageKey) {
     return res.status(400).json({ detail: "邮件唯一标识不能为空" });
@@ -30,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const claimed = await claimAutomationEmailMessage(
       userId,
-      mailboxKey,
+      mailboxId,
       messageKey,
       automationId,
     );

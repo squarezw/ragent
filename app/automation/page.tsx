@@ -90,7 +90,7 @@ interface Automation {
   scheduleDayOfMonth?: number;
   scheduleMissingDayPolicy?: "last_day" | "skip";
   scheduleDate?: string;
-  mailboxKey?: string;
+  mailboxId?: number | null;
   mailboxLabel?: string;
   mailFolder?: string;
   mailRuleMode?: MailRuleMode;
@@ -187,7 +187,7 @@ type EmailRoutingOutcome = "triggered" | "suppressed_by_priority" | "not_matched
 
 interface EmailRoutingEvent {
   id: number;
-  mailboxKey?: string;
+  mailboxId?: number;
   messageKey?: string;
   messageUid?: number;
   automationId: number;
@@ -1346,7 +1346,7 @@ export default function AutomationPage() {
         trigger === "定时触发" && schedulePeriod === "仅一次"
           ? scheduleDate || undefined
           : undefined,
-      mailboxKey: trigger === "邮件触发" ? "system" : undefined,
+      // 邮件触发的监听邮箱为整数 mailboxId，由向导内的邮箱选择器下发；选择器接入前不下发该字段，服务端会明确拒绝。
       mailboxLabel: trigger === "邮件触发" ? "系统邮箱" : undefined,
       mailFolder: trigger === "邮件触发" ? "INBOX" : undefined,
       mailRuleMode: trigger === "邮件触发" ? mailRuleMode : undefined,

@@ -105,7 +105,6 @@ function normalizeInput(input: AutomationMailboxInput) {
 export function mailboxRowToApi(row: any) {
   return {
     id: Number(row.id),
-    key: `mailbox:${row.id}`,
     name: row.name,
     email: row.email,
     username: row.username,
@@ -194,14 +193,14 @@ export function mailboxConnectionFromRow(row: any) {
 
 export async function deleteAutomationMailbox(userId: number, mailboxId: number) {
   await ensureAutomationMailboxTable();
-  const mailboxKey = `mailbox:${mailboxId}`;
+  // 依赖检查按 trigger_config.mailboxId（整数）匹配：键格式统一后旧的 mailbox:<id> 字符串已不存在。
   const dependentResult = await pool.query(
     `SELECT id, name FROM automation_tasks
      WHERE created_by_user_id=$1
        AND trigger_type='邮件触发'
-       AND trigger_config->>'mailboxKey'=$2
+       AND trigger_config->>'mailboxId'=$2::text
      ORDER BY id`,
-    [userId, mailboxKey],
+    [userId, mailboxId],
   );
 
   if (dependentResult.rows.length > 0) {

@@ -74,6 +74,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (code === "APP_NOT_FOUND") return res.status(404).json({ detail: "数字员工不存在" });
     if (code === "NAME_REQUIRED") return res.status(400).json({ detail: "请填写自动化名称" });
     if (code === "TASK_REQUIRED") return res.status(400).json({ detail: "请填写任务说明" });
+    if (code === "MAILBOX_ID_REQUIRED") {
+      return res.status(400).json({ detail: "请为邮件触发选择监听邮箱" });
+    }
 
     const scheduleMessage = scheduleErrorResponse(code);
     if (scheduleMessage) return res.status(400).json({ detail: scheduleMessage });
