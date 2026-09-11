@@ -156,10 +156,10 @@ export default function MessageList({
         ) : (
           <div key={i} className="flex justify-start">
             <div className="flex flex-col items-start gap-2 min-w-0 w-full">
-              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 flex items-center justify-start flex-shrink-0">
                 <Bot className="w-4 h-4 text-success" />
               </div>
-              <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 w-full">
+              <div className="py-3 min-w-0 w-full">
                 <div className="break-words">
                   <MarkdownRenderer
                     content={stripWorkflowRunStartedPrefix(msg.content)}
@@ -190,10 +190,10 @@ export default function MessageList({
       {isStreaming && !streamingMessage && (
         <div className="flex justify-start">
           <div className="flex flex-col items-start gap-2 min-w-0 w-full">
-            <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 animate-pulse">
+            <div className="w-8 h-8 flex items-center justify-start flex-shrink-0 animate-pulse">
               <Bot className="w-4 h-4 text-success" />
             </div>
-            <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
+            <div className="py-3">
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1">
                   <span className="thinking-dot" />
@@ -239,10 +239,10 @@ export default function MessageList({
       {isStreaming && streamingMessage && (
         <div className="flex justify-start">
           <div className="flex flex-col items-start gap-2 min-w-0 w-full">
-            <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 flex items-center justify-start flex-shrink-0">
               <Bot className="w-4 h-4 text-success" />
             </div>
-            <div className="bg-muted rounded-2xl rounded-tl-sm px-3 sm:px-4 py-3 min-w-0 w-full">
+            <div className="py-3 min-w-0 w-full">
               <div className="break-words">
                 <MarkdownRenderer
                   content={stripWorkflowRunStartedPrefix(streamingMessage)}
