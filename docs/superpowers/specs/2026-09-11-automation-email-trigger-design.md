@@ -290,3 +290,15 @@ END $$;
 - 防御性清理语句的 WHERE 范围经确认，不会误伤其他触发类型的自动化
 - 同一邮箱的多个自动化挂在同一条邮箱记录上时，优先级机制正常生效（同一封邮件只执行优先级最高的一条）
 - `pnpm test` 与 `pnpm check:ci` 通过
+
+## 十二、交接说明（给实现者）
+
+以下事实不属于上文任何模块，但会影响实现，接手时请先读：
+
+1. **`ensureAutomationTables()` 失败会反复重试**：`initPromise` 在 catch 中被重置为 `null`（`store.ts:250-253`），因此其中任何语句失败后，**每一次 store 调用都会把整块 SQL 重跑一遍**，且错误会散落到自动化功能的各个入口，而不是一个干净的启动错误。模块 D.1 的空表重建语句就放在这个函数内——这正是选择"空表重建"而非"迁移"的根本原因：它必须不可能失败。
+2. **创建向导不是独立组件**：`app/automation/page.tsx` 有 4321 行、大量 `useState`，创建向导（step 1/2/3）与两个详情抽屉都内联在这一个组件里。模块 B 的改动全部落在这个文件内；只有模块 C 的邮箱管理抽屉才新建独立文件（`app/automation/components/MailboxManager.tsx`）。
+3. **手工验收需要 `ENABLE_CRON=true`**：邮件调度器在 `lib/cron/index.ts:5` 判断该环境变量后才初始化。未开启时邮件触发不会自动运行，验收只能走手动 `/run` 接口。
+4. **`lib/automation/store.ts` 有 2597 行**，本次改动点分散其中（创建/更新、游标、去重、通知派生、迁移语句），建议先 grep 定位再改。
+5. **新增文案遵守 AGENTS.md**：模块 C 的新组件用 next-intl + `messages/zh-CN` 与 `messages/en` 成对维护，提交前跑 `pnpm check:i18n`；自动化页存量 `tt()` 文案本次不动。
+6. **单元测试约定**：`test/*.test.ts`，`node --experimental-strip-types --test`，直接 import `../lib/...ts` 纯函数（参考 `test/chatSse.test.ts`）。
+7. **上文"现状事实"表中的 `file:line` 是 2026-09-11 的代码状态**，动手前建议先确认行号未漂移（grep 函数名比信行号更稳）。
