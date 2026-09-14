@@ -272,10 +272,21 @@ export default function ChatSessionsPage() {
     }
   };
 
-  // 格式化创建时间（简化显示）
-  const formatCreateTime = (dateString: string) => {
-    return formatDistanceToNow(new Date(dateString), {
+  const formatUpdateTime = (dateString?: string) => {
+    const date = dateString ? new Date(dateString) : null;
+    if (!date || Number.isNaN(date.getTime())) return "-";
+
+    return formatDistanceToNow(date, {
       addSuffix: true,
+      locale: locale === "en" ? enUS : zhCN,
+    });
+  };
+
+  const formatDateTime = (dateString?: string) => {
+    const date = dateString ? new Date(dateString) : null;
+    if (!date || Number.isNaN(date.getTime())) return "-";
+
+    return format(date, "yyyy-MM-dd HH:mm:ss", {
       locale: locale === "en" ? enUS : zhCN,
     });
   };
@@ -708,7 +719,7 @@ export default function ChatSessionsPage() {
                   <TableHead>{t("user")}</TableHead>
                   <TableHead>{t("department")}</TableHead>
                   <TableHead>{t("appName")}</TableHead>
-                  <TableHead>{t("createdAt")}</TableHead>
+                  <TableHead>{t("updatedAt")}</TableHead>
                   <TableHead>{t("sessionSummary")}</TableHead>
                   <TableHead>{t("dialogCount")}</TableHead>
                   <TableHead>{t("avgDuration")}</TableHead>
@@ -735,7 +746,7 @@ export default function ChatSessionsPage() {
                     <TableCell>
                       <span className="text-sm">{session.app?.name || t("app")}</span>
                     </TableCell>
-                    <TableCell>{formatCreateTime(session.createdAt)}</TableCell>
+                    <TableCell>{formatUpdateTime(session.updatedAt)}</TableCell>
                     <TableCell>
                       <div className="max-w-xs">
                         {session.summary ? (
@@ -791,10 +802,7 @@ export default function ChatSessionsPage() {
                             <DialogDescription>
                               {t("userLabel")}: {session.user.nickname || session.user.username} |{" "}
                               {t("deptLabel")}: {session.dept.name || t("notAssigned")} |{" "}
-                              {t("createdAt")}:{" "}
-                              {format(new Date(session.createdAt), "yyyy-MM-dd HH:mm:ss", {
-                                locale: locale === "en" ? enUS : zhCN,
-                              })}
+                              {t("createdAt")}: {formatDateTime(session.createdAt)}
                             </DialogDescription>
                           </DialogHeader>
                           {detailLoading ? (
@@ -820,9 +828,7 @@ export default function ChatSessionsPage() {
                                         <div className="flex items-center gap-2">
                                           <Badge variant="outline">#{index + 1}</Badge>
                                           <span className="text-sm text-muted-foreground">
-                                            {format(new Date(detail.submittedAt), "HH:mm:ss", {
-                                              locale: zhCN,
-                                            })}
+                                            {formatDateTime(detail.submittedAt)}
                                           </span>
                                         </div>
                                         <div className="flex items-center gap-2">

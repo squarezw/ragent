@@ -206,7 +206,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       LEFT JOIN chat_session_detail csd ON cs.id = csd.session_id
       ${whereClause}
       GROUP BY cs.id, cs.created_at, cs.updated_at, cs.user_id, cs.summary, cs.dataset_ids, cs.app_id, u.nickname, u.username, u.email, d.name, d.code, a.name
-      ORDER BY cs.created_at DESC
+      ORDER BY cs.updated_at DESC NULLS LAST, cs.id DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
