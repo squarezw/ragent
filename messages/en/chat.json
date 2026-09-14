@@ -118,6 +118,7 @@
   "previewLoading": "Loading preview...",
   "previewMayNotEmbed": "This website may block embedded previews. You can open it in a new tab.",
   "openInNewTab": "Open in new tab",
+  "downloadOriginalDrawing": "Download original drawing",
   "closePreview": "Close preview",
   "imageLoadFailed": "The image could not be loaded. Open it in a new tab.",
   "dxfPreview": "Drawing preview",

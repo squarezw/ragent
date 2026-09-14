@@ -118,6 +118,7 @@
   "previewLoading": "正在加载预览...",
   "previewMayNotEmbed": "该网站可能拒绝在此嵌入。您可以在新标签页中打开它。",
   "openInNewTab": "在新标签页打开",
+  "downloadOriginalDrawing": "下载原始图纸",
   "closePreview": "关闭预览",
   "imageLoadFailed": "图片加载失败，请在新标签页中打开。",
   "dxfPreview": "图纸预览",
