@@ -245,9 +245,14 @@ END $$;
 
 **无。** 系统邮箱退场后，平台不再需要 ragent-service 新增 `imap_config` 读写、IMAP 测试端点，也不需要修改 `/api/v1/email/unread`。
 
-本次仅依赖 ragent-service 已有的两个端点，均在现有代码中正常使用：
-- `POST /api/v1/email/unread-config`（自定义邮箱收信，`mailbox-client.ts` 已在用）
-- `POST /api/v1/email/send`（结果邮件发送，`actions.ts` 已在用，本次不改）
+本次**收信不再依赖 ragent-service**：IMAP 收信实现在本进程内（`lib/automation/imap-client.ts`，
+路由 `pages/api/v1/email/unread-config.ts` 只是薄封装）。原先这里写的「仅依赖 ragent-service
+已有的两个端点」是错的——`POST /api/v1/email/unread-config` 从来只以临时补丁脚本的形式存在过，
+从未进入部署镜像，每次保存邮箱与每 10 秒一次的轮询都 404（详见
+`.superpowers/sdd/2026-09-11-automation-email-trigger-design/imap-implementation-report.md`）。
+
+发信仍然经由 ragent-service：
+- `POST /api/v1/email/send`（结果邮件发送，`actions.ts` 在用，本次不改）
 
 ## 九、已决策事项
 

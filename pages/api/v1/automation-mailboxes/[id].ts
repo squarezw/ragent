@@ -25,8 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const row = await updateAutomationMailbox(
         userId,
         mailboxId,
-        mailboxUpdateInputFromBody(req.body),
-        { authorization: req.headers.authorization }
+        mailboxUpdateInputFromBody(req.body)
       );
       if (!row) return res.status(404).json({ detail: "邮箱不存在" });
       return res.status(200).json(mailboxRowToApi(row));

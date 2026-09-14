@@ -1,5 +1,4 @@
 import cron, { type ScheduledTask } from "node-cron";
-import jwt from "jsonwebtoken";
 import pool from "@/lib/db";
 import { executeAutomationAgent, isAutomationTimeoutError } from "@/lib/automation/execute";
 import { executeRunActions } from "@/lib/automation/actions";
@@ -30,7 +29,7 @@ import {
   requireMailboxId,
   requireMailboxLabel,
 } from "@/lib/automation/mailbox-id";
-import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
+import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 import {
   doesMailRuleSetMatch,
   type MailRuleSet,
@@ -217,17 +216,6 @@ export async function scanDueAutomations() {
   }
 }
 
-function requiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
-function serverAuthorization(userId: number) {
-  const token = jwt.sign({ userId }, requiredEnv("JWT_SECRET"), { expiresIn: "15m" });
-  return `Bearer ${token}`;
-}
-
 // 任务行（automation_tasks）到规范化规则集的适配；规则逻辑本身在 mail-rules.ts。
 function mailRuleSetFromTask(task: any): MailRuleSet {
   const config = task.trigger_config || {};
@@ -245,8 +233,9 @@ async function fetchConfiguredMailboxUnread(
   try {
     // 解密失败（凭据被换过密钥、授权码被清空）与 IMAP 连不上在这里是同一件事：
     // 这条邮箱管道这次收信失败了，用户看到的都该是"邮箱连接失败"。
+    // 收信是本进程内的直接调用（`lib/automation/imap-client.ts`）：不再需要服务间 JWT，
+    // 也就不再需要一遍自我 HTTP 回调。
     const data = await fetchMailboxUnread({
-      authorization: serverAuthorization(userId),
       afterUid,
       connection: mailboxConnectionFromRow(mailbox),
     });

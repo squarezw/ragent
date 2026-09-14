@@ -16,8 +16,35 @@ const MAILBOX_ERROR_MESSAGES: Record<string, string> = {
   AUTOMATION_MAILBOX_SECRET_MISSING: "服务端尚未配置邮箱凭证加密密钥",
 };
 
-/** 上游 IMAP 失败沿用原文：它带回的是真实原因（主机、端口、认证），改写只会丢失信息。 */
-const CONNECTION_ERROR_HINTS = ["IMAP", "登录", "连接", "认证", "AUTHENTICATION"];
+/**
+ * 上游 IMAP 失败沿用原文：它带回的是真实原因（主机、端口、认证），改写只会丢失信息。
+ *
+ * 匹配**大小写不敏感**：收信现在跑在本进程里，抛出来的是 Node 与 imapflow 的原文，
+ * 大小写并不统一（`ECONNREFUSED` / `Authentication failed` / `Socket timeout`）。
+ * 漏掉一种，用户看到的就是一句「邮箱操作失败」，而主机写错、授权码失效这些真实原因
+ * 已经丢在路上——这正是「保存邮箱只报 500」那次故障的形状。
+ */
+const CONNECTION_ERROR_HINTS = [
+  "imap",
+  "登录",
+  "连接",
+  "认证",
+  "authentication",
+  // 网络层：Node 的系统错误码（连接被拒 / 超时 / 域名解析不了 / 地址不可达）
+  "econnrefused",
+  "econnreset",
+  "etimedout",
+  "ehostunreach",
+  "enetunreach",
+  "enotfound",
+  "getaddrinfo",
+  // imapflow 自己的文案
+  "socket timeout",
+  // TLS：自签名、过期、域名不匹配都是配置问题，不是我们这边的故障
+  "certificate",
+  "self-signed",
+  "tls",
+];
 
 /** 邮箱地址在本用户下唯一（UNIQUE(created_by_user_id, email)）时的唯一约束冲突。 */
 const UNIQUE_VIOLATION = "23505";
@@ -47,7 +74,8 @@ export function mailboxApiError(error: unknown): { status: number; detail: strin
     };
   }
 
-  if (CONNECTION_ERROR_HINTS.some((hint) => code.includes(hint))) {
+  const normalizedCode = code.toLowerCase();
+  if (CONNECTION_ERROR_HINTS.some((hint) => normalizedCode.includes(hint))) {
     return { status: 400, detail: code };
   }
 

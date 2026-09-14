@@ -6,7 +6,7 @@ import {
   listAutomationMailboxes,
   mailboxRowToApi,
 } from "@/lib/automation/mailboxes";
-import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
+import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
@@ -36,7 +36,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       // 保存前先真实连接一次，避免把不可用的账号写入“已连接邮箱”。
       await fetchMailboxUnread({
-        authorization: req.headers.authorization,
         connection: {
           email: input.email,
           username: input.username || input.email,

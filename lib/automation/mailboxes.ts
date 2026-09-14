@@ -1,5 +1,5 @@
 import pool from "@/lib/db";
-import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
+import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 import {
   decryptMailboxPassword,
   encryptMailboxPassword,
@@ -354,7 +354,6 @@ export async function updateAutomationMailbox(
   userId: number,
   mailboxId: number,
   input: AutomationMailboxUpdateInput,
-  options: { authorization?: string } = {},
 ) {
   await ensureAutomationMailboxTable();
   const existingRow = await getAutomationMailboxForUser(userId, mailboxId);
@@ -377,7 +376,6 @@ export async function updateAutomationMailbox(
 
   // 保存前先真实连接一次：既有凭据解不开、或新配置连不上，都在这里失败并保持原记录不变。
   await fetchMailboxUnread({
-    authorization: options.authorization,
     connection: {
       email: config.email,
       username: config.username,

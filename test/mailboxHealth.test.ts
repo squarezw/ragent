@@ -15,12 +15,17 @@
  *   所有邮箱都会变成"连接失败"。
  * - 状态写入必须挂在真实的连接路径上（连不上记 error、连上了恢复 connected），
  *   否则徽标永远是装饰、`status='error'` 永远没有行。
+ *
+ * 最后一组是连接失败的**错误映射**（`mailbox-errors.ts` 的 `mailboxApiError`）：IMAP 收信
+ * 搬进本进程后抛出的是 Node / imapflow 的原文（`ECONNREFUSED`、`Authentication failed`、
+ * `Socket timeout`），大小写不统一。漏掉一种形态，用户拿到的就是一句 500「邮箱操作失败」，
+ * 而真实原因（主机写错、授权码失效）已经丢在路上——这正是「保存邮箱只报 500」的形状。
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { mailboxErrorDisplayText } from "../lib/automation/mailbox-errors.ts";
+import { mailboxApiError, mailboxErrorDisplayText } from "../lib/automation/mailbox-errors.ts";
 import {
   MAILBOX_ERROR_EVENT_KEY_PREFIX,
   MAILBOX_ERROR_MAX_LENGTH,
@@ -262,4 +267,38 @@ test("提醒的第三段派生来自 automation_mailboxes 且只取 status='erro
   );
   // initialize 通知偏好之前就坏掉的邮箱同样该被看到：这是"当前状态"，不是历史事件。
   assert.doesNotMatch(query, /initializedAt|initialized_at/);
+});
+
+test("连接类失败映射成 400，而不是 500", () => {
+  for (const detail of [
+    "IMAP 收件失败: 无法打开邮箱文件夹：INBOX",
+    "IMAP 收件失败: connect ECONNREFUSED 127.0.0.1:993",
+    "IMAP 收件失败: getaddrinfo ENOTFOUND imap.example.com",
+    "IMAP 收件失败: Socket timeout",
+    "IMAP 收件失败: self-signed certificate in certificate chain",
+    "IMAP 收件失败: authentication failed",
+  ]) {
+    assert.equal(mailboxApiError(new Error(detail)).status, 400, detail);
+    // 沿用上游原文：用户与运维要看的是真实原因，不是被改写过的通用话术。
+    assert.equal(mailboxApiError(new Error(detail)).detail, detail);
+  }
+});
+
+test("不带 IMAP 前缀的网络/TLS 形态同样映射成 400（大小写不敏感）", () => {
+  // 这些是 Node 与 imapflow 的原文形态：大小写并不统一，而且不一定带 "IMAP" 字样。
+  // 漏掉任何一种，用户拿到的都是一句 500「邮箱操作失败」。
+  for (const detail of [
+    "ECONNREFUSED 127.0.0.1:993",
+    "getaddrinfo ENOTFOUND imap.example.com",
+    "Socket timeout",
+    "self-signed certificate",
+    "Authentication failed",
+  ]) {
+    assert.equal(mailboxApiError(new Error(detail)).status, 400, detail);
+  }
+});
+
+test("非连接类失败仍然落 500（兜底行为不变）", () => {
+  assert.equal(mailboxApiError(new Error("Not Found")).status, 500);
+  assert.equal(mailboxApiError(new Error("")).status, 500);
 });
