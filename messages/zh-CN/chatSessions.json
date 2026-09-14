@@ -30,6 +30,7 @@
   "department": "部门",
   "appName": "数字员工名称",
   "createdAt": "创建时间",
+  "updatedAt": "更新时间",
   "sessionSummary": "会话摘要",
   "dialogCount": "对话数",
   "avgDuration": "平均耗时",
