@@ -108,6 +108,19 @@ function textValue(value: unknown): string {
 }
 
 /**
+ * `search({all:true},{uid:true})` 的结果 → UID 列表。
+ *
+ * 不是数组即失败：`imapflow` 只在连接不处于 SELECTED 状态时返回 false（刚 `mailboxOpen`
+ * 成功过，正常到不了这里），但**基线调用**上把它当成空文件夹，会把 `latest_uid: 0` 写进
+ * 游标，下一次轮询就从 0 开始把整个邮箱的历史按 20 封一批重放——正是基线机制要防的反方向。
+ * 参考实现在这里同样是直接失败（`无法读取邮箱 UID`），不兜底。
+ */
+export function uidsFromSearchResult(found: unknown): number[] {
+  if (!Array.isArray(found)) throw new Error("IMAP 未返回 UID 列表");
+  return found.map(Number);
+}
+
+/**
  * 正文：纯文本优先，HTML 兜底，都没有则空串（不是 undefined）。
  *
  * 单一取值来源，因此不会有「HTML-only 邮件返回带标签的源码、`开头是`/`等于` 规则拿标签
@@ -121,10 +134,23 @@ export function extractBody(parsed: ParsedMailView): string {
 }
 
 /**
- * 附件名：**任何带 filename 的 part 都算**（inline 也算），只取解码后的文件名。
+ * 附件名：`mailparser` 判定为附件的 part 里，取解码后的文件名（inline 也算）。
  *
- * `mailparser` 会把没有 filename 的内嵌图片（只有 Content-ID 的）也放进 `attachments`，
- * 而参考实现取的是 `part.get_filename()`——所以这里必须按 filename 过滤，否则会多报附件。
+ * 与参考实现（Python `msg.walk()` + `part.get_filename()`：不按 disposition 过滤、且对
+ * `Content-Type` 的 `name` 参数兜底）有**两处不一致**，两边都记在这里，因为漏报会让
+ * `是否包含附件`/`附件名称`/`附件类型` 失配，而调度器在**未命中时也会推进游标**
+ * （`automation-scheduler.ts`），那封信的触发就此永久消失：
+ *
+ * - **少报**：带文件名但被 `mailparser` 判成正文的 part 不计入——`Content-Disposition:
+ *   inline; filename="page.html"` 的 text/html、或只有 `Content-Type: text/plain;
+ *   name="notes.txt"` 而没有 disposition 的 part（两者内容都进正文）。`message/rfc822`
+ *   的**内层** part 也不计入：`mailparser` 不下钻转发邮件（`mail-parser.js` 在
+ *   message/rfc822 处 break），只把容器本身当附件，容器自带 filename 时才计入。
+ * - **需过滤**：没有 filename 的内嵌图片（只有 `Content-ID`）同样出现在 `attachments` 里。
+ *
+ * 完全对齐参考实现要放弃 `simpleParser` 自己走 MIME 树，代价是丢掉当前正确的那些形态
+ * （编码词文件名、RFC 2231、嵌套 multipart、逐 part charset），不划算。故按现状记录，
+ * 并由 `test/imapClient.test.ts` 把这个判定钉住——将来要改就是一次有意识的选择。
  */
 export function extractAttachmentNames(parsed: ParsedMailView): string[] {
   const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
@@ -244,7 +270,7 @@ export async function fetchMailboxUnread(params: {
     await client.mailboxOpen(folder, { readOnly: true });
 
     const found = await client.search({ all: true }, { uid: true });
-    const uids = Array.isArray(found) ? found.map(Number) : [];
+    const uids = uidsFromSearchResult(found);
     const { latestUid, targetUids } = planMailboxFetch(uids, params.afterUid);
 
     const messages: MailboxUnreadMessage[] = [];

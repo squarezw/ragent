@@ -26,6 +26,7 @@ import {
   planMailboxFetch,
   rawHeaderValue,
   toInboxMessage,
+  uidsFromSearchResult,
 } from "../lib/automation/imap-client.ts";
 
 const IMAP_CLIENT = join(process.cwd(), "lib/automation/imap-client.ts");
@@ -131,6 +132,86 @@ const MIXED = rawMessage(
 
 const BARE = rawMessage(["Content-Type: text/plain; charset=us-ascii"], "没有头部的一封信");
 
+/**
+ * 两封"带文件名、但 `mailparser` 不把它当附件"的报文。参考实现（Python `msg.walk()` +
+ * `part.get_filename()`）会报出这些名字，本实现不会——见 `extractAttachmentNames` 的说明。
+ * 下面两例断言的是**当前、已被记录的**行为，不是期望行为：改判定就会翻红。
+ */
+const INLINE_NAMED = rawMessage(
+  [
+    "From: a@corp.com",
+    "Subject: inline named",
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="NAMED"',
+  ],
+  [
+    "--NAMED",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "正文",
+    "--NAMED",
+    // 带 filename 的 inline 正文 part：mailparser 判为正文，不报成附件。
+    "Content-Type: text/html; charset=utf-8",
+    'Content-Disposition: inline; filename="page.html"',
+    "",
+    "<p>名义上的附件</p>",
+    "--NAMED",
+    // 只有 Content-Type 的 name 参数、没有 disposition：Python 的 get_filename() 会兜底到它。
+    'Content-Type: text/plain; charset=utf-8; name="notes.txt"',
+    "",
+    "第二段正文",
+    "--NAMED--",
+    "",
+  ].join("\r\n")
+);
+
+const FORWARDED = rawMessage(
+  [
+    "From: a@corp.com",
+    "Subject: forwarded",
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="FWD"',
+  ],
+  [
+    "--FWD",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "请看转发",
+    "--FWD",
+    // 转发邮件：mailparser 不下钻，内层的 inner.pdf 看不到；容器本身没有 filename。
+    "Content-Type: message/rfc822",
+    "",
+    "From: inner@corp.com",
+    "Subject: inner",
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="INNER"',
+    "",
+    "--INNER",
+    "Content-Type: text/plain",
+    "",
+    "内层正文",
+    "--INNER",
+    "Content-Type: application/pdf",
+    "Content-Transfer-Encoding: base64",
+    'Content-Disposition: attachment; filename="inner.pdf"',
+    "",
+    "aGVsbG8=",
+    "--INNER--",
+    "",
+    "--FWD",
+    // 容器自己带 filename：这一层是能看到的。
+    "Content-Type: message/rfc822",
+    'Content-Disposition: attachment; filename="forwarded.eml"',
+    "",
+    "From: inner2@corp.com",
+    "Subject: inner2",
+    "",
+    "内层正文二",
+    "--FWD--",
+    "",
+  ].join("\r\n")
+);
+
 test("latest_uid 取文件夹当前最大 UID，空文件夹为 0", () => {
   assert.equal(planMailboxFetch([]).latestUid, 0);
   assert.equal(planMailboxFetch([3, 9, 7]).latestUid, 9);
@@ -166,6 +247,18 @@ test("一批取游标之后最早的 20 封，不是最新 20 封", () => {
     planMailboxFetch(uids, 3).targetUids,
     Array.from({ length: 20 }, (_, index) => index + 4)
   );
+});
+
+test("search 没返回数组时直接失败，绝不当作空文件夹", () => {
+  // 当作空文件夹 → 基线调用写下游标 0 → 下次轮询把整个邮箱的历史重放一遍。
+  assert.throws(() => uidsFromSearchResult(false), /IMAP/);
+  assert.throws(() => uidsFromSearchResult(undefined), /IMAP/);
+  assert.throws(() => uidsFromSearchResult({}), /IMAP/);
+
+  assert.deepEqual(uidsFromSearchResult([]), []);
+  assert.deepEqual(uidsFromSearchResult([3, 1]), [3, 1]);
+  // imapflow 给的是数字；字符串型 UID 也要能用（顺带钉住 map(Number)）。
+  assert.deepEqual(uidsFromSearchResult(["7"]), [7]);
 });
 
 test("只取 uid 大于游标的邮件，并按升序返回", () => {
@@ -214,6 +307,25 @@ test("附件名提取的兜底：只有非空字符串文件名才算数", () =>
   );
   assert.deepEqual(extractAttachmentNames({ attachments: undefined }), []);
   assert.deepEqual(extractAttachmentNames({}), []);
+});
+
+test("被判成正文的 part 不计入附件（已记录的偏差，改判定即翻红）", async () => {
+  const message = await parseInboxMessage(21, INLINE_NAMED);
+
+  assert.deepEqual(message.attachments, []);
+  // 顺带钉住"它们去哪了"：两个 part 都没丢，只是归类不同。`name="notes.txt"` 那一段被当成
+  // 正文，就在返回值里；`filename="page.html"` 那一段进了 HTML 分支——正文此刻取的是纯文本，
+  // 所以它不出现在返回值里，但它同样没有被算成附件。断言的是归类，不是空白字符。
+  assert.match(message.body, /正文/);
+  assert.match(message.body, /第二段正文/);
+  assert.doesNotMatch(message.body, /名义上的附件/);
+});
+
+test("message/rfc822 的内层附件不计入，容器自带 filename 时才计入（已记录的偏差）", async () => {
+  const message = await parseInboxMessage(22, FORWARDED);
+
+  // inner.pdf 在转发邮件里面：mailparser 不下钻，参考实现的 msg.walk() 会下钻。
+  assert.deepEqual(message.attachments, ["forwarded.eml"]);
 });
 
 test("date 取原始头部文本（与参考实现一致），取不到时是空串", () => {
