@@ -110,10 +110,15 @@ function textValue(value: unknown): string {
 /**
  * `search({all:true},{uid:true})` 的结果 → UID 列表。
  *
- * 不是数组即失败：`imapflow` 只在连接不处于 SELECTED 状态时返回 false（刚 `mailboxOpen`
- * 成功过，正常到不了这里），但**基线调用**上把它当成空文件夹，会把 `latest_uid: 0` 写进
- * 游标，下一次轮询就从 0 开始把整个邮箱的历史按 20 封一批重放——正是基线机制要防的反方向。
- * 参考实现在这里同样是直接失败（`无法读取邮箱 UID`），不兜底。
+ * 不是数组即失败。`search` 的失败面比重连不选中邮箱宽得多（`imapflow@2.0.2`）：
+ * `commands/search.js` 在命令抛错时 catch 住并**返回 `false`**（服务端 NO/BAD、命令中途
+ * 断连都落在这里，不往外抛），`imap-flow.js` 在没选中邮箱时返回 `undefined`、在 `run()`
+ * 拿到假值时 `|| false`。把其中任何一种当成空文件夹，**基线调用**就会把 `latest_uid: 0`
+ * 写进游标，下一次轮询从 0 开始把整个邮箱的历史按 20 封一批重放——正是基线机制要防的
+ * 反方向。参考实现在这里同样是直接失败（`无法读取邮箱 UID`），不兜底。
+ *
+ * 正常成功时返回的是排好序的 UID 数组（空文件夹是 `[]`，非空真值，不会被 `|| false` 吃掉），
+ * 所以这条守卫不会误伤空邮箱。
  */
 export function uidsFromSearchResult(found: unknown): number[] {
   if (!Array.isArray(found)) throw new Error("IMAP 未返回 UID 列表");
@@ -137,16 +142,26 @@ export function extractBody(parsed: ParsedMailView): string {
  * 附件名：`mailparser` 判定为附件的 part 里，取解码后的文件名（inline 也算）。
  *
  * 与参考实现（Python `msg.walk()` + `part.get_filename()`：不按 disposition 过滤、且对
- * `Content-Type` 的 `name` 参数兜底）有**两处不一致**，两边都记在这里，因为漏报会让
+ * `Content-Type` 的 `name` 参数兜底）有几处不一致，都记在这里，因为漏报会让
  * `是否包含附件`/`附件名称`/`附件类型` 失配，而调度器在**未命中时也会推进游标**
  * （`automation-scheduler.ts`），那封信的触发就此永久消失：
  *
  * - **少报**：带文件名但被 `mailparser` 判成正文的 part 不计入——`Content-Disposition:
  *   inline; filename="page.html"` 的 text/html、或只有 `Content-Type: text/plain;
- *   name="notes.txt"` 而没有 disposition 的 part（两者内容都进正文）。`message/rfc822`
- *   的**内层** part 也不计入：`mailparser` 不下钻转发邮件（`mail-parser.js` 在
- *   message/rfc822 处 break），只把容器本身当附件，容器自带 filename 时才计入。
- * - **需过滤**：没有 filename 的内嵌图片（只有 `Content-ID`）同样出现在 `attachments` 里。
+ *   name="notes.txt"` 而没有 disposition 的 part（两者内容都进正文）。
+ * - **转发邮件（`message/rfc822`）的行为取决于容器的 disposition**（实测，逐条见
+ *   `test/imapClient.test.ts` 的 `FORWARDED`）：
+ *   - 容器**不透明**（内层一条都看不到）：无 disposition、`attachment`、带
+ *     `Content-Transfer-Encoding: base64` 三种。此时只见容器自己——它带 filename（含
+ *     只有 `name=` 参数）就报容器名，什么都没带就整条被下面的 filename 过滤掉。
+ *   - 容器**透明**（`Content-Disposition: inline`）：内层 part 直接出现在附件列表里
+ *     （内层的 `attachment; filename="inner.pdf"` 会报出来），**容器自己的 filename 反而
+ *     不报**，内层正文还会并进正文。与不透明那三种正好相反。
+ *   机制不是"mailparser 不肯下钻"：`@zone-eu/mailsplit` 的 `message-splitter.js` 只对
+ *   `Content-Disposition: inline` 的 `message/rfc822` 设 `messageNode = true`（分叉成嵌套
+ *   邮件并继续下钻），mailparser 对该节点 `break`——容器因此不进附件列表，内层走嵌套那条路。
+ * - **需过滤**：`attachments` 里会出现没有 filename 的条目（只有 `Content-ID` 的内嵌图片、
+ *   或上面那种不透明的 `message/rfc822` 容器），所以必须按 filename 过滤。
  *
  * 完全对齐参考实现要放弃 `simpleParser` 自己走 MIME 树，代价是丢掉当前正确的那些形态
  * （编码词文件名、RFC 2231、嵌套 multipart、逐 part charset），不划算。故按现状记录，

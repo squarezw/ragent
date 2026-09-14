@@ -178,7 +178,8 @@ const FORWARDED = rawMessage(
     "",
     "请看转发",
     "--FWD",
-    // 转发邮件：mailparser 不下钻，内层的 inner.pdf 看不到；容器本身没有 filename。
+    // 转发邮件（容器无 disposition → 不透明）：内层的 inner.pdf 看不到；容器也没有 filename，
+    // 于是整条被 filename 过滤掉。"不透明"来自 mailsplit 只对 inline 的 message/rfc822 分叉。
     "Content-Type: message/rfc822",
     "",
     "From: inner@corp.com",
@@ -199,7 +200,7 @@ const FORWARDED = rawMessage(
     "--INNER--",
     "",
     "--FWD",
-    // 容器自己带 filename：这一层是能看到的。
+    // 容器自己带 filename（attachment → 依然不透明）：能看到的就是这一层。
     "Content-Type: message/rfc822",
     'Content-Disposition: attachment; filename="forwarded.eml"',
     "",
@@ -316,15 +317,17 @@ test("被判成正文的 part 不计入附件（已记录的偏差，改判定�
   // 顺带钉住"它们去哪了"：两个 part 都没丢，只是归类不同。`name="notes.txt"` 那一段被当成
   // 正文，就在返回值里；`filename="page.html"` 那一段进了 HTML 分支——正文此刻取的是纯文本，
   // 所以它不出现在返回值里，但它同样没有被算成附件。断言的是归类，不是空白字符。
-  assert.match(message.body, /正文/);
   assert.match(message.body, /第二段正文/);
   assert.doesNotMatch(message.body, /名义上的附件/);
 });
 
-test("message/rfc822 的内层附件不计入，容器自带 filename 时才计入（已记录的偏差）", async () => {
+test("不带 disposition 的转发邮件内层不可见，容器带 filename 时才报容器（已记录的偏差）", async () => {
   const message = await parseInboxMessage(22, FORWARDED);
 
-  // inner.pdf 在转发邮件里面：mailparser 不下钻，参考实现的 msg.walk() 会下钻。
+  // 这里两段容器都**不透明**（第一段无 disposition、第二段是 attachment），所以内层的
+  // inner.pdf 看不到、参考实现的 msg.walk() 会看到。注意结论随容器的 disposition 而变：
+  // `Content-Disposition: inline` 的容器是透明的（内层会报出来、容器自己的名字反而丢掉），
+  // 本夹具没有覆盖那一种——判定规则见 extractAttachmentNames 的注释。
   assert.deepEqual(message.attachments, ["forwarded.eml"]);
 });
 
