@@ -30,6 +30,7 @@
   "department": "Department",
   "appName": "Digital Employee",
   "createdAt": "Created",
+  "updatedAt": "Updated",
   "sessionSummary": "Summary",
   "dialogCount": "Dialogs",
   "avgDuration": "Avg Duration",
