@@ -316,3 +316,33 @@ END $$;
 5. **新增文案遵守 AGENTS.md**：模块 C 的新组件用 next-intl + `messages/zh-CN` 与 `messages/en` 成对维护，提交前跑 `pnpm check:i18n`；自动化页存量 `tt()` 文案本次不动。
 6. **单元测试约定**：`test/*.test.ts`，`node --experimental-strip-types --test`，直接 import `../lib/...ts` 纯函数（参考 `test/chatSse.test.ts`）。
 7. **上文"现状事实"表中的 `file:line` 是 2026-09-11 的代码状态**，动手前建议先确认行号未漂移（grep 函数名比信行号更稳）。
+
+以下两条为 2026-09-14 实施完成后回写（详见 §八 的更正与
+`.superpowers/sdd/2026-09-11-automation-email-trigger-design/imap-implementation-report.md`）：
+
+8. **收信实现在进程内，不再依赖 ragent-service**：IMAP 收信在
+   `lib/automation/imap-client.ts`（`imapflow` + `mailparser`），`pages/api/v1/email/unread-config.ts`
+   只是薄封装，调度器与保存验证直接调函数、不走 HTTP。**发信仍经 ragent-service** 的
+   `POST /api/v1/email/send`。因此 `EXTERNAL_API_BASE_URL` 对收信已无意义，但对发信仍必需。
+
+9. **附件识别的已知偏差（与原始 Python 参考实现相比）**——影响 `是否包含附件` / `附件名称` /
+   `附件类型` 三个规则字段；因为调度器**未命中也会推进游标**，漏判一次附件会让该封邮件的自动化
+   **永久不触发**（丢触发，不丢邮件）。实现读的是 `mailparser` 的分类结果，不是遍历 MIME 树，
+   故有两处差异：
+
+   - **带文件名但被 `mailparser` 判为正文的 part 不计入**：`Content-Disposition: inline;
+     filename=…` 的 text/html part、以及仅靠 `Content-Type: text/plain; name=…` 命名的 part。
+   - **转发邮件（`message/rfc822`）取决于容器自身的 disposition**，不是一律不计入：
+     - 容器**不透明** → 内层一律看不到，只看容器自己：容器带 filename（含仅用 `name=` 参数）
+       就报容器名，没带就整条被过滤掉。归入此类的是：**无 disposition（含无法识别的
+       disposition 值）**、`attachment`、**或带任何非 `7bit`/`8bit`/`binary` 的传输编码
+       （base64、quoted-printable 等）**。
+     - 容器**透明**（`Content-Disposition: inline`，且传输编码为 7bit/8bit/binary 或未设置）
+       → 内层 part 会报出来，而**容器自己的 filename 反而丢失**；内层正文（连同内层头部）
+       会并进 `body`。
+
+   原始参考实现的 `msg.walk()` + `get_filename()` 在以上所有情况下都会报出内层。**未追求完全
+   对齐**是权衡后的决定：对齐需放弃 `mailparser`、自写 MIME 遍历，会危及当前正确处理的编码过的
+   文件名、RFC 2231、嵌套 multipart 与逐 part charset。上述判定为**实测**结论（mailparser
+   3.9.26 / mailsplit 5.4.16），但**测试夹具只覆盖不透明的形态**，透明容器那一条没有用例钉住——
+   改动该函数前请先补夹具。
