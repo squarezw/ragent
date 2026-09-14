@@ -2903,6 +2903,7 @@ export default function AutomationPage() {
                     {(
                       [
                         ["定时触发", tt("按照指定时间自动运行", "Run automatically on a schedule")],
+                        ["邮件触发", tt("邮箱收到符合规则的新邮件后自动处理", "Process new emails that match configured rules")],
                         ["Webhook / API", tt("由 ERP、CRM 等外部系统触发", "Triggered by ERP, CRM, or other external systems")],
                         ["自动化完成触发", tt("当另一个自动化结束后运行", "Run after another automation completes")],
                       ] as [TriggerType, string][]
