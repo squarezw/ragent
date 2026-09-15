@@ -1,5 +1,6 @@
 import cron, { type ScheduledTask } from "node-cron";
 import pool from "@/lib/db";
+import { assertAutomationTablesReady } from "@/lib/automation/schema";
 import { executeAutomationAgent, isAutomationTimeoutError } from "@/lib/automation/execute";
 import { executeRunActions } from "@/lib/automation/actions";
 import {
@@ -7,7 +8,6 @@ import {
   claimDueScheduledRun,
   cleanupAutomationEmailProcessedMessages,
   createRun,
-  ensureAutomationTables,
   finishRun,
   getAutomationEmailMailboxCursor,
   listActiveEmailAutomationsForScheduler,
@@ -196,7 +196,7 @@ export async function scanDueAutomations() {
   global.automationCronBusy = true;
 
   try {
-    await ensureAutomationTables();
+    await assertAutomationTablesReady();
 
     const result = await pool.query(`
       SELECT id FROM automation_tasks
@@ -514,7 +514,7 @@ async function runAutomationEmailRetentionCleanup() {
 }
 
 export async function initAutomationScheduler() {
-  await ensureAutomationTables();
+  await assertAutomationTablesReady();
 
   if (!global.automationCronTask) {
     await scanDueAutomations();

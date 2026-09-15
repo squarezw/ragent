@@ -7,8 +7,8 @@
  *
  * - 清理语句的 WHERE 一旦放宽（漏掉 `trigger_type = '邮件触发'`、或把等于判断改成 IN/OR），
  *   它就会从"预期影响 0 行"变成误删其他触发类型的自动化。执行结果无从断言，范围可以断言；
- * - 该语句必须留在 `ensureAutomationTables()` 里：那是它唯一会被执行的地方（initPromise 成功时
- *   每个进程只跑一次，失败后每次 store 调用重试整块 SQL），挪到别处就不再执行；
+ * - 该语句必须留在 `db/automation.sql` 里：应用进程已不再执行任何写语句，那份部署脚本是
+ *   它唯一会被执行的地方；跟着建表函数一起删掉、或者挪回代码里，它就不再执行；
  * - 防循环判断（模块 A.6）是明确的保留项——结果邮件可能从用户自己的邮箱发出，
  *   最容易被下一次"清理系统邮箱代码"顺手删掉；
  * - `||` / `??` 兜底一旦有一处冒回来，就是静默落回已下线分支的入口。这一条按**目录**扫描
@@ -23,7 +23,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const STORE = join(process.cwd(), "lib/automation/store.ts");
+const AUTOMATION_SQL = join(process.cwd(), "db/automation.sql");
 const SCHEDULER = join(process.cwd(), "lib/cron/automation-scheduler.ts");
 const AUTOMATIONS_INDEX = join(process.cwd(), "pages/api/v1/automations/index.ts");
 const AUTOMATIONS_ID = join(process.cwd(), "pages/api/v1/automations/[id].ts");
@@ -49,10 +49,15 @@ function functionBody(source: string, name: string): string {
   throw new Error(`函数 ${name} 的花括号不配对`);
 }
 
-/** 从函数体里取出唯一的 `DELETE FROM automation_tasks …;`；被删掉或写了两份都在这里红。 */
-function cleanupStatementIn(functionText: string, label: string): string {
+/** 去掉 SQL 行注释：文件里用注释解释这条语句的来由，能断言的只有可执行的那一份。 */
+function withoutSqlComments(source: string) {
+  return source.replace(/^[ \t]*--.*$/gm, "");
+}
+
+/** 从 db/automation.sql 里取出唯一的 `DELETE FROM automation_tasks …;`；被删掉或写了两份都在这里红。 */
+function cleanupStatementIn(source: string, label: string): string {
   const found = [
-    ...withoutComments(functionText).matchAll(/DELETE\s+FROM\s+automation_tasks[\s\S]*?;/gi),
+    ...withoutSqlComments(source).matchAll(/DELETE\s+FROM\s+automation_tasks[\s\S]*?;/gi),
   ];
   assert.equal(
     found.length,
@@ -62,11 +67,8 @@ function cleanupStatementIn(functionText: string, label: string): string {
   return found[0][0];
 }
 
-test("A.1 防御性清理在 ensureAutomationTables 里，且只删「邮件触发 + mailboxKey='system'」", () => {
-  const cleanup = cleanupStatementIn(
-    functionBody(readFileSync(STORE, "utf8"), "ensureAutomationTables"),
-    "ensureAutomationTables"
-  );
+test("A.1 防御性清理写在 db/automation.sql 里，且只删「邮件触发 + mailboxKey='system'」", () => {
+  const cleanup = cleanupStatementIn(readFileSync(AUTOMATION_SQL, "utf8"), "db/automation.sql");
 
   assert.match(
     cleanup,
@@ -81,10 +83,7 @@ test("A.1 防御性清理在 ensureAutomationTables 里，且只删「邮件触�
 });
 
 test("A.1 清理语句不得用 OR / IN / 其他列放宽范围", () => {
-  const cleanup = cleanupStatementIn(
-    functionBody(readFileSync(STORE, "utf8"), "ensureAutomationTables"),
-    "ensureAutomationTables"
-  );
+  const cleanup = cleanupStatementIn(readFileSync(AUTOMATION_SQL, "utf8"), "db/automation.sql");
 
   // 这两条是"预期影响 0 行"的前提：一旦放宽，被保护的就成了其他任务。
   assert.doesNotMatch(cleanup, /\bOR\b/i, "WHERE 里的 OR 会放宽到其他触发行");

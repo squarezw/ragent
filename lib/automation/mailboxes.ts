@@ -1,5 +1,6 @@
 import pool from "@/lib/db";
 import { fetchMailboxUnread } from "@/lib/automation/imap-client";
+import { assertAutomationTablesReady } from "@/lib/automation/schema";
 import {
   decryptMailboxPassword,
   encryptMailboxPassword,
@@ -35,47 +36,6 @@ export type AutomationMailboxInput = {
  */
 export type AutomationMailboxUpdateInput = MailboxConfigInput;
 
-let mailboxInitPromise: Promise<void> | null = null;
-
-/**
- * 建表（幂等）。导出供 `store.ts` 的提醒派生使用：那种情况下要先按 `status='error'`
- * 查这张表，而"表还不存在"（本模块从未被调用过）不能变成一次 500。
- * 已存在的旧表补列在 `ensureAutomationTables()`（模块 E.1）里，不在这里重复。
- */
-export async function ensureAutomationMailboxTable() {
-  if (mailboxInitPromise) return mailboxInitPromise;
-
-  mailboxInitPromise = pool.query(`
-    CREATE TABLE IF NOT EXISTS automation_mailboxes (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER,
-      created_by_user_id INTEGER NOT NULL,
-      name VARCHAR(200) NOT NULL,
-      email VARCHAR(320) NOT NULL,
-      username VARCHAR(320) NOT NULL,
-      password_ciphertext TEXT NOT NULL,
-      imap_host VARCHAR(255) NOT NULL,
-      imap_port INTEGER NOT NULL DEFAULT 993,
-      imap_secure BOOLEAN NOT NULL DEFAULT TRUE,
-      folder VARCHAR(255) NOT NULL DEFAULT 'INBOX',
-      status VARCHAR(20) NOT NULL DEFAULT 'connected',
-      last_error TEXT,
-      last_error_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(created_by_user_id, email)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_automation_mailboxes_owner
-      ON automation_mailboxes(created_by_user_id, created_at DESC);
-  `).then(() => undefined).catch((error) => {
-    mailboxInitPromise = null;
-    throw error;
-  });
-
-  return mailboxInitPromise;
-}
-
 /** 加密密钥：优先专用密钥，未配置时回退 JWT_SECRET（轮换 JWT_SECRET 会让旧密文解不开）。 */
 function encryptionSecret() {
   const secret = process.env.AUTOMATION_MAILBOX_SECRET || process.env.JWT_SECRET;
@@ -94,26 +54,6 @@ function decryptPassword(value: string) {
 }
 
 /**
- * 游标表可用吗（存在**且已是 mailbox_id 结构**）。
- *
- * 游标表由 store.ts 的 `ensureAutomationTables()` 建出，而邮箱操作可能先于任何一次 store
- * 调用发生：新部署里先配置邮箱、后建自动化时表还不存在；从旧的字符串键升级上来、store 尚未
- * 被调用过时表还在、但列仍是 `mailbox_key`。两种情况下都没有可重置/可清理的游标行
- * （旧结构的表在重建前必然为空，否则 `ensureAutomationTables` 会直接抛错中止），
- * 因此这里一律跳过，而不是让一次邮箱更新/删除因为列不存在而 500。
- */
-async function automationCursorTableIsReady() {
-  const result = await pool.query(
-    `SELECT 1 FROM information_schema.columns
-      WHERE table_schema=current_schema()
-        AND table_name='automation_email_mailbox_cursors'
-        AND column_name='mailbox_id'
-      LIMIT 1`,
-  );
-  return result.rows.length > 0;
-}
-
-/**
  * 模块 D.4：把游标打回未初始化，`last_uid` 也必须归零。
  *
  * `saveAutomationEmailMailboxCursor` 用 `GREATEST(旧值, 新值)` 写回，所以只置
@@ -122,7 +62,6 @@ async function automationCursorTableIsReady() {
  * 被过滤掉——正是 D.4 要避免的漏邮件。归零后重新建立的基线恰好是新邮箱的最新 UID。
  */
 async function resetAutomationMailboxCursor(userId: number, mailboxId: number) {
-  if (!(await automationCursorTableIsReady())) return;
   await pool.query(
     `UPDATE automation_email_mailbox_cursors
        SET last_uid=0, initialized=FALSE, updated_at=NOW()
@@ -136,7 +75,6 @@ async function resetAutomationMailboxCursor(userId: number, mailboxId: number) {
  * 主键含 `created_by_user_id`，删除范围必须同样带上它。
  */
 async function deleteAutomationMailboxCursor(userId: number, mailboxId: number) {
-  if (!(await automationCursorTableIsReady())) return;
   await pool.query(
     `DELETE FROM automation_email_mailbox_cursors
      WHERE created_by_user_id=$1 AND mailbox_id=$2`,
@@ -166,7 +104,7 @@ export function mailboxRowToApi(row: any) {
 }
 
 export async function listAutomationMailboxes(userId: number) {
-  await ensureAutomationMailboxTable();
+  await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_mailboxes
      WHERE created_by_user_id=$1
@@ -201,7 +139,7 @@ async function findAutomationMailboxByEmail(userId: number, email: string) {
 }
 
 export async function createAutomationMailbox(userId: number, input: AutomationMailboxInput) {
-  await ensureAutomationMailboxTable();
+  await assertAutomationTablesReady();
   const tenantId = await getUserTenantId(userId);
   const config = normalizeMailboxConfig(input);
   const encrypted = encryptPassword(config.password);
@@ -258,7 +196,7 @@ export async function createAutomationMailbox(userId: number, input: AutomationM
 }
 
 export async function getAutomationMailboxForUser(userId: number, mailboxId: number) {
-  await ensureAutomationMailboxTable();
+  await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_mailboxes
      WHERE id=$1 AND created_by_user_id=$2
@@ -288,7 +226,7 @@ export async function markAutomationMailboxConnectionError(
   const message = mailboxErrorText(mailboxErrorDisplayText(error)) || "邮箱连接失败";
 
   try {
-    await ensureAutomationMailboxTable();
+    await assertAutomationTablesReady();
     await pool.query(
       `UPDATE automation_mailboxes
          SET status='error', last_error=$3, last_error_at=NOW(), updated_at=NOW()
@@ -309,7 +247,7 @@ export async function markAutomationMailboxConnectionError(
  */
 export async function markAutomationMailboxConnected(userId: number, mailboxId: number) {
   try {
-    await ensureAutomationMailboxTable();
+    await assertAutomationTablesReady();
     await pool.query(
       `UPDATE automation_mailboxes
          SET status='connected', last_error=NULL, last_error_at=NULL, updated_at=NOW()
@@ -355,7 +293,7 @@ export async function updateAutomationMailbox(
   mailboxId: number,
   input: AutomationMailboxUpdateInput,
 ) {
-  await ensureAutomationMailboxTable();
+  await assertAutomationTablesReady();
   const existingRow = await getAutomationMailboxForUser(userId, mailboxId);
   if (!existingRow) return null;
 
@@ -417,7 +355,7 @@ export async function updateAutomationMailbox(
 }
 
 export async function deleteAutomationMailbox(userId: number, mailboxId: number) {
-  await ensureAutomationMailboxTable();
+  await assertAutomationTablesReady();
   // 依赖检查认两种引用，两者都是"这条自动化绑着某个邮箱"：
   // 1. 键格式统一后的 `trigger_config.mailboxId`（整数，与 $2::text 比较）；
   // 2. **任何仍带 `mailboxKey` 的遗留行**。A.1 的清理只删 `mailboxKey='system'`，其余遗留键

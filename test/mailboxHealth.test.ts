@@ -8,9 +8,9 @@
  * 另有三组属于"跑不了就钉源码"（`lib/automation/mailboxes.ts`、`store.ts`、
  * `automation-scheduler.ts` 都依赖 `lib/db`，本套件不连数据库、也不 import `@/lib`）。
  * 每一组都有一个"写错了不会有类型错误、只会在运行时出问题"的坑：
- * - `ensureAutomationTables()` 里给 automation_mailboxes 加列：这张表由 mailboxes.ts
- *   按需创建，首次部署时可能还不存在，裸跑 ALTER 会 42P01；而该函数失败会重置 initPromise，
- *   于是每一次 store 调用都重跑整段 SQL 并再次失败。
+ * - `last_error` / `last_error_at` 两列必须留在 `db/automation.sql` 的建表语句里：表结构
+ *   已改由部署时的 SQL 脚本建立，应用进程不再建表，加列也不再走运行时的 ALTER。漏掉这两列
+ *   不会让任何测试变红，只会让抽屉的「最后错误」永远显示「无」。
  * - 提醒的第三段派生必须来自 automation_mailboxes 且带 `status='error'`：少了状态过滤，
  *   所有邮箱都会变成"连接失败"。
  * - 状态写入必须挂在真实的连接路径上（连不上记 error、连上了恢复 connected），
@@ -38,6 +38,7 @@ import {
 const STORE = join(process.cwd(), "lib/automation/store.ts");
 const MAILBOXES = join(process.cwd(), "lib/automation/mailboxes.ts");
 const SCHEDULER = join(process.cwd(), "lib/cron/automation-scheduler.ts");
+const AUTOMATION_SQL = join(process.cwd(), "db/automation.sql");
 
 /** 去掉注释：注释里可以提旧写法，可执行 SQL / 代码里不允许。 */
 function withoutComments(source: string) {
@@ -168,30 +169,16 @@ test("邮箱 id 非法的行不派生提醒（不会拼出 mailbox-error:NaN）"
   );
 });
 
-test("加列的 ALTER 包在「表存在」判断里，且可重复执行（E.1）", () => {
-  const statements = sqlStatements(readFileSync(STORE, "utf8"));
-  const withAlter = statements.filter((sql) => /ADD COLUMN IF NOT EXISTS last_error/i.test(sql));
-  assert.equal(
-    withAlter.length,
-    1,
-    `期望恰好一段给 last_error 加列的 SQL，实际 ${withAlter.length} 段`
-  );
-  const sql = withAlter[0];
+test("automation_mailboxes 的 last_error / last_error_at 在 db/automation.sql 里声明（E.1）", () => {
+  // 这两列过去由 ensureAutomationTables() 里的运行时 ALTER 补上；现在随建表语句一起，
+  // 由部署时的 SQL 脚本建立，应用进程不再执行任何 ALTER。
+  // 漏掉它们不会产生任何类型错误——只会让抽屉的「最后错误」永远是「无」，所以在这里钉住。
+  const sql = readFileSync(AUTOMATION_SQL, "utf8");
+  const create = sql.match(/CREATE TABLE IF NOT EXISTS automation_mailboxes \([\s\S]*?\n\);/);
+  assert.ok(create, "db/automation.sql 里找不到 automation_mailboxes 的建表语句");
 
-  assert.match(sql, /ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ/i);
-  assert.match(sql, /ALTER TABLE automation_mailboxes/i);
-
-  // ALTER 所在的那个 DO 块必须先判断表存在：automation_mailboxes 由 mailboxes.ts 按需创建，
-  // 首次部署时可能还不存在，裸跑 ALTER 会以 42P01 失败——而 ensureAutomationTables 失败后会
-  // 重置 initPromise，于是每一次 store 调用都重跑整段并再次失败。
-  const alterAt = sql.indexOf("ADD COLUMN IF NOT EXISTS last_error");
-  const doStart = sql.lastIndexOf("DO $$", alterAt);
-  assert.ok(doStart >= 0, "ALTER 必须写在 DO 块里，否则无法做存在性判断");
-  const guardedBlock = sql.slice(doStart, sql.indexOf("END $$;", alterAt));
-
-  assert.match(guardedBlock, /information_schema\.tables/);
-  assert.match(guardedBlock, /IF EXISTS/);
-  assert.match(guardedBlock, /table_name = 'automation_mailboxes'/);
+  assert.match(create[0], /last_error TEXT/, "缺少 last_error 列：抽屉「最后错误」将永远为空");
+  assert.match(create[0], /last_error_at TIMESTAMPTZ/, "缺少 last_error_at 列");
 });
 
 test("邮箱列表接口下发 lastError（抽屉「最后错误」的唯一数据源）", () => {
