@@ -403,22 +403,20 @@ async function processEmailMailboxGroup(tasks: any[]) {
     // 防止平台自己发送的结果邮件再次触发自动化形成循环。
     if (!subject.startsWith("自动化执行结果：") && !subject.startsWith("[AI对话]")) {
       const messageKey = String(message.message_id || "").trim() || `uid:${uid}`;
-      const matched = tasks
-        .filter((task) => doesMailRuleSetMatch(mailRuleSetFromTask(task), message))
-        .sort((a, b) => {
-          const priorityDelta = Number(b.trigger_config?.priority ?? 50) - Number(a.trigger_config?.priority ?? 50);
-          return priorityDelta !== 0 ? priorityDelta : Number(a.id) - Number(b.id);
-        });
+      const matched = tasks.filter((task) =>
+        doesMailRuleSetMatch(mailRuleSetFromTask(task), message)
+      );
 
-      const winner = matched[0];
-      let claimed = false;
-      if (winner) {
-        claimed = await claimAutomationEmailMessage(
-          userId,
-          mailboxId,
-          messageKey,
-          Number(winner.id)
-        );
+      // 每条自动化各自 claim（唯一键含 automation_id，互不阻塞）。
+      // 一封邮件命中的多条自动化会**全部执行**，不再由优先级选出一条胜出。
+      const claimedTasks: any[] = [];
+      const claimedIds = new Set<number>();
+      for (const task of matched) {
+        const taskId = Number(task.id);
+        if (await claimAutomationEmailMessage(userId, mailboxId, messageKey, taskId)) {
+          claimedIds.add(taskId);
+          claimedTasks.push(task);
+        }
       }
 
       const matchedIds = new Set(matched.map((task) => Number(task.id)));
@@ -428,10 +426,8 @@ async function processEmailMailboxGroup(tasks: any[]) {
           let outcome: "triggered" | "suppressed_by_priority" | "not_matched" | "duplicate";
           if (!matchedIds.has(taskId)) {
             outcome = "not_matched";
-          } else if (winner && taskId === Number(winner.id)) {
-            outcome = claimed ? "triggered" : "duplicate";
           } else {
-            outcome = "suppressed_by_priority";
+            outcome = claimedIds.has(taskId) ? "triggered" : "duplicate";
           }
 
           return {
@@ -441,7 +437,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
             messageUid: uid,
             automationId: taskId,
             outcome,
-            winnerAutomationId: winner ? Number(winner.id) : null,
+            winnerAutomationId: null,
             matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
             priority: Number(task.trigger_config?.priority ?? 50),
             from: message.from,
@@ -452,9 +448,25 @@ async function processEmailMailboxGroup(tasks: any[]) {
         })
       );
 
-      if (winner && claimed) {
-        await executeEmailAutomation(winner, message);
-      }
+      // 并发执行，失败互不影响（allSettled 而非 all）；等全部结束再推进游标，
+      // 保持与改动前一致的 at-most-once 语义：崩溃时游标落后 → 重新读到这封邮件
+      // → claim 已写入 → 判为 duplicate → 不重复执行。
+      const results = await Promise.allSettled(
+        claimedTasks.map((task) => executeEmailAutomation(task, message))
+      );
+      // 不重抛：一条失败不该拖累同一封邮件命中的其他自动化。但也不能不记——
+      // executeEmailAutomation 的 try 从 createRun 之后才开始，requireMailboxLabel /
+      // prepareEmailAttachments / createRun 抛出时不会写 failed 状态、也没有任何日志，
+      // 只在这里落一条带 automation id 的记录，否则这类失败对运维完全不可见。
+      // （claim 已写入，重扫会判 duplicate，所以这里只补可观测性，不涉及重试。）
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(
+            `[Automation Email] automation ${claimedTasks[index]?.id} failed: user=${userId} mailboxId=${mailboxId} uid=${uid}`,
+            result.reason
+          );
+        }
+      });
     }
 
     // 无论是否命中规则都推进游标；规则调整不会回溯历史邮件。
