@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { syncAppSchedule, unscheduleApp } from "@/lib/cron/subscription-scheduler";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8000";
 
@@ -86,12 +85,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       },
     });
 
-    // Sync cron task for Subscription apps
-    const appData = response.data;
-    if (appData.app_type === "Subscription") {
-      syncAppSchedule(Number(id), appData.app_type, appData.settings);
-    }
-
     return res.status(200).json(response.data);
   } catch (error: any) {
     console.error("Error updating app:", error);
@@ -132,9 +125,6 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         "Content-Type": "application/json",
       },
     });
-
-    // Remove cron task if exists
-    unscheduleApp(Number(id));
 
     return res.status(204).end();
   } catch (error: any) {

@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { triggerLabel } from "@/lib/appTrigger";
+import { presentationModeLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSkills } from "@/hooks/useAppSkills";
@@ -336,9 +336,9 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                       </Button>
                     )}
                   </div>
-                  {/* 副标题：说明 · 触发方式 · 平台。描述可能为空，空时不留下孤零零的分隔点 */}
+                  {/* 副标题：说明 · 展示方式 · 平台。描述可能为空，空时不留下孤零零的分隔点 */}
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {[appInfo.description, triggerLabel(appInfo.app_type, t), appInfo.platform]
+                    {[appInfo.description, presentationModeLabel(appInfo.app_type, t), appInfo.platform]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
