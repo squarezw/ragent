@@ -71,7 +71,7 @@ export function storedMailboxLabel(value: unknown): string | null {
   return label || null;
 }
 
-/** 调度分组键（决定优先级竞争与去重范围）：同一用户同一监听邮箱为同一组。 */
+/** 调度分组键（同一用户同一监听邮箱为一组，决定 claim 与去重的作用范围）。 */
 export function mailboxGroupKey(userId: number, mailboxId: number): string {
   return `${userId}:${mailboxId}`;
 }
@@ -173,7 +173,7 @@ export function isMailboxSelectionUnresolved(
  *
  * 没有选中邮箱时（含"正在配置新邮箱"）返回空候选——此时不存在可比较的分组。
  * `mailboxId` 缺失的遗留行（旧字符串键）不属于任何分组，因此不会被误判为冲突。
- * 与 `mailboxGroupKey` 的范围一致：只有同一 `userId:mailboxId` 才做优先级竞争。
+ * 与 `mailboxGroupKey` 的范围一致：只有同一 `userId:mailboxId` 才落在同一个 claim 与去重范围内。
  */
 export function selectMailboxScopedAutomations<T extends MailboxScopedAutomation>(
   items: readonly T[],

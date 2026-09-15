@@ -67,7 +67,7 @@ test("settle 结果必须被检视：执行失败落日志，而不是被 allSet
     fn,
     /"rejected"/,
     "必须显式处理 rejected 分支：executeEmailAutomation 的 requireMailboxLabel / " +
-      "prepareEmailAttachments / createRun 都在其内部 try 之外，抛出时会变成零日志"
+      "requireMailboxId / createRun 都在其内部 try 之外，抛出时会变成零日志"
   );
 
   const executed = fn.indexOf("Promise.allSettled(");

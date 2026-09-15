@@ -453,7 +453,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
       );
       // 不重抛：一条失败不该拖累同一封邮件命中的其他自动化。但也不能不记——
       // executeEmailAutomation 的 try 从 createRun 之后才开始，requireMailboxLabel /
-      // prepareEmailAttachments / createRun 抛出时不会写 failed 状态、也没有任何日志，
+      // requireMailboxId / createRun 抛出时不会写 failed 状态、也没有任何日志，
       // 只在这里落一条带 automation id 的记录，否则这类失败对运维完全不可见。
       // （claim 已写入，重扫会判 duplicate，所以这里只补可观测性，不涉及重试。）
       results.forEach((result, index) => {
@@ -481,7 +481,7 @@ export async function scanEmailAutomations() {
 
     for (const task of tasks) {
       const userId = Number(task.created_by_user_id);
-      // 分组键：同一用户同一监听邮箱为一组（决定优先级竞争与去重范围）。
+      // 分组键：同一用户同一监听邮箱为一组（决定 claim 与去重的作用范围）。
       // 遗留数据没有整数 mailboxId，单独归组后由 processEmailMailboxGroup 抛错。
       const mailboxId = normalizeMailboxId(task.trigger_config?.mailboxId);
       const key = mailboxId === null ? `${userId}:MAILBOX_ID_REQUIRED` : mailboxGroupKey(userId, mailboxId);

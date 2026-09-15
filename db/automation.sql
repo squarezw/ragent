@@ -320,6 +320,11 @@ DELETE FROM automation_tasks
 -- DROP IF EXISTS + 条件 ADD 同时适配两种库：全新库（上面的 CREATE 已建好新约束，两段都是
 -- no-op）与已存在的库（旧约束在、新约束不在，正常迁移）。条件 ADD 的写法沿用
 -- lib/documentFileVersions.ts 里的既有惯用法 —— PostgreSQL 不支持 ADD CONSTRAINT IF NOT EXISTS。
+--
+-- 「两段迁移」与本次代码必须同批上线。唯一键这段是开关：没有它，新代码的 claim 一次都过不去
+-- （ON CONFLICT 找不到目标约束，42P10）；下面的 DROP COLUMN 那段则相反 —— 先删列会让**旧代码**
+-- 的事件 INSERT 报 column ... does not exist（旧代码仍列着 priority / winner_automation_id）。
+-- 真要拆开就按「先代码、后 SQL」：那时的失败是响的，且两种顺序都不丢数据。
 ALTER TABLE automation_email_processed_messages
   DROP CONSTRAINT IF EXISTS automation_email_processed_me_created_by_user_id_mailbox_id_key;
 
