@@ -105,7 +105,6 @@ interface Automation {
   mailFolder?: string;
   mailRuleMode?: MailRuleMode;
   mailRules?: MailTriggerRule[];
-  mailPriority?: number;
   upstreamAutomationId?: number | null;
   upstreamCondition?: string;
   passPreviousResult?: boolean;
@@ -193,6 +192,9 @@ interface AutomationNotification {
   readAt?: string;
 }
 
+// 优先级机制已下线：服务端不再产生 suppressed_by_priority，但库里仍有存量行写着它，
+// 统计接口的 recent 列表还会把这些老行返回。保留该成员只为给存量行一个可读文案
+// （见下方 outcomeText），不要为它新增任何写入路径。
 type EmailRoutingOutcome = "triggered" | "suppressed_by_priority" | "not_matched" | "duplicate";
 
 interface EmailRoutingEvent {
@@ -202,9 +204,7 @@ interface EmailRoutingEvent {
   messageUid?: number;
   automationId: number;
   outcome: EmailRoutingOutcome;
-  winnerAutomationId?: number;
   matchedRule?: string;
-  priority?: number;
   from?: string;
   to?: string;
   subject?: string;
@@ -212,11 +212,12 @@ interface EmailRoutingEvent {
   createdAt?: string;
 }
 
+// 各计数器相互独立、不是对 scanned 的划分：存量 suppressed_by_priority 行计入
+// scanned 与 matched，但不落在任何一个计数桶里，所以不要假设它们能相加成 scanned。
 interface EmailRoutingStats {
   scanned: number;
   matched: number;
   triggered: number;
-  suppressed: number;
   notMatched: number;
   duplicate: number;
   recent: EmailRoutingEvent[];
@@ -226,7 +227,6 @@ const emptyEmailRoutingStats: EmailRoutingStats = {
   scanned: 0,
   matched: 0,
   triggered: 0,
-  suppressed: 0,
   notMatched: 0,
   duplicate: 0,
   recent: [],
@@ -536,7 +536,6 @@ export default function AutomationPage() {
   const [mailboxManagerOpen, setMailboxManagerOpen] = useState(false);
   const [mailRuleMode, setMailRuleMode] = useState<MailRuleMode>("all");
   const [mailRules, setMailRules] = useState<MailTriggerRule[]>([]);
-  const [mailPriority, setMailPriority] = useState(50);
   const [mailTesterOpen, setMailTesterOpen] = useState(false);
   const [mailTestFrom, setMailTestFrom] = useState("customer@example.com");
   const [mailTestTo, setMailTestTo] = useState("");
@@ -595,7 +594,7 @@ export default function AutomationPage() {
   }, [automations, selectedMailbox]);
 
   // D.7：冲突检测与命中预测只在同一监听邮箱内比较——调度器的分组键是
-  // `${userId}:${mailboxId}`，跨邮箱比较会误报冲突并预测错误的 winner。
+  // `${userId}:${mailboxId}`，跨邮箱比较会误报冲突。
   // 正在配置新邮箱（或选择不可解析）时没有可比较的分组，候选为空。
   const mailboxScopedAutomations = useMemo(
     () =>
@@ -613,11 +612,9 @@ export default function AutomationPage() {
       .map((item) => ({
         item,
         level: mailConflictLevel({ rules: mailRules, mode: mailRuleMode }, automationMailRuleSet(item)),
-        priority: Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50,
       }))
       .sort((a, b) => {
         if (a.level !== b.level) return a.level === "high" ? -1 : 1;
-        if (a.priority !== b.priority) return b.priority - a.priority;
         return a.item.id - b.item.id;
       });
   }, [mailRuleMode, mailRules, mailboxScopedAutomations, trigger]);
@@ -645,7 +642,6 @@ export default function AutomationPage() {
       .map((item) => ({
         id: item.id,
         name: item.name,
-        priority: Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50,
         current: false,
       }));
 
@@ -653,26 +649,19 @@ export default function AutomationPage() {
       candidates.push({
         id: currentId,
         name: name.trim() || tt("当前自动化", "Current automation"),
-        priority: mailPriority,
         current: true,
       });
     }
 
-    candidates.sort((a, b) => {
-      if (a.priority !== b.priority) return b.priority - a.priority;
-      return a.id - b.id;
-    });
-
+    // 命中即全部执行：不再排序、不再挑胜出者，matchedCandidates 就是最终结果。
     return {
       message,
       currentMatched,
       currentRuleResults,
-      winner: candidates[0] || null,
       matchedCandidates: candidates,
     };
   }, [
     editingAutomationId,
-    mailPriority,
     mailRuleMode,
     mailRules,
     mailTestAttachments,
@@ -1074,8 +1063,7 @@ export default function AutomationPage() {
   function localizedTriggerDetail(item: Automation) {
     if (item.trigger === "邮件触发") {
       const ruleText = mailRulesSummary(automationMailRuleSet(item));
-      const priority = Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50;
-      return `${automationMailboxText(item)} · ${ruleText} · ${tt("优先级", "Priority")} ${priority}`;
+      return `${automationMailboxText(item)} · ${ruleText}`;
     }
     if (item.trigger === "Webhook / API") {
       return tt("由外部系统通过 Webhook / API 触发", "Triggered by an external system through Webhook / API");
@@ -1241,7 +1229,6 @@ export default function AutomationPage() {
     resetMailboxForm();
     setMailRuleMode("all");
     setMailRules([]);
-    setMailPriority(50);
     setMailTesterOpen(false);
     setMailTestFrom("customer@example.com");
     setMailTestTo("");
@@ -1299,7 +1286,6 @@ export default function AutomationPage() {
     resetMailboxForm();
     setMailRuleMode(item.mailRuleMode === "any" ? "any" : "all");
     setMailRules(Array.isArray(item.mailRules) ? item.mailRules : []);
-    setMailPriority(Number.isFinite(Number(item.mailPriority)) ? Number(item.mailPriority) : 50);
     setUpstreamAutomationId(
       item.upstreamAutomationId ??
         automations.find((automation) => automation.id !== item.id)?.id ??
@@ -1356,7 +1342,7 @@ export default function AutomationPage() {
       const mailboxText = selectedMailbox
         ? mailboxOptionLabel(selectedMailbox)
         : tt("未选择监听邮箱", "No mailbox selected");
-      return `${mailboxText} · ${ruleText} · ${tt("优先级", "Priority")} ${mailPriority}`;
+      return `${mailboxText} · ${ruleText}`;
     }
     if (trigger === "Webhook / API") {
       return "由外部系统通过 Webhook / API 触发";
@@ -1419,7 +1405,6 @@ export default function AutomationPage() {
       mailFolder: trigger === "邮件触发" ? mailFolderValue : undefined,
       mailRuleMode: trigger === "邮件触发" ? mailRuleMode : undefined,
       mailRules: trigger === "邮件触发" ? mailRules : undefined,
-      mailPriority: trigger === "邮件触发" ? mailPriority : undefined,
       upstreamAutomationId:
         trigger === "自动化完成触发" ? upstreamAutomationId : undefined,
       upstreamCondition:
@@ -3347,13 +3332,6 @@ export default function AutomationPage() {
                           </div>
                         </Field>
 
-                        <Field label={tt("规则优先级", "Rule Priority")} compact>
-                          <input type="number" min={0} max={100} value={mailPriority} onChange={(e) => setMailPriority(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} className="input-base" />
-                          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                            {tt("同一封邮件同时命中多个自动化时，只执行优先级最高的一条。建议使用 0–100。", "If multiple automations match the same email, only the highest-priority one runs. Recommended range: 0–100.")}
-                          </div>
-                        </Field>
-
                         {mailConflictCandidates.length > 0 && (
                           <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3 text-amber-950">
                             <div className="text-xs font-semibold">
@@ -3361,12 +3339,12 @@ export default function AutomationPage() {
                             </div>
                             <div className="mt-1 text-xs leading-5 text-amber-900/80">
                               {tt(
-                                "这些规则可能同时命中同一封邮件。平台仍只会执行优先级最高的一条，建议确认优先级是否符合业务顺序。",
-                                "These rules may match the same email. The platform still runs only the highest-priority automation, so confirm that the priority order matches the business requirement.",
+                                "这些规则可能同时命中同一封邮件。届时这些自动化都会执行（每条各自运行一次），请确认这是否符合预期。",
+                                "These rules may match the same email. All of them will then run — each one separately. Confirm that this is what you want.",
                               )}
                             </div>
                             <div className="mt-2 space-y-1.5">
-                              {mailConflictCandidates.slice(0, 3).map(({ item, level, priority }) => (
+                              {mailConflictCandidates.slice(0, 3).map(({ item, level }) => (
                                 <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200/80 bg-white/70 px-2.5 py-2 text-xs">
                                   <div className="min-w-0">
                                     <span className="font-medium">{item.name}</span>
@@ -3375,9 +3353,6 @@ export default function AutomationPage() {
                                         ? tt("规则高度重叠", "High overlap")
                                         : tt("存在潜在重叠", "Potential overlap")}
                                     </span>
-                                  </div>
-                                  <div className="shrink-0">
-                                    {tt("优先级", "Priority")} {priority}
                                   </div>
                                 </div>
                               ))}
@@ -3390,22 +3365,6 @@ export default function AutomationPage() {
                                 </div>
                               )}
                             </div>
-                            {mailConflictCandidates.some(({ priority }) => priority > mailPriority) && (
-                              <div className="mt-2 text-xs font-medium leading-5">
-                                {tt(
-                                  "当前优先级低于其中部分自动化；若同一邮件同时命中，当前自动化将不会执行。",
-                                  "The current priority is lower than at least one existing automation. If the same email matches both, this automation will not run.",
-                                )}
-                              </div>
-                            )}
-                            {mailConflictCandidates.some(({ priority }) => priority === mailPriority) && (
-                              <div className="mt-1 text-xs leading-5 text-amber-900/80">
-                                {tt(
-                                  "存在相同优先级。相同优先级时系统按固定顺序只执行一条，建议使用不同优先级避免业务歧义。",
-                                  "An equal priority exists. With equal priorities, the system uses a fixed order and runs only one; use distinct priorities to avoid ambiguity.",
-                                )}
-                              </div>
-                            )}
                           </div>
                         )}
 
@@ -3438,24 +3397,24 @@ export default function AutomationPage() {
                                 </div>
 
                                 <div className={`rounded-lg border px-3 py-2.5 ${
-                                  mailRuleTestResult.winner?.current
+                                  mailRuleTestResult.currentMatched
                                     ? "border-emerald-200 bg-emerald-50/70"
-                                    : mailRuleTestResult.currentMatched
-                                      ? "border-amber-200 bg-amber-50/70"
-                                      : "bg-muted/25"
+                                    : "bg-muted/25"
                                 }`}>
                                   <div className="text-xs font-semibold">
-                                    {mailRuleTestResult.winner?.current
+                                    {mailRuleTestResult.currentMatched
                                       ? tt("结果：当前自动化会触发", "Result: current automation will run")
-                                      : mailRuleTestResult.currentMatched && mailRuleTestResult.winner
-                                        ? tt(`结果：当前规则命中，但会由「${mailRuleTestResult.winner.name}」优先执行`, `Result: current rules match, but “${mailRuleTestResult.winner.name}” wins by priority`)
-                                        : tt("结果：当前自动化不会触发", "Result: current automation will not run")}
+                                      : tt("结果：当前自动化不会触发", "Result: current automation will not run")}
                                   </div>
-                                  {mailRuleTestResult.winner && (
-                                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                                      {tt("最终命中", "Winner")}: {mailRuleTestResult.winner.name} · {tt("优先级", "Priority")} {mailRuleTestResult.winner.priority}
-                                    </div>
-                                  )}
+                                  {mailRuleTestResult.currentMatched &&
+                                    mailRuleTestResult.matchedCandidates.length > 1 && (
+                                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        {tt(
+                                          "同一封邮件还会触发以下自动化，它们会与当前自动化各自运行一次。",
+                                          "The same email will also trigger the following automations; each will run separately.",
+                                        )}
+                                      </div>
+                                    )}
                                 </div>
 
                                 {mailRules.length > 0 && (
@@ -3483,7 +3442,7 @@ export default function AutomationPage() {
                                     <div className="mt-1.5 flex flex-wrap gap-2">
                                       {mailRuleTestResult.matchedCandidates.map((item) => (
                                         <span key={`${item.current ? "current" : "saved"}-${item.id}`} className="rounded-full border bg-background px-2 py-1 text-xs">
-                                          {item.name} · {item.priority}
+                                          {item.name}
                                         </span>
                                       ))}
                                     </div>
@@ -3769,8 +3728,8 @@ export default function AutomationPage() {
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="text-xs text-muted-foreground">
                       {tt(
-                        "路由统计记录服务端实际检查结果，包括未命中和被更高优先级规则截获的邮件。",
-                        "Routing statistics include server-side checks, unmatched messages, and messages suppressed by higher-priority rules.",
+                        "路由统计记录服务端实际检查结果，包括未命中的邮件与重复投递的邮件。",
+                        "Routing statistics cover server-side checks, including unmatched messages and duplicate deliveries.",
                       )}
                     </div>
                     {emailRoutingStatsLoading && (
@@ -3794,10 +3753,6 @@ export default function AutomationPage() {
                     <div className="rounded-lg border bg-muted/20 px-3 py-3">
                       <div className="text-xs text-muted-foreground">{tt("未命中", "Not Matched")}</div>
                       <div className="mt-1 text-xl font-bold">{emailRoutingStats.notMatched}</div>
-                    </div>
-                    <div className="rounded-lg border bg-muted/20 px-3 py-3">
-                      <div className="text-xs text-muted-foreground">{tt("被高优先级截获", "Suppressed")}</div>
-                      <div className="mt-1 text-xl font-bold">{emailRoutingStats.suppressed}</div>
                     </div>
                     <div className="rounded-lg border bg-muted/20 px-3 py-3">
                       <div className="text-xs text-muted-foreground">{tt("重复拦截", "Deduplicated")}</div>
@@ -3833,13 +3788,16 @@ export default function AutomationPage() {
                     ) : (
                       <div className="mt-2 divide-y">
                         {emailRoutingStats.recent.slice(0, 5).map((event) => {
+                          // suppressed_by_priority 只可能来自存量行：服务端已不再产生它，
+                          // 但历史行仍会出现在 recent 里，必须给它一个可读文案（否则会
+                          // 掉进"未命中"，把旧版的拦截误报成没匹配上）。
                           const outcomeText =
                             event.outcome === "triggered"
                               ? tt("已触发", "Triggered")
-                              : event.outcome === "suppressed_by_priority"
-                                ? tt("被高优先级截获", "Suppressed")
-                                : event.outcome === "duplicate"
-                                  ? tt("重复拦截", "Deduplicated")
+                              : event.outcome === "duplicate"
+                                ? tt("重复拦截", "Deduplicated")
+                                : event.outcome === "suppressed_by_priority"
+                                  ? tt("未执行（旧版优先级规则）", "Not run (legacy priority rule)")
                                   : tt("未命中", "Not Matched");
                           return (
                             <div key={event.id} className="flex items-start justify-between gap-3 py-2">
@@ -3853,11 +3811,6 @@ export default function AutomationPage() {
                               </div>
                               <div className="shrink-0 text-right">
                                 <div className="text-xs font-medium">{outcomeText}</div>
-                                {event.priority != null && (
-                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {tt("优先级", "Priority")} {event.priority}
-                                  </div>
-                                )}
                               </div>
                             </div>
                           );
@@ -3999,10 +3952,6 @@ export default function AutomationPage() {
                     <InfoItem
                       label={tt("监听方式", "Monitoring Method")}
                       value={emailSourceDisplay(drawerRun.triggerContext.source)}
-                    />
-                    <InfoItem
-                      label={tt("规则优先级", "Rule Priority")}
-                      value={String(drawerRun.triggerContext.priority ?? 50)}
                     />
                     <InfoItem
                       label={tt("发件人", "Sender")}
