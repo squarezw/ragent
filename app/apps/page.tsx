@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslations } from "next-intl";
-import { triggerLabel } from "@/lib/appTrigger";
+import { presentationModeLabel } from "@/lib/appTrigger";
 import { canEditApp } from "@/lib/appPermissions";
 import AppAvatarPicker from "./components/AppAvatarPicker";
 import AppAvatar from "./components/AppAvatar";
@@ -48,10 +48,9 @@ import {
   Network,
   FileText,
   Code,
-  List,
-  X,
   Sparkles,
   LayoutGrid,
+  List,
 } from "lucide-react";
 import { appStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import Link from "next/link";
@@ -64,17 +63,13 @@ import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
 import { WorkflowConfig } from "@/types/workflow";
-import { FeedItemsDialog } from "./components/subscription-agent/FeedItemsDialog";
-import { SummaryListDialog } from "./components/subscription-agent/SummaryListDialog";
-import { ScheduleConfigSection } from "./components/subscription-agent/ScheduleConfigSection";
-import type { StreamFeedFormItem, ScheduleSettings } from "@/types/subscription-agent";
 
 // 类型定义
 interface App {
   id: number;
   name: string;
   description: string;
-  app_type: "Chat" | "Subscription" | "Email" | "Custom" | "Tool" | "Plugin";
+  app_type: "Chat" | "Custom";
   platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
   avatar_url?: string | null;
   user_id: number;
@@ -122,16 +117,13 @@ const platformIcons: Record<string, any> = {
   Android: Smartphone,
 };
 
-// 触发方式与平台标签一律中性灰（Badge 的 secondary）。
+// 展示方式与平台标签一律中性灰（Badge 的 secondary）。
 //
 // 原先每个取值一种颜色：紫、绿、黄、蓝、翠、橙……一屏卡片下来像调色板，而这些
 // 颜色不承载任何含义——"聊天"是紫的、"Web"也是紫的，读者得先学会一套配色表才
 // 知道颜色没在说话。真正需要抢眼的是异常状态（草稿/待审/驳回，见 reviewStatus），
 // 颜色留给它们才有对比度。详情页那两个标签一直是中性的 outline，这里跟它对齐。
 
-
-// 判断是否为订阅聚合应用
-const isStreamApp = (app: App) => app.app_type === "Subscription";
 
 export default function AppsPage() {
   const router = useRouter();
@@ -206,13 +198,6 @@ export default function AppsPage() {
   const [embedDialogOpen, setEmbedDialogOpen] = useState(false);
   const [embedAppId, setEmbedAppId] = useState<string>("");
 
-  // Stream Agent 相关状态
-  const [feedItemsDialogOpen, setFeedItemsDialogOpen] = useState(false);
-  const [summaryListDialogOpen, setSummaryListDialogOpen] = useState(false);
-  const [selectedStreamApp, setSelectedStreamApp] = useState<App | null>(null);
-  const [streamFeeds, setStreamFeeds] = useState<StreamFeedFormItem[]>([]);
-  const [newStreamUrl, setNewStreamUrl] = useState("");
-  const [addingFeed, setAddingFeed] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
   const [autoSelectDatasets, setAutoSelectDatasets] = useState(true);
 
@@ -230,7 +215,7 @@ export default function AppsPage() {
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
-    app_type: "Chat" | "Subscription" | "Email" | "Custom" | "Tool" | "Plugin";
+    app_type: "Chat" | "Custom";
     platform: "Web" | "Wechat" | "Plugin" | "Feishu" | "iOS" | "Android";
     // 空串 = 用户主动清空（后端据此落 NULL）；null = 本来就没设过
     avatar_url: string | null;
@@ -315,52 +300,6 @@ export default function AppsPage() {
     }
   }, [formData.platform, dialogOpen, loadWechatAgents]);
 
-  // 添加 Stream URL（立即请求 API 创建订阅）
-  const handleAddStreamUrl = useCallback(async () => {
-    if (!newStreamUrl) return;
-    setAddingFeed(true);
-    try {
-      const res = await axios.post("/api/v1/subscription-agent/feeds", {
-        url: newStreamUrl,
-      });
-      const feedId = res.data.id;
-      setStreamFeeds((prev) => {
-        // 检查是否已存在，避免重复添加
-        if (prev.some((f) => f.id === feedId)) {
-          return prev;
-        }
-        return [
-          ...prev,
-          {
-            id: feedId,
-            url: res.data.source_url || res.data.url || newStreamUrl,
-            name: res.data.name,
-            platform: res.data.platform,
-          },
-        ];
-      });
-      setNewStreamUrl("");
-      toast.success(t("subscriptionAdded", { name: res.data.name || newStreamUrl }));
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || t("addSubscriptionFailed"));
-    } finally {
-      setAddingFeed(false);
-    }
-  }, [newStreamUrl]);
-
-  // 删除订阅（从本地列表移除）
-  const handleRemoveStreamFeed = useCallback((feedId: string) => {
-    setStreamFeeds((prev) => prev.filter((f) => f.id !== feedId));
-  }, []);
-
-  // Default schedule settings
-  const defaultScheduleSettings: ScheduleSettings = {
-    enabled: false,
-    time: "10:00",
-    timezone: "Asia/Shanghai",
-    report_type: "daily",
-  };
-
   // 打开创建对话框
   const handleCreate = useCallback(() => {
     setEditingApp(null);
@@ -376,8 +315,6 @@ export default function AppsPage() {
       settings: {},
       is_default: false,
     });
-    setStreamFeeds([]);
-    setNewStreamUrl("");
     setAutoSelectDatasets(true);
     setDialogOpen(true);
   }, []);
@@ -504,7 +441,7 @@ export default function AppsPage() {
   }, [selectedTemplate, handleCreateQualityAgent]);
 
   // 打开编辑对话框
-  const handleEdit = useCallback(async (app: App) => {
+  const handleEdit = useCallback((app: App) => {
     setEditingApp(app);
     const datasetIds = app.dataset_ids || [];
     setFormData({
@@ -522,34 +459,6 @@ export default function AppsPage() {
     // 如果 dataset_ids 为空，则自动选择知识库为 true，否则为 false
     setAutoSelectDatasets(datasetIds.length === 0);
 
-    // 如果是 Stream 应用，加载已有的订阅信息
-    if (isStreamApp(app) && app.settings?.stream_feed_ids?.length > 0) {
-      // 优先从 settings.stream_feeds 读取（包含完整的 url 信息）
-      if (app.settings?.stream_feeds?.length > 0) {
-        setStreamFeeds(app.settings.stream_feeds);
-      } else {
-        // 兼容旧数据：从 API 获取
-        try {
-          const feedPromises = app.settings.stream_feed_ids.map((id: string) =>
-            axios.get(`/api/v1/subscription-agent/feeds/${id}`)
-          );
-          const responses = await Promise.all(feedPromises);
-          setStreamFeeds(
-            responses.map((r) => ({
-              id: r.data.id,
-              url: r.data.source_url || r.data.url || "",
-              name: r.data.name,
-              platform: r.data.platform,
-            }))
-          );
-        } catch {
-          setStreamFeeds([]);
-        }
-      }
-    } else {
-      setStreamFeeds([]);
-    }
-    setNewStreamUrl("");
     setDialogOpen(true);
   }, []);
 
@@ -563,40 +472,14 @@ export default function AppsPage() {
     try {
       setSubmitting(true);
 
-      let submitData: any;
-
-      // Stream 应用特殊处理
-      if (formData.app_type === "Subscription") {
-        submitData = {
-          ...formData,
-          settings: {
-            ...formData.settings,
-            stream_feed_ids: streamFeeds.map((f) => f.id),
-            // 保存完整的 feed 信息，因为外部 API 可能不返回 url
-            stream_feeds: streamFeeds.map((f) => ({
-              id: f.id,
-              url: f.url,
-              name: f.name,
-              platform: f.platform,
-            })),
-          },
-        };
-      } else {
-        // 同步表单数据到工作流配置
-        const workflow = syncFormToWorkflow(
-          { ...formData },
-          editingApp?.settings?.workflow,
-          datasets
-        );
-
-        submitData = {
-          ...formData,
-          settings: {
-            ...formData.settings,
-            workflow,
-          },
-        };
-      }
+      const workflow = syncFormToWorkflow({ ...formData }, editingApp?.settings?.workflow, datasets);
+      const submitData = {
+        ...formData,
+        settings: {
+          ...formData.settings,
+          workflow,
+        },
+      };
 
       if (editingApp) {
         // 更新
@@ -621,7 +504,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, editingApp, loadApps, datasets, streamFeeds]);
+  }, [formData, editingApp, loadApps, datasets]);
 
   // 提交应用审核（draft/rejected → pending_review；建即 draft，仅 owner 可测）
   const handleSubmitAppReview = useCallback(
@@ -643,17 +526,6 @@ export default function AppsPage() {
     if (!deletingApp) return;
 
     try {
-      // 如果是 Stream 应用，同时删除关联的所有订阅
-      if (isStreamApp(deletingApp) && deletingApp.settings?.stream_feed_ids?.length > 0) {
-        for (const feedId of deletingApp.settings.stream_feed_ids) {
-          try {
-            await axios.delete(`/api/v1/subscription-agent/feeds/${feedId}`);
-          } catch (error) {
-            console.error(`删除订阅 ${feedId} 失败:`, error);
-          }
-        }
-      }
-
       await axios.delete(`/api/v1/apps/${deletingApp.id}`);
       toast.success(t("appDeleted"));
       setDeleteConfirmOpen(false);
@@ -846,7 +718,7 @@ export default function AppsPage() {
                             </TableCell>
                             <TableCell>
                               <Badge variant="secondary" className="font-medium">
-                                {triggerLabel(app.app_type, t)}
+                                {presentationModeLabel(app.app_type, t)}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -884,68 +756,24 @@ export default function AppsPage() {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
-                                {/* Stream 应用特有操作 */}
-                                {isStreamApp(app) && (
-                                  <>
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => {
-                                              setSelectedStreamApp(app);
-                                              setFeedItemsDialogOpen(true);
-                                            }}
-                                            className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
-                                          >
-                                            <List className="h-4 w-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>{t("viewContent")}</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => {
-                                              setSelectedStreamApp(app);
-                                              setSummaryListDialogOpen(true);
-                                            }}
-                                            className="h-8 w-8 hover:bg-green-500/10 hover:text-green-600"
-                                          >
-                                            <FileText className="h-4 w-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>{t("viewReport")}</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </>
-                                )}
-                                {/* 非 Stream 应用显示工作流按钮 */}
-                                {!isStreamApp(app) && (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() => {
-                                            setWorkflowApp(app);
-                                            setWorkflowDialogOpen(true);
-                                          }}
-                                          className="h-8 w-8 hover:bg-purple-500/10 hover:text-purple-600"
-                                        >
-                                          <Network className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>{t("workflowConfig")}</TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                )}
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                          setWorkflowApp(app);
+                                          setWorkflowDialogOpen(true);
+                                        }}
+                                        className="h-8 w-8 hover:bg-purple-500/10 hover:text-purple-600"
+                                      >
+                                        <Network className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{t("workflowConfig")}</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                                 {canSubmitAppReview(app) && (
                                   <TooltipProvider>
                                     <Tooltip>
@@ -1078,7 +906,7 @@ export default function AppsPage() {
                               ) : null;
                             })()}
                             <Badge variant="secondary" className="font-medium">
-                              {triggerLabel(app.app_type, t)}
+                              {presentationModeLabel(app.app_type, t)}
                             </Badge>
                             <Badge variant="secondary" className="font-medium">
                               <PlatformIcon className="h-3 w-3 mr-1" />
@@ -1117,69 +945,25 @@ export default function AppsPage() {
                               {new Date(app.updated_at || app.created_at).toLocaleDateString()}
                             </span>
                             <div className="flex gap-1">
-                              {isStreamApp(app) && (
-                                <>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedStreamApp(app);
-                                            setFeedItemsDialogOpen(true);
-                                          }}
-                                          className="h-8 w-8"
-                                        >
-                                          <List className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>{t("viewContent")}</TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedStreamApp(app);
-                                            setSummaryListDialogOpen(true);
-                                          }}
-                                          className="h-8 w-8"
-                                        >
-                                          <FileText className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>{t("viewReport")}</TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </>
-                              )}
-                              {!isStreamApp(app) && (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setWorkflowApp(app);
-                                          setWorkflowDialogOpen(true);
-                                        }}
-                                        className="h-8 w-8"
-                                      >
-                                        <Network className="h-4 w-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{t("workflowConfig")}</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              )}
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setWorkflowApp(app);
+                                        setWorkflowDialogOpen(true);
+                                      }}
+                                      className="h-8 w-8"
+                                    >
+                                      <Network className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{t("workflowConfig")}</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                               {canSubmitAppReview(app) && (
                                 <TooltipProvider>
                                   <Tooltip>
@@ -1363,28 +1147,13 @@ export default function AppsPage() {
               <p className="text-xs text-muted-foreground ml-6">{t("setAsDefaultDesc")}</p>
             </div>
 
-            {/*
-              触发方式 / 平台 / AI 模型 同一行。AI 模型对 Subscription、Custom
-              不适用，隐藏时列数跟着降到 2——否则会空出三分之一，看着像少了个字段。
-            */}
-            <div
-              className={`grid gap-4 ${
-                formData.app_type !== "Subscription" && formData.app_type !== "Custom"
-                  ? "grid-cols-3"
-                  : "grid-cols-2"
-              }`}
-            >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">{t("appType")}</Label>
                 <Select
                   value={formData.app_type}
                   onValueChange={(value: any) => {
-                    // 切换类型时清掉非本类型的专属 settings，不残留
                     const newSettings = { ...formData.settings };
-                    if (value !== "Subscription") {
-                      delete newSettings.stream_feed_ids;
-                      setStreamFeeds([]);
-                    }
                     if (value !== "Custom") {
                       delete newSettings.view_key;
                     }
@@ -1399,24 +1168,8 @@ export default function AppsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {/*
-                      触发方式 = 这个数字员工被什么触发。
-                      · 订阅聚合归到「定时任务」，但**底层值仍是 Subscription**——
-                        isStreamApp 靠它决定要不要显示订阅源管理（8 处调用）。
-                      · Tool / Plugin 已撤下：Plugin 属于「平台」维度（下面那个选择器），
-                        Tool 既不是触发方式也不是平台，生产上零使用。
-                        存量数据里若还有这两个值，下面的 legacy 分支仍会显示出来，
-                        不会变成一个空白的下拉框。
-                    */}
                     <SelectItem value="Chat">{t("chatType")}</SelectItem>
-                    <SelectItem value="Subscription">{t("subscriptionType")}</SelectItem>
-                    <SelectItem value="Email">{t("emailType")}</SelectItem>
                     <SelectItem value="Custom">{t("customType")}</SelectItem>
-                    {(formData.app_type === "Tool" || formData.app_type === "Plugin") && (
-                      <SelectItem value={formData.app_type}>
-                        {formData.app_type === "Tool" ? t("toolType") : t("pluginType")}
-                      </SelectItem>
-                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1442,7 +1195,7 @@ export default function AppsPage() {
                 </Select>
               </div>
 
-              {formData.app_type !== "Subscription" && formData.app_type !== "Custom" && (
+              {formData.app_type === "Chat" && (
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">{t("aiModel")}</Label>
                   <Select
@@ -1461,114 +1214,6 @@ export default function AppsPage() {
                 </div>
               )}
             </div>
-
-            {/* Stream 应用订阅源管理 */}
-            {formData.app_type === "Subscription" && (
-              <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-                <Label className="text-sm font-semibold">{t("subscriptionSource")}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={newStreamUrl}
-                    onChange={(e) => setNewStreamUrl(e.target.value)}
-                    placeholder={t("subscriptionUrlPlaceholder")}
-                    disabled={addingFeed}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddStreamUrl();
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleAddStreamUrl}
-                    disabled={addingFeed || !newStreamUrl}
-                  >
-                    {addingFeed ? <Loader2 className="h-4 w-4 animate-spin" /> : t("add")}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">{t("subscriptionUrlHelp")}</p>
-                {streamFeeds.length > 0 && (
-                  <div className="border rounded-md p-3 space-y-2 bg-background">
-                    {streamFeeds.map((feed) => (
-                      <div
-                        key={feed.id}
-                        className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50 gap-2 hover:bg-muted transition-colors"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <Badge variant="outline" className="text-xs shrink-0 font-medium">
-                            {feed.platform}
-                          </Badge>
-                          <span className="text-sm truncate font-medium" title={feed.url}>
-                            {feed.url || feed.name || feed.id}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveStreamFeed(feed.id)}
-                          className="h-7 w-7 p-0 hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="space-y-2 pt-2 border-t">
-                  <Label className="text-sm font-medium">{t("topicFilter")}</Label>
-                  <Input
-                    value={formData.settings?.topic || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        settings: {
-                          ...formData.settings,
-                          topic: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder={t("topicFilterPlaceholder")}
-                    maxLength={200}
-                  />
-                  <p className="text-xs text-muted-foreground">{t("topicFilterHelp")}</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">{t("webhookUrl")}</Label>
-                  <Input
-                    value={formData.settings?.webhook_url || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        settings: {
-                          ...formData.settings,
-                          webhook_url: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder={t("webhookUrlPlaceholder")}
-                    type="url"
-                  />
-                  <p className="text-xs text-muted-foreground">{t("webhookUrlHelp")}</p>
-                </div>
-
-                {/* Schedule Configuration */}
-                <ScheduleConfigSection
-                  schedule={formData.settings?.schedule || defaultScheduleSettings}
-                  onChange={(schedule) =>
-                    setFormData({
-                      ...formData,
-                      settings: {
-                        ...formData.settings,
-                        schedule,
-                      },
-                    })
-                  }
-                />
-              </div>
-            )}
 
             {/* Custom 应用：选择要渲染的自定义视图（选项来自前端注册表，写死） */}
             {formData.app_type === "Custom" && (
@@ -1674,9 +1319,7 @@ export default function AppsPage() {
               新建态没有 editingApp、也就没有 id 可跳，整块不显示——角色在应用
               建好之后编辑（后端建应用时已自动铺一份起始角色）。
             */}
-            {editingApp &&
-              formData.app_type !== "Subscription" &&
-              formData.app_type !== "Custom" && (
+            {editingApp && formData.app_type === "Chat" && (
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">{ts("agentMdMode")}</Label>
                   <div>
@@ -1694,9 +1337,7 @@ export default function AppsPage() {
                 </div>
               )}
 
-            {/* 关联知识库（Stream 应用不显示） */}
-            {formData.app_type !== "Subscription" && (
-              <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
                 <Label className="text-sm font-semibold">{t("relatedDatasets")}</Label>
                 <div className="flex items-center space-x-2 mb-3">
                   <Checkbox
@@ -1804,8 +1445,7 @@ export default function AppsPage() {
                     </div>
                   </TooltipProvider>
                 )}
-              </div>
-            )}
+            </div>
           </div>
           <DialogFooter className="pt-4 border-t gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
@@ -2113,31 +1753,6 @@ ${t("embedCodeComment2")}`;
         </DialogContent>
       </Dialog>
 
-      {/* Stream Agent 订阅内容查看弹窗 */}
-      <FeedItemsDialog
-        open={feedItemsDialogOpen}
-        onOpenChange={setFeedItemsDialogOpen}
-        feedIds={
-          Array.isArray(selectedStreamApp?.settings?.stream_feed_ids)
-            ? selectedStreamApp.settings.stream_feed_ids
-            : []
-        }
-        appName={selectedStreamApp?.name}
-      />
-
-      {/* Stream Agent 报告列表弹窗 */}
-      <SummaryListDialog
-        open={summaryListDialogOpen}
-        onOpenChange={setSummaryListDialogOpen}
-        feedIds={
-          Array.isArray(selectedStreamApp?.settings?.stream_feed_ids)
-            ? selectedStreamApp.settings.stream_feed_ids
-            : []
-        }
-        appName={selectedStreamApp?.name}
-        topic={selectedStreamApp?.settings?.topic}
-        webhookUrl={selectedStreamApp?.settings?.webhook_url}
-      />
     </div>
   );
 }
