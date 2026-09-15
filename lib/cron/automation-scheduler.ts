@@ -297,7 +297,6 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     mailbox: mailboxLabel,
     folder: config.folder || "INBOX",
     matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
-    priority: Number(config.priority ?? 50),
     from: message.from,
     to: message.to,
     subject: message.subject,
@@ -423,7 +422,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
       await recordAutomationEmailRuleEvaluations(
         tasks.map((task) => {
           const taskId = Number(task.id);
-          let outcome: "triggered" | "suppressed_by_priority" | "not_matched" | "duplicate";
+          let outcome: "triggered" | "not_matched" | "duplicate";
           if (!matchedIds.has(taskId)) {
             outcome = "not_matched";
           } else {
@@ -437,9 +436,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
             messageUid: uid,
             automationId: taskId,
             outcome,
-            winnerAutomationId: null,
             matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
-            priority: Number(task.trigger_config?.priority ?? 50),
             from: message.from,
             to: message.to,
             subject: message.subject,

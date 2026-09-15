@@ -440,12 +440,6 @@ function normalizeEmailRules(input: any): EmailTriggerRule[] {
     .slice(0, 20);
 }
 
-function normalizeEmailPriority(value: any) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 50;
-  return Math.max(0, Math.min(100, Math.round(parsed)));
-}
-
 /**
  * 取监听邮箱并校验归属（模块 D.2）。
  *
@@ -511,7 +505,6 @@ export async function createAutomation(userId: number, input: any) {
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode) === "any" ? "any" : "all",
       rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules),
-      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority),
     });
     nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
@@ -666,7 +659,6 @@ export async function updateAutomation(userId: number, id: number, input: any) {
       folder: String(input.mailFolder ?? input.triggerConfig?.folder ?? triggerConfig.folder ?? "INBOX"),
       ruleMode: (input.mailRuleMode ?? input.triggerConfig?.ruleMode ?? triggerConfig.ruleMode) === "any" ? "any" : "all",
       rules: normalizeEmailRules(input.mailRules ?? input.triggerConfig?.rules ?? triggerConfig.rules),
-      priority: normalizeEmailPriority(input.mailPriority ?? input.triggerConfig?.priority ?? triggerConfig.priority),
     };
     nextRunAt = null;
   } else if (triggerType === "自动化完成触发") {
@@ -1806,7 +1798,6 @@ export async function cleanupAutomationEmailProcessedMessages(now: Date = new Da
 
 export type AutomationEmailRuleOutcome =
   | "triggered"
-  | "suppressed_by_priority"
   | "not_matched"
   | "duplicate";
 
@@ -1817,9 +1808,7 @@ export type AutomationEmailRuleEvaluationInput = {
   messageUid?: number;
   automationId: number;
   outcome: AutomationEmailRuleOutcome;
-  winnerAutomationId?: number | null;
   matchedRule?: string;
-  priority?: number;
   from?: string;
   to?: string;
   subject?: string;
@@ -1852,22 +1841,20 @@ export async function recordAutomationEmailRuleEvaluations(
       Number.isFinite(Number(item.messageUid)) ? Number(item.messageUid) : null,
       item.automationId,
       item.outcome,
-      item.winnerAutomationId ?? null,
       item.matchedRule || null,
-      Number.isFinite(Number(item.priority)) ? Number(item.priority) : null,
       item.from || null,
       item.to || null,
       item.subject || null,
       item.date || null,
     );
-    const indexes = Array.from({ length: 13 }, (_, i) => `$${start + i + 1}`);
+    const indexes = Array.from({ length: 11 }, (_, i) => `$${start + i + 1}`);
     values.push(`(${indexes.join(",")},NOW())`);
   }
 
   await pool.query(
     `INSERT INTO automation_email_rule_events (
        created_by_user_id, mailbox_id, message_key, message_uid,
-       automation_id, outcome, winner_automation_id, matched_rule, priority,
+       automation_id, outcome, matched_rule,
        from_address, to_address, subject, message_date, created_at
      ) VALUES ${values.join(",")}
      ON CONFLICT (created_by_user_id, mailbox_id, message_key, automation_id) DO NOTHING`,
@@ -1883,7 +1870,6 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
        COUNT(*)::int AS scanned,
        COUNT(*) FILTER (WHERE outcome <> 'not_matched')::int AS matched,
        COUNT(*) FILTER (WHERE outcome = 'triggered')::int AS triggered,
-       COUNT(*) FILTER (WHERE outcome = 'suppressed_by_priority')::int AS suppressed,
        COUNT(*) FILTER (WHERE outcome = 'not_matched')::int AS not_matched,
        COUNT(*) FILTER (WHERE outcome = 'duplicate')::int AS duplicate
      FROM automation_email_rule_events
@@ -1894,7 +1880,7 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
   const recentResult = await pool.query(
     `SELECT
        id, mailbox_id, message_key, message_uid, automation_id, outcome,
-       winner_automation_id, matched_rule, priority,
+       matched_rule,
        from_address, to_address, subject, message_date, created_at
      FROM automation_email_rule_events
      WHERE created_by_user_id=$1 AND automation_id=$2
@@ -1908,7 +1894,6 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
     scanned: Number(row.scanned || 0),
     matched: Number(row.matched || 0),
     triggered: Number(row.triggered || 0),
-    suppressed: Number(row.suppressed || 0),
     notMatched: Number(row.not_matched || 0),
     duplicate: Number(row.duplicate || 0),
     recent: recentResult.rows.map((item: any) => ({
@@ -1918,10 +1903,7 @@ export async function getAutomationEmailRoutingStats(userId: number, automationI
       messageUid: item.message_uid == null ? undefined : Number(item.message_uid),
       automationId: Number(item.automation_id),
       outcome: item.outcome,
-      winnerAutomationId:
-        item.winner_automation_id == null ? undefined : Number(item.winner_automation_id),
       matchedRule: item.matched_rule || undefined,
-      priority: item.priority == null ? undefined : Number(item.priority),
       from: item.from_address || undefined,
       to: item.to_address || undefined,
       subject: item.subject || undefined,
@@ -2271,7 +2253,7 @@ export function automationRowToApi(row: any) {
     row.trigger_type === "定时触发"
       ? `${scheduleSummary} · ${scheduleTimezone}`
       : row.trigger_type === "邮件触发"
-        ? `${storedMailboxLabel(config.mailboxLabel) ?? "监听邮箱未配置"} · ${mailRulesBriefSummary(config.rules)} · 优先级 ${normalizeEmailPriority(config.priority)}`
+        ? `${storedMailboxLabel(config.mailboxLabel) ?? "监听邮箱未配置"} · ${mailRulesBriefSummary(config.rules)}`
         : row.trigger_type === "Webhook / API"
           ? "由外部系统通过 Webhook / API 触发"
           : "上游自动化完成后触发";
@@ -2336,7 +2318,6 @@ export function automationRowToApi(row: any) {
     mailFolder: config.folder || "INBOX",
     mailRuleMode: (config.ruleMode === "any" ? "any" : "all") as EmailRuleMode,
     mailRules: normalizeEmailRules(config.rules),
-    mailPriority: normalizeEmailPriority(config.priority),
     upstreamAutomationId: config.upstreamAutomationId ?? undefined,
     upstreamCondition: config.upstreamCondition ?? undefined,
     passPreviousResult: config.passPreviousResult ?? undefined,

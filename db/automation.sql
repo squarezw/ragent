@@ -235,9 +235,7 @@ CREATE TABLE IF NOT EXISTS automation_email_rule_events (
   message_uid BIGINT,
   automation_id INTEGER NOT NULL,
   outcome VARCHAR(40) NOT NULL,
-  winner_automation_id INTEGER,
   matched_rule TEXT,
-  priority INTEGER,
   from_address TEXT,
   to_address TEXT,
   subject TEXT,
@@ -334,6 +332,13 @@ BEGIN
       UNIQUE (created_by_user_id, mailbox_id, message_key, automation_id);
   END IF;
 END $$;
+
+
+-- ── 迁移：优先级与「胜出者」概念废弃（改为一封邮件命中的每条自动化都执行）────────
+--
+-- 两列都是 DROP IF EXISTS：全新库上面已不声明它们（no-op），旧库在这里被清掉。
+ALTER TABLE automation_email_rule_events DROP COLUMN IF EXISTS priority;
+ALTER TABLE automation_email_rule_events DROP COLUMN IF EXISTS winner_automation_id;
 
 
 -- ── 结果 ────────────────────────────────────────────────────────────────────

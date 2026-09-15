@@ -172,3 +172,29 @@ test("claim 的 ON CONFLICT 目标是四列，与唯一键一致", () => {
     "ON CONFLICT 目标必须与唯一键的四列完全一致"
   );
 });
+
+test("db/automation.sql 不再声明 priority / winner_automation_id（随优先级一起废弃）", () => {
+  const source = withoutComments(readFileSync(AUTOMATION_SQL, "utf8"));
+  const table = source.match(
+    /CREATE TABLE IF NOT EXISTS automation_email_rule_events \([\s\S]*?\n\);/
+  );
+  assert.ok(table, "db/automation.sql 里找不到 automation_email_rule_events 的建表语句");
+
+  assert.doesNotMatch(table[0], /\bpriority\b/i, "priority 列应已从建表语句移除");
+  assert.doesNotMatch(table[0], /\bwinner_automation_id\b/i, "winner_automation_id 列应已移除");
+});
+
+test("自动化模块里不再出现优先级 / 胜出者概念", () => {
+  const offenders: string[] = [];
+  for (const root of ["lib/automation", "lib/cron"]) {
+    for (const file of sourceFilesUnder(root)) {
+      const source = withoutComments(readFileSync(file, "utf8"));
+      for (const match of source.matchAll(
+        /suppressed_by_priority|winnerAutomationId|normalizeEmailPriority|mailPriority/g
+      )) {
+        offenders.push(`${file}: ${match[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `优先级与胜出者概念应已彻底移除：\n${offenders.join("\n")}`);
+});
