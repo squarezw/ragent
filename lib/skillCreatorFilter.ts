@@ -18,10 +18,7 @@ export function getSkillCreators(skills: Skill[]): SkillCreator[] {
   return [...creators.values()];
 }
 
-export function filterSkillsByCreator(
-  skills: Skill[],
-  creatorId: CreatorFilterValue
-): Skill[] {
+export function filterSkillsByCreator(skills: Skill[], creatorId: CreatorFilterValue): Skill[] {
   if (creatorId == null) return skills;
   return skills.filter((skill) => skill.user_id === creatorId);
 }
