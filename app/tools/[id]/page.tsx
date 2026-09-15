@@ -31,11 +31,21 @@ import {
   XCircle,
   Activity,
   Maximize2,
+  PlugZap,
+  CircleCheck,
+  CircleAlert,
+  CircleHelp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useTool } from "@/hooks/useTools";
+import {
+  useTool,
+  testToolConnection,
+  Tool,
+  ToolConnectionTestResult,
+  formatTokens,
+} from "@/hooks/useTools";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import { useToolExecutions, useToolStatistics } from "@/hooks/useToolExecutions";
 
 export default function ToolDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -50,10 +60,17 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
   const [detailType, setDetailType] = useState<"input" | "output">("input");
   const [detailContent, setDetailContent] = useState<any>(null);
   const [detailTitle, setDetailTitle] = useState("");
+  // 体检：结果就地展示（详情页有位置说清原因，不需要弹 toast），
+  // 完成后刷新工具详情，让"连接状态"这一块跟着更新
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ToolConnectionTestResult | null>(null);
 
   const { user } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
-  const { tool, loading: toolLoading } = useTool(toolId, true, isSuperAdmin);
+  // 体检端点要的是"超管或租户管理员"（与工具列表页同一判据）——
+  // 只按超管显示按钮的话，租户管理员在这儿会看不到这个功能
+  const canManageTools = isSuperAdmin || checkTenantAdmin(user);
+  const { tool, loading: toolLoading, refresh: refreshTool } = useTool(toolId, true, isSuperAdmin);
   const {
     executions,
     total,
@@ -91,6 +108,18 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
     setDetailContent(content);
     setDetailTitle(title);
     setDetailDialogOpen(true);
+  };
+
+  const handleTestConnection = async () => {
+    if (!tool) return;
+    setTesting(true);
+    try {
+      const result = await testToolConnection(tool.id);
+      setTestResult(result);
+      if (result) refreshTool();
+    } finally {
+      setTesting(false);
+    }
   };
 
   const formatContent = (content: any): string => {
@@ -210,6 +239,92 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
             <div className="text-sm text-muted-foreground mb-1">{t("systemTool")}</div>
             <div>{tool.is_system ? t("yes") : t("no")}</div>
           </div>
+
+          {/* 连接状态。只有 MCP 工具有"连得上吗"这回事 —— native / workflow 不建立连接。
+              这一块存在的理由：注册是按需的（启动时不连），从没被用过的工具在
+              列表页什么都看不出来，而"这条连接还能不能用"原先只能去聊天里发句话试。 */}
+          {tool.tool_type === "mcp" && (
+            <div className="col-span-2">
+              <div className="text-sm text-muted-foreground mb-1">{t("connectionStatus")}</div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <ConnectionStateBadge footprint={tool.footprint} />
+                {tool.footprint?.status === "ok" && (
+                  <span className="text-xs text-muted-foreground">
+                    {t("footprintSummary", {
+                      count: tool.footprint.subtool_count,
+                      tokens: formatTokens(tool.footprint.estimated_tokens),
+                    })}
+                    {tool.footprint.checked_at
+                      ? ` · ${t("connOkCheckedHint", {
+                          time: new Date(tool.footprint.checked_at * 1000).toLocaleString(),
+                        })}`
+                      : ` · ${t("connOkHint")}`}
+                  </span>
+                )}
+                {canManageTools && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestConnection}
+                    disabled={testing}
+                    title={t("testConnectionHint")}
+                  >
+                    {testing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <PlugZap className="h-4 w-4 mr-2" />
+                    )}
+                    {testing ? t("testConnectionRunning") : t("testConnection")}
+                  </Button>
+                )}
+              </div>
+
+              {/* 失败/未配置的原因：正文位置说清楚，别塞进 tooltip —— 这是用户来这一页
+                  要找的东西。四档分开说，unconfigured 要改配置、failed 要查对端。 */}
+              {tool.footprint &&
+                (tool.footprint.status === "failed" ||
+                  tool.footprint.status === "unconfigured") && (
+                  <div
+                    className={`mt-2 min-w-0 max-w-full break-words text-xs [overflow-wrap:anywhere] ${
+                      tool.footprint.status === "failed"
+                        ? "text-destructive"
+                        : "text-amber-600 dark:text-amber-500"
+                    }`}
+                  >
+                    {tool.footprint.status === "failed"
+                      ? t("connFailedHint")
+                      : t("connUnconfiguredHint")}
+                    {tool.footprint.error ? ` ${tool.footprint.error}` : ""}
+                  </div>
+                )}
+
+              {/* 刚做完的那次体检结果。与上面那块（注册表里已有的结论）分开显示：
+                  一次体检可能改了状态，而工具详情是刷新后才回来的，两者短暂并存。 */}
+              {testResult && (
+                <div className="mt-2 min-w-0 max-w-full break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  {testResult.status === "ok" &&
+                    t("testOk", {
+                      name: tool.display_name,
+                      count: testResult.subtool_count,
+                      tokens: formatTokens(testResult.estimated_tokens),
+                      ms: testResult.duration_ms,
+                    })}
+                  {testResult.status === "failed" &&
+                    t("testFailed", {
+                      name: tool.display_name,
+                      reason: testResult.error || "-",
+                    })}
+                  {testResult.status === "unconfigured" &&
+                    t("testUnconfigured", {
+                      name: tool.display_name,
+                      reason: testResult.error || "-",
+                    })}
+                  {testResult.status === "not_applicable" &&
+                    t("testNotApplicable", { name: tool.display_name })}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="col-span-2">
             <div className="text-sm text-muted-foreground mb-1">{t("description")}</div>
@@ -501,5 +616,49 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * 详情页的连接状态徽标。
+ *
+ * 与列表页共用同一套文案键与同一套四档判据 —— 两处口径必须一致，否则同一个工具
+ * 会出现"列表显示未配置、点进来显示未验证"这种只能靠逐个核对才发现的分歧。
+ *
+ * 四档为什么要分开：`unconfigured`（配置没填完，后端连试都没试）要去**改配置**，
+ * `failed`（配置完整但连不上）要去**查对端或网络**，未验证（从没被用过）什么都不用做。
+ */
+function ConnectionStateBadge({ footprint }: { footprint?: Tool["footprint"] }) {
+  const t = useTranslations("tools");
+
+  if (!footprint) {
+    return (
+      <Badge variant="outline" className="gap-1">
+        <CircleHelp className="h-3 w-3" />
+        {t("connUntested")}
+      </Badge>
+    );
+  }
+  if (footprint.status === "unconfigured") {
+    return (
+      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 gap-1">
+        <CircleAlert className="h-3 w-3" />
+        {t("connUnconfigured")}
+      </Badge>
+    );
+  }
+  if (footprint.status === "failed") {
+    return (
+      <Badge className="bg-red-100 text-red-800 hover:bg-red-100 gap-1">
+        <CircleAlert className="h-3 w-3" />
+        {t("connFailed")}
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="bg-green-100 text-green-800 hover:bg-green-100 gap-1">
+      <CircleCheck className="h-3 w-3" />
+      {t("connOk")}
+    </Badge>
   );
 }

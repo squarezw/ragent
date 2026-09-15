@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import { useBuiltinTools } from "@/hooks/useBuiltinTools";
@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -35,9 +36,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Edit, Trash2, Eye, Loader2, Wrench, Code, Globe } from "lucide-react";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Eye,
+  Loader2,
+  Wrench,
+  Code,
+  Globe,
+  PlugZap,
+  CircleCheck,
+  CircleAlert,
+  CircleHelp,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useTools, Tool } from "@/hooks/useTools";
+import { toast } from "sonner";
+import { useTools, Tool, ToolConnectionTestResult, formatTokens } from "@/hooks/useTools";
 import { ToolFormDialog } from "./components/ToolFormDialog";
 
 // 获取工具类型图标（兜底图标）
@@ -91,6 +106,11 @@ export default function ToolsPage() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
+  // 正在体检的工具 id。用 Set 而不是单个 id：批量体检时会有多行同时在转。
+  const [testingIds, setTestingIds] = useState<Set<number>>(new Set());
+  // 批量体检进度。running 只用来禁按钮；done/total 是给用户"还剩多少"的读数 ——
+  // 一页 20 个 MCP 工具、每个最慢 20s，没有进度时界面看起来和卡死没区别。
+  const [bulkTest, setBulkTest] = useState({ running: false, done: 0, total: 0 });
 
   const { user } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
@@ -99,12 +119,21 @@ export default function ToolsPage() {
   // 就能改能删。按钮留给点不动的人，等于把 403 当交互。
   const canManageTools = isSuperAdmin || checkTenantAdmin(user);
 
-  const { tools, total, loading, createTool, updateTool, deleteTool, toggleToolEnabled, refresh } =
-    useTools({
-      is_enabled: isEnabled,
-      page,
-      page_size: 20,
-    });
+  const {
+    tools,
+    total,
+    loading,
+    createTool,
+    updateTool,
+    deleteTool,
+    toggleToolEnabled,
+    testConnection,
+    refresh,
+  } = useTools({
+    is_enabled: isEnabled,
+    page,
+    page_size: 20,
+  });
   const {
     builtins,
     meta: builtinMeta,
@@ -147,6 +176,121 @@ export default function ToolsPage() {
     setEditingTool(null);
     if (success) {
       refresh();
+    }
+  };
+
+  const markTesting = (id: number, on: boolean) =>
+    setTestingIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  /**
+   * 体检结果的播报。
+   *
+   * 光刷新列表是不够的：用户点了按钮之后如果只看到"什么都没发生"（未验证的工具
+   * 体检失败后名字下方那行小字也不显眼），他会再点一次。所以结论必须弹出来，
+   * 而且**四档分开说** —— unconfigured 是"去改配置"，failed 是"查对端或网络"，
+   * 两者都报成"连接失败"会让人去排查一个不存在的问题。
+   */
+  const reportTestResult = (tool: Tool, result: ToolConnectionTestResult | null) => {
+    if (!result) {
+      toast.error(t("testRequestFailed"));
+      return;
+    }
+    switch (result.status) {
+      case "ok":
+        toast.success(
+          t("testOk", {
+            name: tool.display_name,
+            count: result.subtool_count,
+            tokens: formatTokens(result.estimated_tokens),
+            ms: result.duration_ms,
+          })
+        );
+        break;
+      case "failed":
+        toast.error(t("testFailed", { name: tool.display_name, reason: result.error || "-" }));
+        break;
+      case "unconfigured":
+        toast.warning(
+          t("testUnconfigured", { name: tool.display_name, reason: result.error || "-" })
+        );
+        break;
+      default:
+        toast.info(t("testNotApplicable", { name: tool.display_name }));
+    }
+  };
+
+  const handleTest = async (tool: Tool) => {
+    markTesting(tool.id, true);
+    try {
+      reportTestResult(tool, await testConnection(tool.id));
+    } finally {
+      markTesting(tool.id, false);
+    }
+  };
+
+  /**
+   * 批量体检本页的 MCP 工具。
+   *
+   * 并发上限 4：一次全发出去的话，每行都在 20s 超时窗口里，对端被同时敲 20 次，
+   * 而本机那个 aiohttp/httpx 连接池也会被打满 —— 结果是一片假超时。
+   */
+  const handleTestAll = async () => {
+    const targets = tools.filter((x) => x.tool_type === "mcp");
+    if (targets.length === 0) {
+      toast.info(t("testAllNone"));
+      return;
+    }
+
+    setBulkTest({ running: true, done: 0, total: targets.length });
+    const results: { tool: Tool; result: ToolConnectionTestResult | null }[] = [];
+    const queue = [...targets];
+
+    const worker = async () => {
+      for (let tool = queue.shift(); tool; tool = queue.shift()) {
+        markTesting(tool.id, true);
+        try {
+          const result = await testConnection(tool.id);
+          results.push({ tool, result });
+        } catch {
+          results.push({ tool, result: null });
+        } finally {
+          markTesting(tool.id, false);
+          setBulkTest((prev) => ({ ...prev, done: prev.done + 1 }));
+        }
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: Math.min(4, targets.length) }, () => worker()));
+    } finally {
+      setBulkTest({ running: false, done: 0, total: 0 });
+    }
+
+    const ok = results.filter((r) => r.result?.status === "ok");
+    const bad = results.filter((r) => r.result && r.result.status !== "ok");
+    const unknown = results.filter((r) => !r.result);
+    // 逐条弹 20 个 toast 会把屏幕刷满，所以汇总成一条并点名前几个 ——
+    // 要找细节可将焦点放到名字下方的连接状态上查看。
+    if (bad.length === 0 && unknown.length === 0) {
+      toast.success(t("testAllOk", { count: ok.length }));
+    } else {
+      toast.error(
+        t("testAllFailed", {
+          ok: ok.length,
+          failed: bad.length,
+          unknown: unknown.length,
+          names: bad
+            .concat(unknown)
+            .slice(0, 3)
+            .map((r) => r.tool.display_name)
+            .join("、"),
+        })
+      );
     }
   };
 
@@ -204,6 +348,27 @@ export default function ToolsPage() {
                 )}
               </div>
 
+              {tab === "managed" && canManageTools && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestAll}
+                  disabled={bulkTest.running}
+                >
+                  {bulkTest.running ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <PlugZap className="h-4 w-4 mr-1" />
+                  )}
+                  {bulkTest.running
+                    ? t("testConnectionProgress", {
+                        done: bulkTest.done,
+                        total: bulkTest.total,
+                      })
+                    : t("testConnectionAll")}
+                </Button>
+              )}
+
               {tab === "managed" && (
                 <Select
                   value={isEnabled === undefined ? "all" : isEnabled ? "enabled" : "disabled"}
@@ -240,29 +405,29 @@ export default function ToolsPage() {
           ) : tools.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">{t("noData")}</div>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("name")}</TableHead>
-                  <TableHead>{t("category")}</TableHead>
-                  <TableHead>{t("description")}</TableHead>
-                  <TableHead>{t("creator")}</TableHead>
-                  <TableHead>{t("status")}</TableHead>
-                  <TableHead className="text-right">{t("actions")}</TableHead>
+                  <TableHead className="w-[30%]">{t("name")}</TableHead>
+                  <TableHead className="w-[10%]">{t("category")}</TableHead>
+                  <TableHead className="w-[22%]">{t("description")}</TableHead>
+                  <TableHead className="w-[13%]">{t("creator")}</TableHead>
+                  <TableHead className="w-[12%]">{t("status")}</TableHead>
+                  <TableHead className="w-[13%] text-right">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tools.map((tool) => (
                   <TableRow key={tool.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
+                    <TableCell className="w-[30%] font-medium">
+                      <div className="flex min-w-0 items-center gap-2">
                         <ToolIcon tool={tool} />
-                        <div>
-                          <div>{tool.display_name}</div>
-                          {/* 提示词占用：绑定这个工具后每一轮对话要多付多少。
-                              放在工具名下方而不是另开一列 —— 这个数字是这个工具的属性，
-                              离开它就要靠人对行号，容易看串。 */}
-                          <ToolFootprintHint footprint={tool.footprint} />
+                        <div className="min-w-0">
+                          <div className="truncate">{tool.display_name}</div>
+                          {/* 连接情况放名字下方而不是另开一列：它是这个工具的属性，
+                              离开名字就要靠人对行号，容易看串。
+                              与提示词占用同一行 —— 两件事都是"这个工具现在是什么状态"。 */}
+                          <ToolConnectionStatus tool={tool} />
                         </div>
                       </div>
                     </TableCell>
@@ -288,6 +453,24 @@ export default function ToolsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {/* 体检只对 MCP 工具有意义（native / workflow 不建立连接），
+                            且只有管理员调得动后端那个端点 —— 按钮留给点不动的人，
+                            等于把 403 当交互。 */}
+                        {canManageTools && tool.tool_type === "mcp" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleTest(tool)}
+                            disabled={testingIds.has(tool.id) || bulkTest.running}
+                            title={t("testConnection")}
+                          >
+                            {testingIds.has(tool.id) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <PlugZap className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -359,7 +542,7 @@ export default function ToolsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("deleteConfirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("deleteConfirmDescription", { name: selectedTool?.display_name })}
+              {t("deleteConfirmDescription", { name: selectedTool?.display_name ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -387,34 +570,137 @@ export default function ToolsPage() {
 }
 
 /**
- * 工具的提示词占用。
+ * 工具的连接情况（顺带提示词占用）。
  *
- * 一个 MCP 工具在这张表里只是一行，运行时却可能展开成几十个子工具的完整
- * JSON Schema，且每一轮对话都全量重发。2026-08-25 实测：一句「你好」耗
- * 39,550 输入 token，其中约 92% 是工具定义，企查查那四个端点独占 86%。
- * 这个提示的意义就是让绑定成本在勾选那一刻可见，而不是等看账单才发现。
+ * 放在一起是因为用户问的是同一个问题的两半：这个工具**现在能不能用**、用起来**多贵**。
+ *
+ * 四档，**不能压成两档**：
+ *
+ * - 已连接（ok）→ 绿勾 + "N 个子工具 · 约 X tokens/轮"
+ * - 连接失败（failed）→ 红字 + 原因。原先这档只有一句"未注册成功，模型调不到"，
+ *   说不出为什么；而"密钥过期"和"对端不在"要做的处置完全相反。
+ * - 未配置（unconfigured）→ 琥珀色 + 缺哪一项。后端**没发任何网络请求**就判出来了
+ *   （占位值 / 环境变量未设置），处置是去改配置，不是等对端恢复。
+ * - 未验证（没有 footprint）→ 灰字。配置完整，但还没有任何请求用过它、也没体检过。
+ *   注册是**按需**的（启动时不注册），所以这是**正常状态**，不是"坏的"——
+ *   这正是它必须和"失败"长得不一样的原因，否则每个新工具看起来都是坏的。
+ *
+ * native / workflow 不建立连接 → 什么都不画（画"未验证"会误导）。
  */
-function ToolFootprintHint({ footprint }: { footprint?: Tool["footprint"] }) {
+function ToolConnectionStatus({ tool }: { tool: Tool }) {
   const t = useTranslations("tools");
-  // 缺席 = 这个工具不走 MCP 注册（native / workflow），不是"占用为 0"。
-  // 硬造一个 0 会让两种完全不同的情况看起来一样。
-  if (!footprint) return null;
 
-  if (footprint.status === "failed") {
-    // 连不上的服务器在这张表里和正常工具长得一模一样，而模型根本调不到它。
-    return <div className="text-xs text-destructive">{t("footprintUnavailable")}</div>;
+  if (tool.tool_type !== "mcp") return null;
+
+  const fp = tool.footprint;
+
+  if (!fp) {
+    return (
+      <div
+        className="flex items-center gap-1 text-xs text-muted-foreground"
+        title={t("connUntestedHint")}
+      >
+        <CircleHelp className="h-3 w-3 shrink-0" />
+        <span>{t("connUntested")}</span>
+      </div>
+    );
+  }
+
+  if (fp.status === "unconfigured") {
+    return (
+      <ConnectionStatusTooltip
+        ariaLabel={t("connStatusWithReason", {
+          status: t("connUnconfigured"),
+          reason: fp.error || t("connNoDiagnostic"),
+        })}
+        error={fp.error}
+        hint={t("connUnconfiguredHint")}
+        icon={<CircleAlert className="h-3 w-3 shrink-0" />}
+        label={t("connUnconfigured")}
+        statusClassName="text-amber-600 dark:text-amber-500"
+      />
+    );
+  }
+
+  if (fp.status === "failed") {
+    return (
+      <ConnectionStatusTooltip
+        ariaLabel={t("connStatusWithReason", {
+          status: t("connFailed"),
+          reason: fp.error || t("connNoDiagnostic"),
+        })}
+        error={fp.error}
+        hint={t("connFailedHint")}
+        icon={<CircleAlert className="h-3 w-3 shrink-0" />}
+        label={t("connFailed")}
+        statusClassName="text-destructive"
+      />
+    );
   }
 
   return (
-    <div className="text-xs text-muted-foreground">
-      {t("footprintSummary", {
-        count: footprint.subtool_count,
-        tokens: formatTokens(footprint.estimated_tokens),
-      })}
+    <div
+      className="flex items-center gap-1 text-xs text-muted-foreground"
+      title={
+        fp.checked_at
+          ? t("connOkCheckedHint", {
+              time: new Date(fp.checked_at * 1000).toLocaleString(),
+            })
+          : t("connOkHint")
+      }
+    >
+      <CircleCheck className="h-3 w-3 shrink-0 text-green-600" />
+      <span>
+        {t("footprintSummary", {
+          count: fp.subtool_count,
+          tokens: formatTokens(fp.estimated_tokens),
+        })}
+      </span>
     </div>
   );
 }
 
-function formatTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+function ConnectionStatusTooltip({
+  ariaLabel,
+  error,
+  hint,
+  icon,
+  label,
+  statusClassName,
+}: {
+  ariaLabel: string;
+  error?: string | null;
+  hint: string;
+  icon: ReactNode;
+  label: string;
+  statusClassName: string;
+}) {
+  const t = useTranslations("tools");
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={`flex items-center gap-1 text-left text-xs ${statusClassName}`}
+            aria-label={ariaLabel}
+          >
+            {icon}
+            <span>{label}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[calc(100vw-2rem)] break-words sm:max-w-md">
+          <div className="space-y-1">
+            <p>{hint}</p>
+            {error && (
+              <p className="text-muted-foreground">
+                {t("connDiagnostic")}: {error}
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
