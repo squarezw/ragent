@@ -253,12 +253,16 @@ test("全部 claim 成功的任务交给 Promise.allSettled 并发执行", () =>
 test("游标在全部执行 settle 之后推进", () => {
   const fn = body(readFileSync(SCHEDULER, "utf8"), "processEmailMailboxGroup");
   const executed = fn.indexOf("Promise.allSettled(");
-  const cursor = fn.indexOf("saveAutomationEmailMailboxCursor(");
+  assert.ok(executed >= 0, "找不到 Promise.allSettled(");
 
-  assert.ok(executed >= 0 && cursor >= 0, "两处调用都应当存在");
+  // 必须从 executed 之后再找游标写入：本函数开头建立基线时（`if (!cursor.initialized)`
+  // 那个早退分支）也会调一次 saveAutomationEmailMailboxCursor，用 indexOf 会取到那一次，
+  // 位置在执行之前 —— 正确的代码也会被判红。
+  const cursor = fn.indexOf("saveAutomationEmailMailboxCursor(", executed);
+
   assert.ok(
-    executed < cursor,
-    "游标必须在执行之后推进：提前推进会让崩溃时「邮件已标记处理、实际没跑、且不再重试」"
+    cursor >= 0,
+    "执行之后必须仍有游标推进：提前推进会让崩溃时「邮件已标记处理、实际没跑、且不再重试」"
   );
 });
 ```
