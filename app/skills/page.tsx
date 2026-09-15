@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +32,9 @@ import { Loader2, Plus, Search, Sparkles, Terminal, Upload } from "lucide-react"
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills } from "@/hooks/useSkills";
-import {
-  hasUnpublishedChanges,
-  resolveReviewStatus,
-  reviewStatusBadge,
-} from "@/lib/reviewStatus";
+import { hasUnpublishedChanges, resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
 import { canEditSkill } from "@/lib/skillPermissions";
+import { filterSkillsByCreator, getSkillCreators } from "@/lib/skillCreatorFilter";
 import { checkDeptAdmin, checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import type { Skill } from "@/types/skill";
 
@@ -59,6 +56,7 @@ export default function SkillsPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch] = useDebounce(search, 300);
+  const [creatorId, setCreatorId] = useState<number | null>(null);
 
   // 组织筛选。null = 这个角色不显示筛选器（普通用户）。
   const [orgFilter, setOrgFilter] = useState<SkillOrgFilterValue | null>(null);
@@ -84,6 +82,11 @@ export default function SkillsPage() {
     tenantId: orgFilter?.tenantId ?? null,
     deptId: orgFilter?.deptId ?? null,
   });
+  const creators = useMemo(() => getSkillCreators(skills), [skills]);
+  const filteredSkills = useMemo(
+    () => filterSkillsByCreator(skills, creatorId),
+    [skills, creatorId]
+  );
 
   // 删除被引用时（409）弹引用应用清单
   const [referencedApps, setReferencedApps] = useState<any[] | null>(null);
@@ -163,129 +166,178 @@ export default function SkillsPage() {
               <Button onClick={() => router.push("/skills/new")}>{t("createSkill")}</Button>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("displayName")}</TableHead>
-                  <TableHead className="max-w-md">{t("description")}</TableHead>
-                  <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
-                  <TableHead className="whitespace-nowrap">{t("visibility")}</TableHead>
-                  <TableHead className="whitespace-nowrap">{t("columnOwner")}</TableHead>
-                  <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
-                  <TableHead className="text-right">{tc("actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {skills.map((skill) => {
-                  const status = resolveReviewStatus(skill.status, skill.published_content);
-                  const badge = reviewStatusBadge(status);
-                  const unpublishedChanges = hasUnpublishedChanges(
-                    skill.content,
-                    skill.published_content
-                  );
-                  const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin);
-                  return (
-                    <TableRow
-                      key={skill.id}
-                      className={canEdit ? "cursor-pointer" : ""}
-                      onClick={canEdit ? () => router.push(`/skills/${skill.id}`) : undefined}
+            <>
+              <div className="flex min-w-0 items-center gap-3 border-b pb-4">
+                <span className="shrink-0 text-sm font-medium">{t("filterCreator")}</span>
+                <div className="min-w-0 overflow-x-auto">
+                  <div className="flex min-w-max gap-2 pb-1">
+                    <Button
+                      aria-pressed={creatorId === null}
+                      className="shrink-0 whitespace-nowrap"
+                      onClick={() => setCreatorId(null)}
+                      size="sm"
+                      variant={creatorId === null ? "default" : "outline"}
                     >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {/* 不换行：加了徽标后这一格更窄，中文显示名会被压成一列一个字 */}
-                          <span className="whitespace-nowrap">{skill.display_name}</span>
-                        {/* 会在沙箱里跑代码的 skill：图标而非徽标，这一列还要放
-                            「平台维护」徽标，两个方块并排会把显示名挤掉 */}
-                        {skill.is_executable && (
-                          <Terminal className="h-3.5 w-3.5 shrink-0 text-sky-600">
-                            <title>{t("executableHint")}</title>
-                          </Terminal>
-                        )}
-                          {/* 内置技能没有编辑/删除按钮，光藏起来用户不知道为什么。
-                              徽标 + hover 说明，比一个凭空消失的按钮好懂。 */}
-                          {skill.is_managed && (
-                            <Badge
-                              variant="outline"
-                              className="text-xs shrink-0 font-normal"
-                              title={t("managedHint")}
-                            >
-                              {t("managed")}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-md">
-                        <span className="line-clamp-2 text-sm text-muted-foreground">
-                          {skill.description}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {/* 作者账号注销后 author 为空：显示占位符而不是空白单元格，
-                            空白会让人以为是渲染坏了 */}
-                        {skill.author || <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={`text-xs ${visibilityColors[skill.visibility] || visibilityColors.private}`}
+                      {t("allCreators")}
+                    </Button>
+                    {creators.map((creator) => (
+                      <Button
+                        aria-pressed={creatorId === creator.userId}
+                        className="shrink-0 whitespace-nowrap"
+                        key={creator.userId}
+                        onClick={() => setCreatorId(creator.userId)}
+                        size="sm"
+                        variant={creatorId === creator.userId ? "default" : "outline"}
+                      >
+                        {creator.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {filteredSkills.length === 0 ? (
+                <div className="py-12 text-center">
+                  <h3 className="mb-2 text-lg font-medium">{t("noSkillsForCreator")}</h3>
+                  <Button onClick={() => setCreatorId(null)} variant="outline">
+                    {t("allCreators")}
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("displayName")}</TableHead>
+                      <TableHead className="max-w-md">{t("description")}</TableHead>
+                      <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
+                      <TableHead className="whitespace-nowrap">{t("visibility")}</TableHead>
+                      <TableHead className="whitespace-nowrap">{t("columnOwner")}</TableHead>
+                      <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
+                      <TableHead className="text-right">{tc("actions")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSkills.map((skill) => {
+                      const status = resolveReviewStatus(skill.status, skill.published_content);
+                      const badge = reviewStatusBadge(status);
+                      const unpublishedChanges = hasUnpublishedChanges(
+                        skill.content,
+                        skill.published_content
+                      );
+                      const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin);
+                      return (
+                        <TableRow
+                          key={skill.id}
+                          className={canEdit ? "cursor-pointer" : ""}
+                          onClick={canEdit ? () => router.push(`/skills/${skill.id}`) : undefined}
                         >
-                          {t(`visibility_${skill.visibility}`)}
-                        </Badge>
-                      </TableCell>
-                      {/* 归属：这个 Skill 挂在哪个租户/部门。筛选了却看不出每条挂在哪，
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {/* 不换行：加了徽标后这一格更窄，中文显示名会被压成一列一个字 */}
+                              <span className="whitespace-nowrap">{skill.display_name}</span>
+                              {/* 会在沙箱里跑代码的 skill：图标而非徽标，这一列还要放
+                            「平台维护」徽标，两个方块并排会把显示名挤掉 */}
+                              {skill.is_executable && (
+                                <Terminal className="h-3.5 w-3.5 shrink-0 text-sky-600">
+                                  <title>{t("executableHint")}</title>
+                                </Terminal>
+                              )}
+                              {/* 内置技能没有编辑/删除按钮，光藏起来用户不知道为什么。
+                              徽标 + hover 说明，比一个凭空消失的按钮好懂。 */}
+                              {skill.is_managed && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs shrink-0 font-normal"
+                                  title={t("managedHint")}
+                                >
+                                  {t("managed")}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-md">
+                            <span className="line-clamp-2 text-sm text-muted-foreground">
+                              {skill.description}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {/* 作者账号注销后 author 为空：显示占位符而不是空白单元格，
+                            空白会让人以为是渲染坏了 */}
+                            {skill.author || <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={`text-xs ${visibilityColors[skill.visibility] || visibilityColors.private}`}
+                            >
+                              {t(`visibility_${skill.visibility}`)}
+                            </Badge>
+                          </TableCell>
+                          {/* 归属：这个 Skill 挂在哪个租户/部门。筛选了却看不出每条挂在哪，
                           用户没法判断筛选到底生效没有，也没法判断该改谁的归属。
                           部门优先显示 —— 它是更细的那一层，也是复用范围的起点。 */}
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                        {skill.owner_dept_name || skill.owner_tenant_name ? (
-                          <span title={[skill.owner_tenant_name, skill.owner_dept_name].filter(Boolean).join(" / ")}>
-                            {skill.owner_dept_name || skill.owner_tenant_name}
-                          </span>
-                        ) : (
-                          <span className="italic">{t("ownerUnassigned")}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          <Badge variant={badge.variant} className={badge.className}>
-                            {t(badge.labelKey)}
-                          </Badge>
-                          {unpublishedChanges && (
-                            <Badge variant="outline" className="text-amber-600 border-amber-300">
-                              {t("statusUnpublishedChanges")}
-                            </Badge>
-                          )}
-                          {!skill.is_active && <Badge variant="destructive">{t("inactive")}</Badge>}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-end gap-2">
-                          {/* 没有写权限的人：编辑/删除藏掉，**查看也一并藏掉**——跨租户的
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {skill.owner_dept_name || skill.owner_tenant_name ? (
+                              <span
+                                title={[skill.owner_tenant_name, skill.owner_dept_name]
+                                  .filter(Boolean)
+                                  .join(" / ")}
+                              >
+                                {skill.owner_dept_name || skill.owner_tenant_name}
+                              </span>
+                            ) : (
+                              <span className="italic">{t("ownerUnassigned")}</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              <Badge variant={badge.variant} className={badge.className}>
+                                {t(badge.labelKey)}
+                              </Badge>
+                              {unpublishedChanges && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-amber-600 border-amber-300"
+                                >
+                                  {t("statusUnpublishedChanges")}
+                                </Badge>
+                              )}
+                              {!skill.is_active && (
+                                <Badge variant="destructive">{t("inactive")}</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-end gap-2">
+                              {/* 没有写权限的人：编辑/删除藏掉，**查看也一并藏掉**——跨租户的
                               公开技能在列表里只展示一行，既不能改也不能点进去看详情。
                               操作列空白，而不是放一个「查看」按钮骗人能进去。 */}
-                          {canEdit && (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => router.push(`/skills/${skill.id}`)}
-                              >
-                                {tc("edit")}
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDelete(skill)}
-                              >
-                                {tc("delete")}
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                              {canEdit && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => router.push(`/skills/${skill.id}`)}
+                                  >
+                                    {tc("edit")}
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => handleDelete(skill)}
+                                  >
+                                    {tc("delete")}
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
