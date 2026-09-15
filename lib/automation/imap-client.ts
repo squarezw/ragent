@@ -179,6 +179,83 @@ export function extractAttachmentNames(parsed: ParsedMailView): string[] {
   return names;
 }
 
+/** 附件随运行落地的形态：文件名 + 解码后的字节 + 类型。 */
+export type MailboxAttachmentFile = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+  size: number;
+};
+
+/**
+ * 附件内容：与 `extractAttachmentNames` **同判定、同顺序**，只是多带上字节。
+ *
+ * 两者必须一致——规则引擎按名字判定（`附件名称`/`附件类型`），而这里决定实际传给数字员工
+ * 的是哪几个文件。判定一旦分叉，就会出现「规则说有附件、模型却没收到」这种对不上的情况。
+ *
+ * 拿不到字节的 part（`mailparser` 没给 `content`）直接跳过，而不是留一个空壳：
+ * 没有字节的附件传过去也没用，徒增一次无意义的上传。
+ */
+export function toAttachmentFiles(parsed: ParsedMailView): MailboxAttachmentFile[] {
+  const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
+  const files: MailboxAttachmentFile[] = [];
+
+  for (const attachment of attachments) {
+    const record = attachment as {
+      filename?: unknown;
+      content?: unknown;
+      contentType?: unknown;
+    };
+
+    const filename = textValue(record?.filename);
+    if (!filename.trim()) continue;
+
+    const content = record?.content;
+    if (!Buffer.isBuffer(content)) continue;
+
+    files.push({
+      filename,
+      content,
+      contentType: textValue(record?.contentType),
+      size: content.length,
+    });
+  }
+
+  return files;
+}
+
+/** 原始报文 → 附件内容列表。执行前按 UID 取回单封报文时使用。 */
+export async function parseAttachmentFiles(
+  source: Buffer | string
+): Promise<MailboxAttachmentFile[]> {
+  const parsed = await simpleParser(source, { skipHtmlToText: true, keepCidLinks: true });
+  return toAttachmentFiles(parsed);
+}
+
+/** 单个附件的上传上限，对齐平台既有的 `ASSET_MAX_FILE_BYTES`（技能资产）。 */
+export const ATTACHMENT_MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * 按大小把附件分成「可上传」与「超限跳过」两组，各自保持原顺序。
+ *
+ * 越限的挑出来而不是就地丢掉：调用方要在提示词里**点名**说明哪个附件没传，
+ * 否则模型会把收到的当成全部，进而对缺数据这件事给出错误的解释。
+ */
+export function splitAttachmentsBySize(
+  files: readonly MailboxAttachmentFile[],
+  maxBytes: number = ATTACHMENT_MAX_FILE_BYTES
+): { accepted: MailboxAttachmentFile[]; skipped: MailboxAttachmentFile[] } {
+  const accepted: MailboxAttachmentFile[] = [];
+  const skipped: MailboxAttachmentFile[] = [];
+
+  for (const file of files) {
+    if (file.size <= maxBytes) accepted.push(file);
+    else skipped.push(file);
+  }
+
+  return { accepted, skipped };
+}
+
 /** 原始头部文本（`mailparser` 的 `headerLines` 是 `{key, line}` 列表，key 已小写）。 */
 export function rawHeaderValue(headerLines: unknown, key: string): string {
   if (!Array.isArray(headerLines)) return "";
@@ -249,16 +326,15 @@ function requireConnectionField(value: string, label: string) {
 }
 
 /**
- * 收一封信箱的未读（严格说是「游标之后的」）邮件。
+ * 短连接的统一出入口：连上 → 只读打开文件夹 → 跑 → 退出。
  *
- * 契约见 `pages/api/v1/email/unread-config.ts` 与调度器的 `fetchConfiguredMailboxUnread`：
- * 不传 `afterUid` 表示游标尚未建立，此时只回报 `latest_uid`、`messages` 为空。
+ * 两处收信功能（批量收信、按 UID 取附件）共用，避免连接参数校验与超时配置被复制成两份。
+ * 失败文案统一在这里加 `IMAP` 前缀，映射层照旧归到连接类失败（400）而不是 500。
  */
-export async function fetchMailboxUnread(params: {
-  afterUid?: number | null;
-  connection: MailboxConnection;
-}): Promise<MailboxUnreadResult> {
-  const { connection } = params;
+async function withReadOnlyMailbox<T>(
+  connection: MailboxConnection,
+  run: (client: ImapFlow) => Promise<T>
+): Promise<T> {
   const host = requireConnectionField(connection.imapHost, "IMAP 服务器");
   const username = requireConnectionField(connection.username, "登录账号");
   const password = requireConnectionField(connection.password, "授权码或密码");
@@ -284,6 +360,29 @@ export async function fetchMailboxUnread(params: {
     // 只读打开：绝不给用户的邮件打上已读标记（处理与否只由游标与去重表决定）。
     await client.mailboxOpen(folder, { readOnly: true });
 
+    return await run(client);
+  } catch (error) {
+    throw new Error(imapFailureMessage(error), { cause: error });
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      // 连接可能已经断了：logout 失败无所谓，原始错误在上面那个 catch 里已经成形。
+    }
+  }
+}
+
+/**
+ * 收一封信箱的未读（严格说是「游标之后的」）邮件。
+ *
+ * 契约见调度器的 `fetchConfiguredMailboxUnread`：不传 `afterUid` 表示游标尚未建立，
+ * 此时只回报 `latest_uid`、`messages` 为空。
+ */
+export async function fetchMailboxUnread(params: {
+  afterUid?: number | null;
+  connection: MailboxConnection;
+}): Promise<MailboxUnreadResult> {
+  return withReadOnlyMailbox(params.connection, async (client) => {
     const found = await client.search({ all: true }, { uid: true });
     const uids = uidsFromSearchResult(found);
     const { latestUid, targetUids } = planMailboxFetch(uids, params.afterUid);
@@ -298,13 +397,28 @@ export async function fetchMailboxUnread(params: {
     }
 
     return { success: true, latest_uid: latestUid, messages };
-  } catch (error) {
-    throw new Error(imapFailureMessage(error), { cause: error });
-  } finally {
-    try {
-      await client.logout();
-    } catch {
-      // 连接可能已经断了：logout 失败无所谓，原始错误在上面那个 catch 里已经成形。
-    }
-  }
+  });
+}
+
+/**
+ * 按 UID 取单封邮件的附件内容。
+ *
+ * 为什么是「执行前按需再取一次」而不是随批次一起返回：批量收信会把整批（最多 20 封）
+ * 全部解析完再返回，把附件字节挂在每封上意味着整批的附件同时驻留内存。按需取只有一封，
+ * 代价是多一次 IMAP 往返——而那封邮件本来就要跑一次几十秒的任务，这一次往返可以忽略。
+ *
+ * 取不到报文时返回空数组而不是抛错：附件取不到不该让整次运行失败，调用方按「没有附件」
+ * 继续即可（见 `buildEmailAutomationQuestion` 对缺失附件的说明）。
+ */
+export async function fetchMessageAttachments(
+  connection: MailboxConnection,
+  uid: number
+): Promise<MailboxAttachmentFile[]> {
+  return withReadOnlyMailbox(connection, async (client) => {
+    const fetched = await client.fetchOne(String(uid), { source: true }, { uid: true });
+    const source = fetched ? fetched.source : undefined;
+    if (!source) return [];
+
+    return parseAttachmentFiles(source);
+  });
 }

@@ -17,14 +17,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  ATTACHMENT_MAX_FILE_BYTES,
   IMAP_MESSAGE_BATCH_SIZE,
   IMAP_TIMEOUT_MS,
   extractAttachmentNames,
   extractBody,
   imapFailureMessage,
+  parseAttachmentFiles,
   parseInboxMessage,
   planMailboxFetch,
   rawHeaderValue,
+  splitAttachmentsBySize,
+  toAttachmentFiles,
   toInboxMessage,
   uidsFromSearchResult,
 } from "../lib/automation/imap-client.ts";
@@ -308,6 +312,100 @@ test("附件名提取的兜底：只有非空字符串文件名才算数", () =>
   );
   assert.deepEqual(extractAttachmentNames({ attachments: undefined }), []);
   assert.deepEqual(extractAttachmentNames({}), []);
+});
+
+test("附件内容提取：文件名、字节、类型、大小都对得上，且与附件名同序", async () => {
+  const files = await parseAttachmentFiles(MIXED);
+
+  // 与 extractAttachmentNames 完全同名同序——两者判定一旦分叉，规则命中的附件
+  // 与实际传给数字员工的附件就会对不上。
+  assert.deepEqual(
+    files.map((file) => file.filename),
+    ["notes.txt", "inline.png", "报告.pdf"]
+  );
+
+  assert.equal(files[0].content.toString("utf8"), "这段是附件正文，不该出现在正文里");
+  assert.equal(files[0].contentType, "text/plain");
+  assert.equal(files[0].size, Buffer.byteLength("这段是附件正文，不该出现在正文里"));
+
+  // inline 图片：base64 "aGVsbG8=" 解码后是 hello
+  assert.equal(files[1].content.toString("utf8"), "hello");
+  assert.equal(files[1].contentType, "image/png");
+  assert.equal(files[1].size, 5);
+
+  // 文件名是 RFC2047 编码的那个 pdf
+  assert.equal(files[2].filename, "报告.pdf");
+  assert.equal(files[2].content.toString("utf8"), "hello");
+});
+
+test("附件内容提取：拿不到字节的 part 直接跳过，不会留一个空壳", () => {
+  const files = toAttachmentFiles({
+    attachments: [
+      { filename: "有内容.pdf", content: Buffer.from("abc"), contentType: "application/pdf" },
+      { filename: "没内容.pdf" },
+      { filename: "" },
+      { contentType: "image/gif", content: Buffer.from("x") },
+    ],
+  });
+
+  assert.deepEqual(
+    files.map((file) => file.filename),
+    ["有内容.pdf"]
+  );
+  assert.equal(files[0].size, 3);
+});
+
+test("附件内容提取：没有附件的邮件返回空数组", () => {
+  assert.deepEqual(toAttachmentFiles({}), []);
+  assert.deepEqual(toAttachmentFiles({ attachments: undefined }), []);
+});
+
+test("超限附件被挑出来而不是被丢掉：跳过的那些要能在提示词里点名", () => {
+  const files = [
+    { filename: "小.xlsx", content: Buffer.alloc(10), contentType: "application/x", size: 10 },
+    {
+      filename: "刚好到上限.xlsx",
+      content: Buffer.alloc(ATTACHMENT_MAX_FILE_BYTES),
+      contentType: "application/x",
+      size: ATTACHMENT_MAX_FILE_BYTES,
+    },
+    {
+      filename: "超了.xlsx",
+      content: Buffer.alloc(ATTACHMENT_MAX_FILE_BYTES + 1),
+      contentType: "application/x",
+      size: ATTACHMENT_MAX_FILE_BYTES + 1,
+    },
+  ];
+
+  const { accepted, skipped } = splitAttachmentsBySize(files);
+
+  // 边界取「不超过」：恰好等于上限的要传，否则上限就比标称值小了一字节。
+  assert.deepEqual(
+    accepted.map((file) => file.filename),
+    ["小.xlsx", "刚好到上限.xlsx"]
+  );
+  assert.deepEqual(
+    skipped.map((file) => file.filename),
+    ["超了.xlsx"]
+  );
+});
+
+test("上限可注入：便于测试与将来按部署调整", () => {
+  const files = [
+    { filename: "a.pdf", content: Buffer.alloc(5), contentType: "application/pdf", size: 5 },
+    { filename: "b.pdf", content: Buffer.alloc(50), contentType: "application/pdf", size: 50 },
+  ];
+
+  const { accepted, skipped } = splitAttachmentsBySize(files, 10);
+
+  assert.deepEqual(
+    accepted.map((file) => file.filename),
+    ["a.pdf"]
+  );
+  assert.deepEqual(
+    skipped.map((file) => file.filename),
+    ["b.pdf"]
+  );
 });
 
 test("被判成正文的 part 不计入附件（已记录的偏差，改判定即翻红）", async () => {

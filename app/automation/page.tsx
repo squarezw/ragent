@@ -3453,12 +3453,6 @@ export default function AutomationPage() {
                           </div>
                         </Field>
 
-                        <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-2.5">
-                          <div className="text-xs font-medium text-foreground">{tt("自动传入邮件内容", "Automatically Pass Email Content")}</div>
-                          <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                            {tt("监听邮箱、发件人、收件人、主题、正文、附件和命中规则都会写入本次运行上下文，便于追溯。", "Mailbox, sender, recipient, subject, body, attachments, and the matched rule are stored in the run context.")}
-                          </div>
-                        </div>
                       </>
                     )}
 

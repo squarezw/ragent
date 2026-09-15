@@ -29,7 +29,18 @@ import {
   requireMailboxId,
   requireMailboxLabel,
 } from "@/lib/automation/mailbox-id";
-import { fetchMailboxUnread } from "@/lib/automation/imap-client";
+import {
+  fetchMailboxUnread,
+  fetchMessageAttachments,
+  splitAttachmentsBySize,
+  type MailboxAttachmentFile,
+} from "@/lib/automation/imap-client";
+import {
+  buildEmailAutomationQuestion,
+  normalizeEmailBody,
+  type AutomationAgentAttachment,
+} from "@/lib/automation/agent-payload";
+import { ossClient } from "@/lib/ossClient";
 import {
   doesMailRuleSetMatch,
   type MailRuleSet,
@@ -255,38 +266,120 @@ async function fetchConfiguredMailboxUnread(
   }
 }
 
+/**
+ * 附件准备只用到任务行上的这两个字段。窄类型而非 `any`：顺带说明这个 helper 不碰
+ * 任务的其他部分，也让「它需要什么」在签名上直接可读。
+ */
+type EmailAttachmentTask = {
+  created_by_user_id?: unknown;
+  trigger_config?: { mailboxId?: unknown } | null;
+};
+
+/**
+ * 把邮件附件取回来 → 筛掉超限的 → 传上 OSS。
+ *
+ * 每一层失败都只降级、不抛错：附件是本次任务的输入之一，为它拖垮整次运行不划算。
+ * 失败与超限的结果都进 `skippedNames`，最终由提示词点名——模型因此不会把
+ * 「只收到一部分」误当成「附件就这些」，进而对缺数据给出错误的解释。
+ *
+ * 三个名单互斥且穷尽：规则引擎看到过的每个附件名，要么在 `deliveredNames` 里、
+ * 要么在 `skippedNames` 里。
+ */
+async function prepareEmailAttachments(
+  task: EmailAttachmentTask,
+  message: InboxMessage
+): Promise<{
+  delivered: AutomationAgentAttachment[];
+  deliveredNames: string[];
+  skippedNames: string[];
+}> {
+  // 规则引擎判定时看到的名字（`extractAttachmentNames` 的结果）。没拿到字节的也要在这里露面。
+  const seenNames = Array.isArray(message.attachments) ? [...message.attachments] : [];
+  const nothingDelivered = {
+    delivered: [] as AutomationAgentAttachment[],
+    deliveredNames: [] as string[],
+    skippedNames: seenNames,
+  };
+
+  let files: MailboxAttachmentFile[];
+  try {
+    const mailbox = await getAutomationMailboxForUser(
+      Number(task.created_by_user_id),
+      requireMailboxId(task.trigger_config?.mailboxId)
+    );
+    if (!mailbox) return nothingDelivered;
+
+    files = await fetchMessageAttachments(
+      mailboxConnectionFromRow(mailbox),
+      Number(message.uid)
+    );
+  } catch (error) {
+    // 取信失败（连接断了、凭据被换过）不该让任务失败——按「没有附件可读」继续。
+    console.error("[Automation Email] 读取附件失败，本次按无附件处理:", error);
+    return nothingDelivered;
+  }
+
+  const { accepted, skipped } = splitAttachmentsBySize(files);
+  const skippedNames = skipped.map((file) => file.filename);
+
+  // `mailparser` 没给出字节的 part：规则看得到名字，却没有可传的内容。
+  const withBytes = new Set(files.map((file) => file.filename));
+  for (const name of seenNames) {
+    if (!withBytes.has(name)) skippedNames.push(name);
+  }
+
+  const delivered: AutomationAgentAttachment[] = [];
+  for (const file of accepted) {
+    try {
+      const objectKey = await ossClient.upload({
+        filename: file.filename,
+        content: file.content,
+        contentType: file.contentType || "application/octet-stream",
+        category: "attachments",
+      });
+
+      delivered.push({
+        objectKey,
+        filename: file.filename,
+        contentType: file.contentType,
+        size: file.size,
+      });
+    } catch (error) {
+      console.error(`[Automation Email] 附件上传失败，跳过《${file.filename}》:`, error);
+      skippedNames.push(file.filename);
+    }
+  }
+
+  return {
+    delivered,
+    deliveredNames: delivered.map((item) => item.filename),
+    skippedNames,
+  };
+}
+
 async function executeEmailAutomation(task: any, message: InboxMessage) {
   const config = task.trigger_config || {};
   // 模块 A：展示名在创建/更新时按邮箱记录派生（模块 D.3），这里取不到即数据有问题，
   // 显式抛错而不是兜底成一个已下线的邮箱名。抛错由分组扫描按组记录，不影响其他分组。
   const mailboxLabel = requireMailboxLabel(config.mailboxLabel);
-  const attachments = Array.isArray(message.attachments) && message.attachments.length > 0
-    ? message.attachments.join("、")
-    : "无";
 
-  const rawBody = typeof message.body === "string" ? message.body.trim() : "";
-  const body = rawBody.length > 20000
-    ? `${rawBody.slice(0, 20000)}\n\n[正文较长，已截取前 20000 个字符]`
-    : rawBody || "（无正文）";
+  // 规则判定早就做完了，这里才把字节取回来——只处理真正要执行的那封。
+  const emailAttachments = await prepareEmailAttachments(task, message);
 
-  const question = [
-    "【自动化任务】",
-    String(task.task || ""),
-    "",
-    "【本次收到的新邮件】",
-    `监听邮箱：${mailboxLabel}`,
-    `发件人：${message.from || "未知"}`,
-    `收件人：${message.to || "未知"}`,
-    `主题：${message.subject || "无主题"}`,
-    `时间：${message.date || "未知"}`,
-    `附件：${attachments}`,
-    "正文：",
-    body,
-    "",
-    "【执行要求】",
-    "请根据上面的真实邮件内容完成自动化任务。",
-    "只输出本次邮件的处理结果，不要自行调用发送邮件、通知或其他外部发送工具；结果将由自动化统一发送。",
-  ].join("\n");
+  const body = normalizeEmailBody(message.body);
+
+  const question = buildEmailAutomationQuestion({
+    task: String(task.task || ""),
+    mailboxLabel,
+    from: message.from,
+    to: message.to,
+    subject: message.subject,
+    date: message.date,
+    // 传原始正文：规范化由 builder 统一做，避免两处各截一次。
+    body: message.body,
+    delivered: emailAttachments.deliveredNames,
+    skipped: emailAttachments.skippedNames,
+  });
 
   const triggerContext = {
     source: "email-server",
@@ -302,7 +395,10 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
     subject: message.subject,
     date: message.date,
     body,
+    // 保持既有形状：规则引擎与运行详情都按「名字列表」读它。
     attachments: message.attachments || [],
+    // 新增：已上传成功的附件元信息，供运行详情给出下载入口。
+    attachmentFiles: emailAttachments.delivered,
   };
 
   const run = await createRun(task, "running", triggerContext);
@@ -312,6 +408,9 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
       userId: Number(task.created_by_user_id),
       appId: Number(task.app_id),
       question,
+      // 附件以结构化字段下发：后端在 skill 沙箱起容器前取回、写进 inputs/，
+      // 模型按文件名引用即可。object_key 不进提示词（见 agent-payload.ts）。
+      attachments: emailAttachments.delivered,
     });
 
     const answer = result.answer || "任务已完成，未返回文本结果";
