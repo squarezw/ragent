@@ -39,6 +39,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     switch (method) {
+      case "PUT": {
+        // 更新应用的工具配置（custom_config / priority）。
+        // 权限（owner 或超管）由后端 require_app_owner_or_super 校验，
+        // 代理只做身份透传——这里重复实现一遍所有权判断只会两处漂移。
+        const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+        const payload: Record<string, unknown> = {};
+        if (body.custom_config !== undefined) payload.custom_config = body.custom_config;
+        if (body.priority !== undefined) payload.priority = body.priority;
+        if (Object.keys(payload).length === 0) {
+          return res.status(400).json({ error: "custom_config 或 priority 至少传一项" });
+        }
+        const updated = await axios.put(
+          `${BACKEND_URL}/api/v1/apps/${appId}/tools/${toolId}`,
+          payload,
+          { headers }
+        );
+        return res.status(200).json(updated.data);
+      }
+
       case "DELETE": {
         // 解绑工具
         await axios.delete(`${BACKEND_URL}/api/v1/apps/${appId}/tools/${toolId}`, { headers });
@@ -46,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       default:
-        res.setHeader("Allow", ["DELETE"]);
+        res.setHeader("Allow", ["PUT", "DELETE"]);
         return res.status(405).json({ error: `Method ${method} Not Allowed` });
     }
   } catch (error: any) {
