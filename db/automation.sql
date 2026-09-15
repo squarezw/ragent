@@ -206,7 +206,8 @@ CREATE TABLE IF NOT EXISTS automation_email_processed_messages (
   message_key VARCHAR(500) NOT NULL,
   automation_id INTEGER NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(created_by_user_id, mailbox_id, message_key)
+  CONSTRAINT automation_email_processed_once_per_automation
+    UNIQUE (created_by_user_id, mailbox_id, message_key, automation_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_automation_email_processed_owner
@@ -311,6 +312,28 @@ CREATE INDEX IF NOT EXISTS idx_automation_mailboxes_owner
 DELETE FROM automation_tasks
  WHERE trigger_type = '邮件触发'
    AND trigger_config->>'mailboxKey' = 'system';
+
+
+-- ── 迁移：一封邮件从「只允许一条自动化领取」改为「每条各领一次」────────────────
+--
+-- 唯一键不含 automation_id 时，第二条规定连 claim 都过不去（ON CONFLICT DO NOTHING 直接冲突），
+-- 无论调度器怎么写。加列即开关。
+--
+-- DROP IF EXISTS + 条件 ADD 同时适配两种库：全新库（上面的 CREATE 已建好新约束，两段都是
+-- no-op）与已存在的库（旧约束在、新约束不在，正常迁移）。条件 ADD 的写法沿用
+-- lib/documentFileVersions.ts 里的既有惯用法 —— PostgreSQL 不支持 ADD CONSTRAINT IF NOT EXISTS。
+ALTER TABLE automation_email_processed_messages
+  DROP CONSTRAINT IF EXISTS automation_email_processed_me_created_by_user_id_mailbox_id_key;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conname = 'automation_email_processed_once_per_automation') THEN
+    ALTER TABLE automation_email_processed_messages
+      ADD CONSTRAINT automation_email_processed_once_per_automation
+      UNIQUE (created_by_user_id, mailbox_id, message_key, automation_id);
+  END IF;
+END $$;
 
 
 -- ── 结果 ────────────────────────────────────────────────────────────────────

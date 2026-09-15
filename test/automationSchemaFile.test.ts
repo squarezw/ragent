@@ -142,3 +142,33 @@ test("db/automation.sql 里的 CREATE 全部带 IF NOT EXISTS —— 重复导�
     `这些 CREATE 缺少 IF NOT EXISTS，重复导入会失败：\n${withoutGuard.join("\n")}`
   );
 });
+
+test("去重表的唯一键包含 automation_id —— 一封邮件可由多条自动化各领一次", () => {
+  // 这是「命中即全部执行」的开关。唯一键少了 automation_id，第二条规定连 claim 都过不去，
+  // 无论调度器怎么写。改动它必须同时改 claimAutomationEmailMessage 的 ON CONFLICT 目标，
+  // 否则 PostgreSQL 会以「no unique or exclusion constraint matching」拒绝每一次 claim。
+  const source = withoutComments(readFileSync(AUTOMATION_SQL, "utf8"));
+  const table = source.match(
+    /CREATE TABLE IF NOT EXISTS automation_email_processed_messages \([\s\S]*?\n\);/
+  );
+  assert.ok(table, "db/automation.sql 里找不到 automation_email_processed_messages 的建表语句");
+
+  assert.match(
+    table[0],
+    /CONSTRAINT automation_email_processed_once_per_automation\s+UNIQUE\s*\(\s*created_by_user_id,\s*mailbox_id,\s*message_key,\s*automation_id\s*\)/i,
+    "唯一键必须显式命名并包含 automation_id"
+  );
+});
+
+test("claim 的 ON CONFLICT 目标是四列，与唯一键一致", () => {
+  const source = withoutComments(
+    readFileSync(join(process.cwd(), "lib/automation/store.ts"), "utf8")
+  );
+  const body = source.slice(source.indexOf("export async function claimAutomationEmailMessage"));
+
+  assert.match(
+    body.slice(0, 1200),
+    /ON CONFLICT \(created_by_user_id, mailbox_id, message_key, automation_id\)/i,
+    "ON CONFLICT 目标必须与唯一键的四列完全一致"
+  );
+});

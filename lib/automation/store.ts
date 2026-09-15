@@ -1743,6 +1743,19 @@ export async function rejectRunReview(
   }
 }
 
+/**
+ * 领取一封邮件 —— 语义是「**本条**自动化是否首次领取它」。
+ *
+ * 不是「这封邮件的唯一主人是谁」：唯一键含 automation_id，命中的每条自动化各领各的，
+ * 所以一封邮件可以让多条自动化各自领到一次、各自执行。
+ * 返回 `true` 表示本条自动化首次领取这封信、应当执行；`false` 表示本条已经领过它
+ * （重复投递、游标回退重扫），应当跳过。
+ *
+ * 并发安全靠数据库唯一键，因此 ON CONFLICT 的目标必须与表上的
+ * `automation_email_processed_once_per_automation` 四列完全一致 —— 少一列 PostgreSQL
+ * 会以「no unique or exclusion constraint matching」拒绝每一次 claim。约束定义在
+ * db/automation.sql，改唯一键与改这里必须同批发布。
+ */
 export async function claimAutomationEmailMessage(
   userId: number,
   mailboxId: number,
@@ -1759,7 +1772,7 @@ export async function claimAutomationEmailMessage(
     `INSERT INTO automation_email_processed_messages (
       created_by_user_id, mailbox_id, message_key, automation_id
     ) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (created_by_user_id, mailbox_id, message_key) DO NOTHING
+    ON CONFLICT (created_by_user_id, mailbox_id, message_key, automation_id) DO NOTHING
     RETURNING id`,
     [userId, safeMailboxId, safeMessageKey.slice(0, 500), automationId]
   );
