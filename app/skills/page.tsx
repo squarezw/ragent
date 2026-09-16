@@ -32,7 +32,7 @@ import { Loader2, Plus, Search, Sparkles, Terminal, Upload } from "lucide-react"
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills } from "@/hooks/useSkills";
-import { hasUnpublishedChanges, resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
+import { resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
 import { canEditSkill } from "@/lib/skillPermissions";
 import { filterSkillsByCreator, getSkillCreators } from "@/lib/skillCreatorFilter";
 import { checkDeptAdmin, checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
@@ -218,12 +218,12 @@ export default function SkillsPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredSkills.map((skill) => {
-                      const status = resolveReviewStatus(skill.status, skill.published_content);
-                      const badge = reviewStatusBadge(status);
-                      const unpublishedChanges = hasUnpublishedChanges(
-                        skill.content,
-                        skill.published_content
+                      const status = resolveReviewStatus(
+                        skill.status,
+                        skill.is_published ? "" : null
                       );
+                      const badge = reviewStatusBadge(status);
+                      const unpublishedChanges = skill.has_unpublished_changes === true;
                       const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin);
                       return (
                         <TableRow

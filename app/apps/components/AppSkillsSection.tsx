@@ -267,7 +267,7 @@ function BindSkillsDialog({
         ) : (
           <div className="space-y-2">
             {available.map((skill) => {
-              const isPublished = skill.published_content !== null;
+              const isPublished = skill.is_published === true;
               return (
                 <label
                   key={skill.id}

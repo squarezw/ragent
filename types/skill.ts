@@ -21,6 +21,10 @@ export interface Skill {
   content: string;
   /** 已发布正文；null = 从未发布 */
   published_content: string | null;
+  /** 列表接口直接给出，避免返回正文后再由浏览器计算。 */
+  has_unpublished_changes?: boolean;
+  /** 列表接口直接给出，避免以未返回的 published_content 推断。 */
+  is_published?: boolean;
   requires: SkillRequires | null;
   visibility: SkillVisibility;
   /** 审核生命周期状态；后端并行开发中可能缺失，用 resolveReviewStatus 容错归一化 */
