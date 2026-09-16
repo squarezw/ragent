@@ -4,6 +4,7 @@
  */
 
 import { WorkflowConfig, WorkflowNode, WorkflowEdge, AppWithWorkflow } from "@/types/workflow";
+import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
 /**
  * 从App配置生成默认工作流
@@ -32,7 +33,7 @@ export const generateDefaultWorkflow = (app: Partial<AppWithWorkflow>): Workflow
     position: { x: 250, y: 150 },
     data: {
       name: "会话智能体",
-      aiModel: app.ai_model || "deepseek",
+      aiModel: app.ai_model || DEFAULT_LLM_MODEL_CODE,
       temperature: 0.7,
       maxTokens: 2000,
     },

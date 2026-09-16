@@ -63,6 +63,7 @@ import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
 import { WorkflowConfig } from "@/types/workflow";
+import { DEFAULT_LLM_MODEL_CODE, type LlmModelOption } from "@/lib/llmModels";
 
 // 类型定义
 interface App {
@@ -230,12 +231,13 @@ export default function AppsPage() {
     app_type: "Chat",
     platform: "Web",
     avatar_url: null,
-    ai_model: "deepseek",
+    ai_model: DEFAULT_LLM_MODEL_CODE,
     dataset_ids: [],
     email: "",
     settings: {},
     is_default: false,
   });
+  const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
 
   // 定义加载函数（必须在 useEffect 之前）
   const loadApps = useCallback(async () => {
@@ -259,6 +261,14 @@ export default function AppsPage() {
     }
   }, []);
 
+  const loadLlmModels = useCallback(async () => {
+    try {
+      const response = await axios.get("/api/v1/llm-models");
+      setLlmModels(response.data?.items || []);
+    } catch {
+      setLlmModels([]);
+    }
+  }, []);
 
   const loadWechatAgents = useCallback(async () => {
     try {
@@ -280,7 +290,7 @@ export default function AppsPage() {
     dataLoadedRef.current = true;
 
     // 并行加载所有数据
-    Promise.all([loadApps(), loadDatasets()]).catch(() => {
+    Promise.all([loadApps(), loadDatasets(), loadLlmModels()]).catch(() => {
       dataLoadedRef.current = false;
     });
 
@@ -309,7 +319,7 @@ export default function AppsPage() {
       app_type: "Chat",
       platform: "Web",
       avatar_url: null,
-      ai_model: "deepseek",
+      ai_model: DEFAULT_LLM_MODEL_CODE,
         dataset_ids: [],
       email: "",
       settings: {},
@@ -335,7 +345,7 @@ export default function AppsPage() {
         description: t("qualityAgentDesc"),
         app_type: "Chat" as const,
         platform: "Web" as const,
-        ai_model: "deepseek",
+        ai_model: DEFAULT_LLM_MODEL_CODE,
             dataset_ids: ["quality_knowledge_base"], // 使用质量知识库
         settings: {
           workflow: {
@@ -377,7 +387,7 @@ export default function AppsPage() {
                 data: {
                   name: t("templateQualityClassification"),
                   type: "ai",
-                  aiModel: "deepseek",
+                  aiModel: DEFAULT_LLM_MODEL_CODE,
                   agentType: "quality_classify",
                   knowledgeBase: t("templateQualityKnowledgeBase"),
                 },
@@ -1206,9 +1216,17 @@ export default function AppsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="deepseek">Deepseek</SelectItem>
-                      <SelectItem value="qwen">Qwen</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
+                      {llmModels.length === 0 ? (
+                        <SelectItem value={DEFAULT_LLM_MODEL_CODE}>
+                          DeepSeek Flash
+                        </SelectItem>
+                      ) : (
+                        llmModels.map((m) => (
+                          <SelectItem key={m.code} value={m.code}>
+                            {m.display_name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
