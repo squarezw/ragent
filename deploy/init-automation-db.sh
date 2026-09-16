@@ -108,7 +108,14 @@ psql_query -q -c 'SELECT 1' >/dev/null 2>&1 || die "连不上数据库。
 # ── 表清单：从 SQL 文件派生，不写死 ─────────────────────────────────────────
 # 写死的话，以后往 db/automation.sql 里加了表而忘了改这里，那张表就不会被重建——
 # 正是本脚本要消灭的那类静默错配。
-mapfile -t TABLES < <(
+#
+# 不用 mapfile —— 它是 bash 4 才有的内建，而 macOS 自带的是 bash 3.2：
+# 在那边 `mapfile: command not found` 之后 TABLES 为空，脚本会在 `set -u` 下以
+# 一句"从 $SCHEMA_SQL 里没解析到任何 CREATE TABLE —— 文件格式变了？"误报退出，
+# 看起来像脚本坏了或文件被改过，跟真实原因（解释器太老）毫无关系。
+# 这个脚本的使用说明里明确包含本机 docker 开发这一路，不能假设只跑在 Linux 上。
+TABLES=()
+while IFS= read -r __table; do TABLES+=("$__table"); done < <(
   tr -d '\r' < "$SCHEMA_SQL" \
     | grep -oE '^CREATE TABLE IF NOT EXISTS [a-z_]+' \
     | awk '{print $NF}' \
