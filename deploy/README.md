@@ -59,9 +59,17 @@ deploy/init-automation-db.sh --check    # 只报告当前状态，什么都不�
 deploy/init-automation-db.sh --force    # 有数据也重建（先打印将删除的行数并要求确认）
 ```
 
-自动化的 10 张表结构以 `db/automation.sql` 为准。那份脚本用的全是 `CREATE TABLE IF NOT EXISTS`，
-表已存在时会**静默跳过**——既不校验结构也不报错，所以在「库里的结构与代码不一致」这个场景下，
-直接跑它修不好任何东西。本脚本的做法是整组推倒重建。
+自动化的 10 张表结构以**后端仓 ragent-service 的 `docker/db/automation.sql`** 为准（本仓是公开仓，
+有意不保留那份脚本的副本——真源统一在后端仓，见 `docs/assets/quickStart/SOURCE.md`）。那份脚本用的
+全是 `CREATE TABLE IF NOT EXISTS`，表已存在时会**静默跳过**——既不校验结构也不报错，所以在「库里的
+结构与代码不一致」这个场景下，直接跑它修不好任何东西。本脚本的做法是整组推倒重建。
+
+建表脚本按 `$AUTOMATION_SQL` → `$RAGENT_SERVICE_DIR/docker/db/automation.sql` →
+`../ragent-service/docker/db/automation.sql` 的顺序找，三个都没有就直接失败：
+
+```bash
+AUTOMATION_SQL=/path/to/ragent-service/docker/db/automation.sql deploy/init-automation-db.sh
+```
 
 因此它**在有数据时会拒绝执行**：`automation_mailboxes` 里存的是加密后的 IMAP 授权码，
 `automation_tasks` 里是用户建好的自动化（任务之间还会通过 `upstreamAutomationId` 互相引用）。

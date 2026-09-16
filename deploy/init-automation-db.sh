@@ -4,7 +4,9 @@
 #
 # ## 为什么需要这个脚本
 #
-# 自动化的表结构以 `db/automation.sql` 为准，但那份脚本用的全是
+# 自动化的表结构以**后端仓 ragent-service** 的 `docker/db/automation.sql` 为准（本仓是公开仓，
+# 有意不保留那份脚本的副本——真源统一在后端仓，见 docs/assets/quickStart/SOURCE.md）。
+# 但那份脚本用的全是
 # `CREATE TABLE IF NOT EXISTS` —— 表已存在时它**静默跳过**，既不校验结构也不报错。
 # 所以在「库里的结构与代码不一致」这个场景下，直接跑它修不好任何东西：
 # 它只会打一句 WARNING 说「我不会校验结构」，然后什么都不做。
@@ -32,12 +34,20 @@
 # 库名与用户从 `.env` 的 DATABASE_URL 解析——那才是应用真正连的东西。
 # 可用环境变量覆盖：DB_CONTAINER / PGUSER / POSTGRES_DB
 #
+# 建表脚本按这个顺序找，第一个存在的就用：
+#
+#   1. $AUTOMATION_SQL                              显式指定，部署脚本里最稳
+#   2. $RAGENT_SERVICE_DIR/docker/db/automation.sql
+#   3. ../ragent-service/docker/db/automation.sql   （与后端仓 clone 在同一父目录）
+#
+# 三个都找不到就直接失败，不会退化成"什么都不做"。
+#
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SCHEMA_SQL="db/automation.sql"
+SCHEMA_SQL=""
 DB_CONTAINER="${DB_CONTAINER:-postgres}"
 FORCE=0
 CHECK_ONLY=0
@@ -45,17 +55,42 @@ CHECK_ONLY=0
 die()  { echo "❌ $*" >&2; exit 1; }
 step() { echo; echo "── $* ──"; }
 
+# ── 建表脚本的位置 ──────────────────────────────────────────────────────────
+# 真源在后端仓，本仓不保留副本（见文件头）。三个候选按顺序试，都不中就退出——
+# 不要退回"某个看起来像的路径"，那只会让失败推迟到更难看懂的地方。
+resolve_schema_sql() {
+  for candidate in \
+    "${AUTOMATION_SQL:-}" \
+    "${RAGENT_SERVICE_DIR:+${RAGENT_SERVICE_DIR}/docker/db/automation.sql}" \
+    "${REPO_ROOT}/../ragent-service/docker/db/automation.sql"
+  do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ── 参数 ────────────────────────────────────────────────────────────────────
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     --check) CHECK_ONLY=1 ;;
-    -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # 打印文件头的说明。范围用"直到第一行可执行语句"而不是写死行号——
+    # 之前写的是 2,30p，往表头里加几行它就会默默截断说明。
+    -h|--help) sed -n '2,/^set -euo pipefail/{/^set -euo pipefail/d;p}' "${BASH_SOURCE[0]}" \
+                 | sed 's/^# \{0,1\}//'
+               exit 0 ;;
     *) die "未知参数：$arg（可用：--check / --force / --help）" ;;
   esac
 done
 
-[ -f "$SCHEMA_SQL" ] || die "找不到 $SCHEMA_SQL —— 仓库不完整？"
+SCHEMA_SQL="$(resolve_schema_sql)" || die "找不到后端仓的建表脚本 automation.sql。它不在本仓里。
+   用下面任一种方式指定：
+     AUTOMATION_SQL=/path/to/ragent-service/docker/db/automation.sql $0
+     RAGENT_SERVICE_DIR=/path/to/ragent-service $0
+   或把 ragent-service clone 到 $(dirname "$REPO_ROOT") 下。"
 
 # ── 连接参数 ────────────────────────────────────────────────────────────────
 # 从 .env 的 DATABASE_URL 解析库名与用户：应用连的就是它，别去猜。
@@ -105,8 +140,8 @@ echo "目标库：${PGDB_V}   用户：${PGUSER_V}   经由：${REACH}"
 psql_query -q -c 'SELECT 1' >/dev/null 2>&1 || die "连不上数据库。
    容器起了吗？库名对吗？（当前按 DATABASE_URL 解析出：${PGDB_V}）"
 
-# ── 表清单：从 SQL 文件派生，不写死 ─────────────────────────────────────────
-# 写死的话，以后往 db/automation.sql 里加了表而忘了改这里，那张表就不会被重建——
+# ── 表清单：从建表脚本派生，不写死 ─────────────────────────────────────────
+# 写死的话，以后往后端仓的建表脚本里加了表而忘了改这里，那张表就不会被重建——
 # 正是本脚本要消灭的那类静默错配。
 #
 # 不用 mapfile —— 它是 bash 4 才有的内建，而 macOS 自带的是 bash 3.2：

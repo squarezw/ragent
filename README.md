@@ -116,9 +116,12 @@ pnpm check:ci    # biome lint + format check
 
 For detailed instructions see [deploy/README.md](./deploy/README.md).
 
-> ⚠️ **Automation tables.** The automation schema is not created by the app — apply
-> `db/automation.sql` by hand, against the same database as `DATABASE_URL`, before the app runs:
-> `docker exec -i postgres psql -v ON_ERROR_STOP=1 -U postgres -d ragent < db/automation.sql`.
+> ⚠️ **Automation tables.** The automation schema is not created by the app, and this repo does
+> not carry the DDL either — it lives in the backend repo as
+> `ragent-service/docker/db/automation.sql` (see the header of that file). Apply it by hand,
+> against the same database as `DATABASE_URL`, before the app runs:
+> `docker exec -i postgres psql -v ON_ERROR_STOP=1 -U postgres -d ragent < docker/db/automation.sql`,
+> run from the `ragent-service` checkout.
 > Skipping it is quiet: the app still starts, the scheduler fails once at boot and never retries, so
 > none of the automation cron jobs register and the feature stops — scheduled triggers included.
 > After fixing the database, restart the process.
