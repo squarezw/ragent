@@ -5,13 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Settings, Mail, Building2, Upload, Eye, Palette, Check } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -110,7 +103,6 @@ interface SmtpSettings {
 }
 
 interface SystemSettings {
-  llm_model?: string;
   platform_name?: string;
   platform_logo?: string;
   platform_subtitle?: string;
@@ -143,7 +135,6 @@ export default function SystemSettingsPage() {
 
   // 系统设置状态（平台名称、Logo等）
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    llm_model: "",
     platform_name: "",
     platform_logo: "",
     platform_subtitle: "",
@@ -177,7 +168,6 @@ export default function SystemSettingsPage() {
         });
         if (response.data) {
           setSystemSettings({
-            llm_model: response.data.llm_model || "",
             platform_name: response.data.platform_name || "",
             platform_logo: response.data.platform_logo || "",
             platform_subtitle: response.data.platform_subtitle || "",
@@ -277,7 +267,6 @@ export default function SystemSettingsPage() {
 
     try {
       await axios.put("/api/system", {
-        llm_model: systemSettings.llm_model,
         platform_name: systemSettings.platform_name,
         platform_logo: systemSettings.platform_logo,
         platform_subtitle: systemSettings.platform_subtitle,
@@ -504,29 +493,6 @@ export default function SystemSettingsPage() {
                 className="h-8 text-sm"
               />
               <p className="text-xs text-muted-foreground">{t("subtitleTip")}</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="llm_model" className="text-xs">
-                {t("chatModel")}
-              </Label>
-              <Select
-                value={systemSettings.llm_model || "deepseek"}
-                onValueChange={(value) =>
-                  setSystemSettings({ ...systemSettings, llm_model: value })
-                }
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder={t("selectChatModel")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="deepseek">{t("deepseekRemote")}</SelectItem>
-                  <SelectItem value="local">{t("localModel")}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {systemSettings.llm_model === "local" ? t("localModelTip") : t("remoteModelTip")}
-              </p>
             </div>
 
             {systemError && (
