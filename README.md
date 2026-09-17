@@ -4,13 +4,14 @@ An enterprise AI agent platform (智能体中台) built with Next.js. It lets or
 
 ![RAgent screenshot](docs/assets/screenshot03.png)
 
-<sub>The dashboard in v0.5.1, with Digital Employees and Skills in the sidebar.</sub>
+<sub>The dashboard in v0.5.2, with Digital Employees and Skills in the sidebar.</sub>
 
 ## Core Features
 
 - 🤖 **Digital Employees** — build, configure, and publish agent applications, including embeddable chatbots
 - 📚 **Knowledge Base Management** — document upload, vector indexing, access control, RAG-powered Q&A with streaming responses
 - 🔄 **Workflow Orchestration** — visual workflow editor for multi-step automation
+- ⏰ **Automation** — schedule digital employees to run on a timetable or trigger them from incoming email
 - 📋 **Process Management** — business process trees, document review and revision flows, handbook generation
 - 🧩 **Skills** — package instructions plus the scripts and files an agent needs, review them, and bind them to a digital employee; each user supplies their own credentials
 - 🧰 **Tools** — MCP server registration and management. Native tools ship with the code and are authorized there, so there is nothing to bind for them
