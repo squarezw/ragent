@@ -31,7 +31,6 @@
 
 - **文件上传** (`/api/knowledge/upload.ts`)：PDF 文本提取时自动清理
 - **向量化** (`/api/knowledge/vectorize.ts`)：分段存储时自动清理
-- **SOP 管理** (`/api/sop/detail.ts`)：内容存储时自动清理
 - **知识图谱** (`/api/knowledge/graph.ts`)：文本处理时自动清理
 
 #### 2. 清理现有数据（如果需要）
@@ -42,11 +41,6 @@
 UPDATE knowledge_segments 
 SET segment_text = regexp_replace(segment_text, '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', 'g')
 WHERE segment_text ~ '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]';
-
--- 清理 SOP 详情表
-UPDATE sop_detail 
-SET content = regexp_replace(content, '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', 'g')
-WHERE content ~ '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]';
 
 -- 清理知识库文件表的 meta 字段
 UPDATE knowledge_files 
@@ -87,4 +81,3 @@ const cleanedText = cleanText(originalText);
 - `lib/utils.ts` - 文本清理函数
 - `pages/api/knowledge/vectorize.ts` - 向量化 API
 - `pages/api/knowledge/upload.ts` - 文件上传 API
-- `pages/api/sop/detail.ts` - SOP 详情 API 

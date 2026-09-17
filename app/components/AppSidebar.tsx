@@ -39,7 +39,6 @@ import {
   Plus,
   Search,
   Settings,
-  ShieldCheck,
   Smartphone,
   Sparkles,
   User,
@@ -126,7 +125,6 @@ export default function AppSidebar() {
           path: "/skills",
         },
         { title: t("toolsManagement"), icon: Wrench, path: "/tools", visible: canManageTools },
-        { title: t("sopManagement"), icon: ShieldCheck, path: "/sop", visible: canManageOperation },
         {
           title: t("skuManagement"),
           icon: Package,

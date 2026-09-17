@@ -2,8 +2,7 @@
  * Migration script: Upload local files to OSS and update database URLs.
  *
  * Migrates:
- * 1. SOP images (public/sop-images/) → sop_detail.image_url
- * 2. System logos (public/uploads/) → system_settings.platform_logo
+ * 1. System logos (public/uploads/) → system_settings.platform_logo
  *
  * Usage:
  *   # 试运行: 只扫描, 不上传不改库, 看看有多少需要迁移
@@ -84,9 +83,6 @@ function formatBytes(bytes: number): string {
 
 /** Resolve a DB URL to a local filesystem path. Returns null if unrecognized. */
 function resolveLocalPath(dbUrl: string): string | null {
-  if (dbUrl.startsWith("/sop-images/")) {
-    return path.join(process.cwd(), "public", dbUrl);
-  }
   if (dbUrl.startsWith("/uploads/")) {
     return path.join(process.cwd(), "public", dbUrl);
   }
@@ -126,102 +122,6 @@ async function uploadLocalFileToOss(
   });
 
   return { objectKey, newUrl: `/api/oss/${objectKey}` };
-}
-
-// ── SOP images ────────────────────────────────────────────
-
-async function migrateSopImages(): Promise<MigrationResult[]> {
-  console.log("=== SOP images (sop_detail.image_url) ===\n");
-
-  const result = await pool.query(
-    "SELECT id, image_url FROM sop_detail WHERE image_url IS NOT NULL AND image_url != '' ORDER BY id"
-  );
-
-  // Categorize
-  const alreadyMigrated = result.rows.filter((r) => r.image_url.startsWith("/api/oss/"));
-  const toMigrate = result.rows.filter((r) => !r.image_url.startsWith("/api/oss/"));
-
-  console.log(`  Total with images:  ${result.rows.length}`);
-  console.log(`  Already migrated:   ${alreadyMigrated.length}`);
-  console.log(`  Need migration:     ${toMigrate.length}`);
-
-  // Check local file existence
-  let fileFound = 0;
-  let fileMissing = 0;
-  for (const row of toMigrate) {
-    const localPath = resolveLocalPath(row.image_url);
-    if (!localPath) {
-      fileMissing++;
-      continue;
-    }
-    if (fs.existsSync(localPath)) {
-      fileFound++;
-    } else {
-      fileMissing++;
-    }
-  }
-  console.log(`  Local file found:   ${fileFound}`);
-  console.log(`  Local file missing: ${fileMissing}`);
-
-  if (DRY_RUN) {
-    // Show sample of what would be migrated
-    const sample = toMigrate.slice(0, 10);
-    if (sample.length > 0) {
-      console.log(`\n  Sample (first ${sample.length}):`);
-      for (const row of sample) {
-        const localPath = resolveLocalPath(row.image_url);
-        const exists = localPath && fs.existsSync(localPath);
-        const size = exists ? formatBytes(fs.statSync(localPath!).size) : "—";
-        console.log(`    id=${row.id}  ${row.image_url}  [${exists ? size : "MISSING"}]`);
-      }
-    }
-    return [];
-  }
-
-  // Real migration
-  const actualLimit = LIMIT > 0 ? Math.min(LIMIT, toMigrate.length) : toMigrate.length;
-  const batch = toMigrate.slice(0, actualLimit);
-  console.log(`\n  Migrating ${batch.length} of ${toMigrate.length}...\n`);
-
-  const results: MigrationResult[] = [];
-  let failed = 0;
-
-  for (const row of batch) {
-    const { id, image_url } = row;
-    const localPath = resolveLocalPath(image_url);
-
-    if (!localPath) {
-      console.warn(`    ⚠ id=${id}: unrecognized URL format: ${image_url}`);
-      failed++;
-      continue;
-    }
-
-    try {
-      const uploaded = await uploadLocalFileToOss(localPath, "sop-images");
-      if (!uploaded) {
-        failed++;
-        continue;
-      }
-
-      await pool.query("UPDATE sop_detail SET image_url = $1 WHERE id = $2", [uploaded.newUrl, id]);
-
-      const fileSize = fs.statSync(localPath).size;
-      results.push({
-        id,
-        oldUrl: image_url,
-        newUrl: uploaded.newUrl,
-        objectKey: uploaded.objectKey,
-        fileSize,
-      });
-      console.log(`    ✓ id=${id}  ${image_url} → ${uploaded.newUrl}`);
-    } catch (error: any) {
-      console.error(`    ✗ id=${id}  ${image_url}: ${error.message}`);
-      failed++;
-    }
-  }
-
-  console.log(`\n  Done: ${results.length} migrated, ${failed} failed`);
-  return results;
 }
 
 // ── System logos ──────────────────────────────────────────
@@ -345,13 +245,10 @@ async function main() {
     process.exit(1);
   }
 
-  const sopResults = await migrateSopImages();
   const logoResults = await migrateSystemLogos();
 
-  const allResults = [...sopResults, ...logoResults];
-
-  if (!DRY_RUN && allResults.length > 0) {
-    printVerificationTable(allResults);
+  if (!DRY_RUN && logoResults.length > 0) {
+    printVerificationTable(logoResults);
   }
 
   if (DRY_RUN) {

@@ -3,7 +3,7 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import { ossClient } from "@/lib/ossClient";
 
 // Categories that were previously served from public/ and don't require auth
-const PUBLIC_CATEGORIES = ["sop-images", "system"];
+const PUBLIC_CATEGORIES = ["system"];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
