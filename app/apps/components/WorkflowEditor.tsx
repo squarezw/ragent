@@ -37,6 +37,7 @@ import NodePalette from "./NodePalette";
 import NodePropertyPanel from "./NodePropertyPanel";
 
 import { WorkflowConfig, WorkflowNode, AppWithWorkflow } from "@/types/workflow";
+import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 import {
   generateDefaultWorkflow,
   generateNodeId,
@@ -372,7 +373,7 @@ function getDefaultNodeData(type: string, t: (key: string) => string): Record<st
     },
     aiNode: {
       name: t("chatAgent"),
-      aiModel: "deepseek",
+      aiModel: DEFAULT_LLM_MODEL_CODE,
       temperature: 0.7,
       maxTokens: 2000,
     },

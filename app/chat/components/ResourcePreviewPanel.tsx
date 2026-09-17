@@ -1,12 +1,14 @@
 "use client";
 
-import { ExternalLink, LoaderCircle, X } from "lucide-react";
+import DxfPreview from "./DxfPreview";
+import { Download, ExternalLink, LoaderCircle, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import styles from "./ResourcePreviewPanel.module.css";
 import type { PreviewResource } from "@/lib/chatResourcePreview";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ResourcePreviewPanelProps {
   resource: PreviewResource;
@@ -15,6 +17,7 @@ interface ResourcePreviewPanelProps {
 
 function getEmbedUrl(resource: PreviewResource): string {
   if (resource.kind !== "url") return resource.url;
+  if (resource.url.startsWith("/api/oss/")) return `/api/chat/preview-artifact?url=${encodeURIComponent(resource.url)}`;
   try {
     const url = new URL(resource.url);
     if (url.protocol === "https:" && url.hostname.endsWith(".cos.ap-shanghai.myqcloud.com") && url.pathname.startsWith("/skill-artifacts/") && url.pathname.toLowerCase().endsWith(".html") && url.searchParams.has("X-Amz-Signature")) {
@@ -69,7 +72,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const title = resource.kind === "image" ? t("imagePreview") : t("webPreview");
+  const title = resource.kind === "dxf" ? t("dxfPreview") : resource.kind === "image" ? t("imagePreview") : t("webPreview");
   const embedUrl = getEmbedUrl(resource);
 
   return (
@@ -113,23 +116,48 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0">
           <Dialog.Title className="font-semibold">{title}</Dialog.Title>
-          <p className="truncate text-xs text-muted-foreground">{new URL(resource.url).hostname}</p>
+          <p className="truncate text-xs text-muted-foreground">{new URL(resource.url, "https://local.invalid").hostname.replace("local.invalid", "")}</p>
         </div>
-        <Button
-          aria-label={t("closePreview")}
-          className="shrink-0"
-          onClick={onClose}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <X />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label={t("openInNewTab")} asChild size="icon" type="button" variant="ghost">
+                  <a href={resource.url} rel="noopener noreferrer" target="_blank">
+                    <ExternalLink />
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("openInNewTab")}</TooltipContent>
+            </Tooltip>
+            {resource.kind === "dxf" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button aria-label={t("downloadOriginalDrawing")} asChild size="icon" type="button" variant="ghost">
+                    <a download href={resource.url}>
+                      <Download />
+                    </a>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("downloadOriginalDrawing")}</TooltipContent>
+              </Tooltip>
+            )}
+          </TooltipProvider>
+          <Button
+            aria-label={t("closePreview")}
+            onClick={onClose}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <X />
+          </Button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border bg-muted">
-          {resource.kind === "image" ? (
+          {resource.kind === "dxf" ? <DxfPreview key={resource.url} url={resource.url} /> : resource.kind === "image" ? (
             imageError ? (
               <p className="p-4 text-sm text-muted-foreground">{t("imageLoadFailed")}</p>
             ) : (
@@ -180,12 +208,6 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
         )}
         {resource.kind === "url" && <Button onClick={() => setAttempt(value => value + 1)} variant="outline">{t("previewRetry")}</Button>}
 
-        <Button asChild className="w-full" variant="outline">
-          <a href={resource.url} rel="noopener noreferrer" target="_blank">
-            <ExternalLink />
-            {t("openInNewTab")}
-          </a>
-        </Button>
       </div>
     </Dialog.Content>
     </Dialog.Portal>

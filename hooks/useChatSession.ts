@@ -328,7 +328,7 @@ export function useChatSession() {
 
               const { done, value } = await reader.read();
 
-              if (done) {
+              if (done || isAborted) {
                 break;
               }
 
@@ -339,6 +339,7 @@ export function useChatSession() {
               buffer = lines.pop() || "";
 
               for (const line of lines) {
+                if (isAborted) break;
                 const trimmedLine = line.trim();
                 if (!trimmedLine) continue;
 
@@ -452,7 +453,7 @@ export function useChatSession() {
                         // 后端随 finish 一起给，省一次为了显示「共消耗」的往返
                         usage = normalizeTurnUsage(parsed.usage);
                       }
-                      if (parsed.chat_id) {
+                      if (!isAborted && parsed.chat_id) {
                         setChatId(parsed.chat_id);
                       }
                     } else if (currentEvent === "update_session") {
@@ -470,7 +471,7 @@ export function useChatSession() {
                       if (parsed.detail_id) {
                         detailId = parsed.detail_id;
                       }
-                      if (parsed.chat_id) {
+                      if (!isAborted && parsed.chat_id) {
                         setChatId(parsed.chat_id);
                       }
                     } else {
@@ -497,7 +498,7 @@ export function useChatSession() {
                       if (parsed.detail_id) {
                         detailId = parsed.detail_id;
                       }
-                      if (parsed.chat_id) {
+                      if (!isAborted && parsed.chat_id) {
                         setChatId(parsed.chat_id);
                       }
                     }
@@ -517,7 +518,7 @@ export function useChatSession() {
             }
 
             // 处理 buffer 中剩余的数据
-            if (buffer.trim()) {
+            if (!isAborted && buffer.trim()) {
               const trimmedLine = buffer.trim();
               if (trimmedLine.startsWith("event: ")) {
                 currentEvent = trimmedLine.slice(7).trim();
@@ -536,7 +537,7 @@ export function useChatSession() {
                     if (parsed.reference) reference = parsed.reference;
                     if (parsed.segment_ids) segmentIds = parsed.segment_ids;
                     if (parsed.detail_id) detailId = parsed.detail_id;
-                    if (parsed.chat_id) {
+                    if (!isAborted && parsed.chat_id) {
                       setChatId(parsed.chat_id);
                     }
                   }

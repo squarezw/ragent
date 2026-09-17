@@ -1,3 +1,4 @@
+import { ossClient } from "@/lib/ossClient";
 import { requireAuth } from "@/lib/auth";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -34,7 +35,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const raw = req.query.url;
   if (typeof raw !== "string") return res.status(400).json({ error: "url is required" });
 
-  const target = isAllowedArtifactUrl(raw);
+  let resolved = raw;
+  if (raw.startsWith("/api/oss/") && /\.html?$/i.test(raw)) {
+    try { resolved = (await ossClient.sign({ objectKey: raw.slice(9) })).url; }
+    catch { return res.status(502).json({ error: "artifact unavailable" }); }
+  }
+  const target = resolved !== raw ? new URL(resolved) : isAllowedArtifactUrl(raw);
   if (!target) return res.status(400).json({ error: "unsupported artifact URL" });
 
   try {

@@ -16,6 +16,8 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuAction,
+  useSidebar,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -34,6 +36,7 @@ import {
   Monitor,
   MoreHorizontal,
   Package,
+  Plus,
   Search,
   Settings,
   ShieldCheck,
@@ -48,12 +51,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useFeatures } from "./FeaturesProvider";
 
+const NEW_CONVERSATION_EVENT = "ragent:new-conversation";
+const NEW_CONVERSATION_KEY = "chat.newConversation";
+
 export default function AppSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useCurrentUser();
   const t = useTranslations("navigation");
   const tc = useTranslations("common");
+  const tChat = useTranslations();
+  const newConversationLabel = tChat(NEW_CONVERSATION_KEY);
+  const { setOpenMobile } = useSidebar();
   const features = useFeatures();
   const {
     platformLogo,
@@ -271,6 +280,27 @@ export default function AppSidebar() {
                             </span>
                           )}
                         </SidebarMenuButton>
+                        {item.path === "/chat" && (
+                          <SidebarMenuAction
+                            type="button"
+                            showOnHover
+                            className="[@media(hover:none)]:opacity-100"
+                            aria-label={newConversationLabel}
+                            title={newConversationLabel}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setOpenMobile(false);
+                              if (pathname === "/chat") {
+                                window.dispatchEvent(new Event(NEW_CONVERSATION_EVENT));
+                              } else {
+                                router.push("/chat");
+                              }
+                            }}
+                          >
+                            <Plus aria-hidden="true" />
+                          </SidebarMenuAction>
+                        )}
                       </SidebarMenuItem>
                     ))}
                 </SidebarMenu>

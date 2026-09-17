@@ -154,9 +154,6 @@ export default function WelcomeView({
           />
         </div>
 
-        {/* AI Disclaimer */}
-        <p className="text-xs text-muted-foreground mt-4 text-center">{t("aiDisclaimer")}</p>
-
         {/* App Shortcuts */}
         <div className="w-full mt-6">
           <AppShortcuts

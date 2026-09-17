@@ -48,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             const hasThemePrimaryColor = existingColumns.includes("theme_primary_color");
             const hasThemeSecondaryColor = existingColumns.includes("theme_secondary_color");
             // 根据字段是否存在构建查询
-            let selectFields = "platform_name, platform_logo, platform_subtitle, llm_model";
+            let selectFields = "platform_name, platform_logo, platform_subtitle";
             if (hasLoginPanelHtml) selectFields += ", login_left_panel_html";
             if (hasThemePrimaryColor) selectFields += ", theme_primary_color";
             if (hasThemeSecondaryColor) selectFields += ", theme_secondary_color";
@@ -72,10 +72,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   ? row.theme_secondary_color || null
                   : null,
               };
-              // 如果请求了 full_data，也返回 llm_model
-              if (req.query.full_data) {
-                publicData.llm_model = row.llm_model || null;
-              }
               return res.status(200).json(publicData);
             } else {
               // 没有系统设置记录，返回空数据
@@ -86,7 +82,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 login_left_panel_html: null,
                 theme_primary_color: null,
                 theme_secondary_color: null,
-                ...(req.query.full_data ? { llm_model: null } : {}),
               });
             }
           } finally {
@@ -102,7 +97,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             login_left_panel_html: null,
             theme_primary_color: null,
             theme_secondary_color: null,
-            ...(req.query.full_data ? { llm_model: null } : {}),
           });
         }
       }

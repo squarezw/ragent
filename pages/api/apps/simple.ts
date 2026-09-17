@@ -51,11 +51,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     // Python 后端返回格式: { total: number, items: [...] }
-    const apps: SimpleApp[] = Array.isArray(response.data?.items)
+    // is_simple 时后端已按「已发布 | 自己创建」收窄；这里再滤一道，避免旧后端漏网。
+    const rawApps: Array<SimpleApp & { status?: string; user_id?: number }> = Array.isArray(
+      response.data?.items
+    )
       ? response.data.items
       : Array.isArray(response.data)
         ? response.data
         : [];
+
+    const apps: SimpleApp[] = rawApps.filter((app) => {
+      const status = app.status || "published";
+      if (status === "published") return true;
+      return Number(app.user_id) === Number(userId);
+    });
 
     // 返回格式与原来保持一致
     return res.status(200).json({

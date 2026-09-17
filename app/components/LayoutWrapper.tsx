@@ -22,6 +22,7 @@ const COLLAPSED_SIDEBAR_PATHS = [
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isChat = pathname === "/chat";
 
   // 检查是否是公开路径
   const isPublicPath = pathname ? PUBLIC_PATHS.some((pattern) => pattern.test(pathname)) : false;
@@ -37,9 +38,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   return (
     <UserProvider>
       <SidebarProvider defaultOpen={!shouldCollapseSidebar}>
-        <div className="flex h-screen w-full overflow-hidden">
+        <div
+          className="flex w-full overflow-hidden h-screen"
+          style={isChat ? { height: "100dvh" } : undefined}
+        >
           <AppSidebar />
-          <SidebarInset className="flex-1 h-screen">
+          <SidebarInset className={`flex-1 min-w-0 ${isChat ? "h-full min-h-0" : "h-screen"}`}>
             <header className="flex h-16 shrink-0 items-center justify-between border-b px-2 sm:px-6">
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
@@ -47,7 +51,15 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
               </div>
               <HeaderActions />
             </header>
-            <main className="flex-1 overflow-y-auto p-2 sm:p-6 min-w-0">{children}</main>
+            <main
+              className={
+                isChat
+                  ? "flex flex-1 min-h-0 min-w-0 overflow-hidden px-2 sm:px-6 pt-1"
+                  : "flex-1 overflow-y-auto p-2 sm:p-6 min-w-0"
+              }
+            >
+              {children}
+            </main>
           </SidebarInset>
         </div>
       </SidebarProvider>

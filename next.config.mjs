@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
@@ -15,6 +17,8 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack: (config, { isServer }) => {
+    // dxf-viewer imports the UMD default; opentype ESM only exposes named exports.
+    config.resolve.alias["opentype.js$"] = require.resolve("opentype.js", { paths: [require.resolve("dxf-viewer")] });
     // 忽略 CLAUDE.md 文件（symlink 在 Docker 中会导致 EINVAL 错误）
     config.watchOptions = {
       ...config.watchOptions,

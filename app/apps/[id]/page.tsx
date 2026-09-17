@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { triggerLabel } from "@/lib/appTrigger";
+import { presentationModeLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSkills } from "@/hooks/useAppSkills";
@@ -37,6 +37,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ArrowLeft,
+  Braces,
+  Copy,
   Loader2,
   Plus,
   Send,
@@ -47,7 +49,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useAppTools, useAppToolsStatistics } from "@/hooks/useAppTools";
+import { useAppTools, useAppToolsStatistics, type AppTool } from "@/hooks/useAppTools";
+import { Textarea } from "@/components/ui/textarea";
 import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
 import AppSkillsSection from "../components/AppSkillsSection";
 import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
@@ -124,6 +127,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [unbindDialogOpen, setUnbindDialogOpen] = useState(false);
   const [selectedAppToolId, setSelectedAppToolId] = useState<number | null>(null);
+  const [editingTool, setEditingTool] = useState<AppTool | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [reviewActionPending, setReviewActionPending] = useState(false);
   const [reviewLogOpen, setReviewLogOpen] = useState(false);
@@ -132,6 +136,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
     tools: appTools,
     loading: appToolsLoading,
     unbindTool,
+    updateAppTool,
     refresh: refreshAppTools,
   } = useAppTools(appId);
   const { statistics } = useAppToolsStatistics(appId);
@@ -331,9 +336,9 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                       </Button>
                     )}
                   </div>
-                  {/* 副标题：说明 · 触发方式 · 平台。描述可能为空，空时不留下孤零零的分隔点 */}
+                  {/* 副标题：说明 · 展示方式 · 平台。描述可能为空，空时不留下孤零零的分隔点 */}
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {[appInfo.description, triggerLabel(appInfo.app_type, t), appInfo.platform]
+                    {[appInfo.description, presentationModeLabel(appInfo.app_type, t), appInfo.platform]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
@@ -512,7 +517,14 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                     <TableBody>
                       {appTools.map((tool) => (
                         <TableRow key={tool.id}>
-                          <TableCell className="font-medium">{tool.tool_display_name}</TableCell>
+                          <TableCell className="font-medium">
+                            {tool.tool_display_name}
+                            {Object.keys(tool.custom_config || {}).length > 0 && (
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                {t("hasCustomConfig")}
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Badge
                               className={toolTypeClass(tool.tool_type)}
@@ -548,6 +560,14 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
                             <div className="flex items-center justify-end gap-2">
                               {canEditThisApp && (
                                 <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title={t("editToolConfig")}
+                                    onClick={() => setEditingTool(tool)}
+                                  >
+                                    <Braces className="h-4 w-4" />
+                                  </Button>
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -618,6 +638,18 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 编辑工具自定义配置对话框 */}
+      {editingTool && (
+        <EditToolConfigDialog
+          tool={editingTool}
+          onClose={() => setEditingTool(null)}
+          onSave={async (customConfig) => {
+            const ok = await updateAppTool(editingTool.id, customConfig);
+            if (ok) setEditingTool(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -741,6 +773,124 @@ function BindToolsDialog({
             {selectedToolIds.length > 0
               ? t("bindCount", { count: selectedToolIds.length })
               : t("bind")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// 编辑工具自定义配置对话框。
+// custom_config 与 default_config 浅合并（顶层键覆盖）：改 headers 就要写整个
+// headers 对象，不是只写变化的那一项。密钥值用 ${ENV_VAR} 引用环境变量名，
+// 不要把 token 字面值贴进来——值属于部署环境的 .env。
+function EditToolConfigDialog({
+  tool,
+  onClose,
+  onSave,
+}: {
+  tool: AppTool;
+  onClose: () => void;
+  onSave: (customConfig: Record<string, any>) => Promise<unknown>;
+}) {
+  const t = useTranslations("apps");
+  const tc = useTranslations("common");
+  const [text, setText] = useState(() => JSON.stringify(tool.custom_config || {}, null, 2));
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    let parsed: Record<string, any>;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e: any) {
+      setError(`${t("invalidJson")}: ${e.message}`);
+      return;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      setError(t("configMustBeObject"));
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    await onSave(parsed);
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl gap-4 max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {t("editToolConfig")} · {tool.tool_display_name}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="text-sm text-muted-foreground">{t("customConfigMergeHint")}</div>
+
+          {Object.keys(tool.default_config || {}).length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-2">
+                <span>{t("toolDefaultConfig")}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        JSON.stringify(tool.default_config, null, 2)
+                      );
+                      toast.success(t("copiedToClipboard"));
+                    } catch {
+                      toast.error(tc("copyFailed"));
+                    }
+                  }}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  {t("copyDefaultConfig")}
+                </Button>
+              </div>
+              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-40">
+                {JSON.stringify(tool.default_config, null, 2)}
+              </pre>
+            </div>
+          )}
+
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-2">
+                <span>{t("customConfigJson")}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => {
+                    setText("{}");
+                    setError(null);
+                  }}
+                >
+                  {t("resetToDefaultConfig")}
+                </Button>
+              </div>
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="font-mono text-xs resize-y"
+              style={{ minHeight: 240 }}
+              spellCheck={false}
+            />
+            {error && <div className="text-xs text-destructive mt-1">{error}</div>}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            {tc("cancel")}
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {tc("save")}
           </Button>
         </DialogFooter>
       </DialogContent>

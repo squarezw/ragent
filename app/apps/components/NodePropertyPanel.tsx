@@ -16,6 +16,8 @@ import { X } from "lucide-react";
 import { WorkflowNode } from "@/types/workflow";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "next-intl";
+import axios from "@/lib/axios";
+import { DEFAULT_LLM_MODEL_CODE, type LlmModelOption } from "@/lib/llmModels";
 
 interface NodePropertyPanelProps {
   selectedNode: WorkflowNode | null;
@@ -58,6 +60,7 @@ export default function NodePropertyPanel({
 }: NodePropertyPanelProps) {
   const t = useTranslations("workflow");
   const [localData, setLocalData] = useState<any>(null);
+  const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 当选中节点变化时，更新本地数据
@@ -66,6 +69,21 @@ export default function NodePropertyPanel({
       setLocalData({ ...selectedNode.data });
     }
   }, [selectedNode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get("/api/v1/llm-models")
+      .then((response) => {
+        if (!cancelled) setLlmModels(response.data?.items || []);
+      })
+      .catch(() => {
+        if (!cancelled) setLlmModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 清理定时器
   useEffect(() => {
@@ -182,16 +200,22 @@ export default function NodePropertyPanel({
             <div className="space-y-2">
               <Label className="text-xs">{t("aiModel")}</Label>
               <Select
-                value={localData.aiModel || "deepseek"}
+                value={localData.aiModel || DEFAULT_LLM_MODEL_CODE}
                 onValueChange={(value) => handleDataChange("aiModel", value)}
               >
                 <SelectTrigger className="text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="deepseek">Deepseek</SelectItem>
-                  <SelectItem value="qwen">Qwen</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
+                  {llmModels.length === 0 ? (
+                    <SelectItem value={DEFAULT_LLM_MODEL_CODE}>DeepSeek Flash</SelectItem>
+                  ) : (
+                    llmModels.map((m) => (
+                      <SelectItem key={m.code} value={m.code}>
+                        {m.display_name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

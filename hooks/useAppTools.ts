@@ -100,6 +100,29 @@ export const useAppTools = (appId: number | null, isEnabled?: boolean) => {
     }
   };
 
+  // 更新应用的工具配置（custom_config 覆盖 default_config，浅合并）
+  const updateAppTool = async (
+    appToolId: number,
+    customConfig?: Record<string, any>,
+    priority?: number
+  ) => {
+    if (!appId) return false;
+
+    try {
+      await axios.put(`/api/apps/${appId}/tools/${appToolId}`, {
+        custom_config: customConfig ?? {},
+        ...(priority !== undefined ? { priority } : {}),
+      });
+      toast.success("工具配置已更新");
+      mutate();
+      return true;
+    } catch (error: any) {
+      console.error("Update app tool error:", error);
+      toast.error(error.response?.data?.error || error.response?.data?.detail || "更新工具配置失败");
+      return false;
+    }
+  };
+
   // 解绑工具
   const unbindTool = async (appToolId: number) => {
     if (!appId) return false;
@@ -125,6 +148,7 @@ export const useAppTools = (appId: number | null, isEnabled?: boolean) => {
     error,
     bindTool,
     batchBindTools,
+    updateAppTool,
     unbindTool,
     refresh: mutate,
   };
