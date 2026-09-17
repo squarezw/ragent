@@ -1745,8 +1745,7 @@ export async function rejectRunReview(
  *
  * 并发安全靠数据库唯一键，因此 ON CONFLICT 的目标必须与表上的
  * `automation_email_processed_once_per_automation` 四列完全一致 —— 少一列 PostgreSQL
- * 会以「no unique or exclusion constraint matching」拒绝每一次 claim。约束定义在后端仓
- * ragent-service 的 docker/db/automation.sql，改唯一键与改这里必须同批发布。
+ * 会以「no unique or exclusion constraint matching」拒绝每一次 claim。改唯一键与改这里必须同批发布。
  */
 export async function claimAutomationEmailMessage(
   userId: number,
@@ -2440,4 +2439,3 @@ export async function saveAutomationEmailMailboxCursor(
 
   return result.rows[0] || null;
 }
-

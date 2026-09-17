@@ -49,38 +49,6 @@ chmod +x deploy/start-docker.sh
 - `--build --push`：只构建和推送镜像，不启动服务
 - `--traefik`：使用 Traefik 配置文件（可与上述参数组合使用）
 
-## 数据库初始化 (`init-automation-db.sh`)
-
-**部署前端之前必须先跑一次**，否则自动化功能整体不可用（含定时触发），而且不会有显眼的报错。
-
-```bash
-deploy/init-automation-db.sh            # 表为空则重建；有数据则拒绝并列出
-deploy/init-automation-db.sh --check    # 只报告当前状态，什么都不改
-deploy/init-automation-db.sh --force    # 有数据也重建（先打印将删除的行数并要求确认）
-```
-
-自动化的 10 张表结构以**后端仓 ragent-service 的 `docker/db/automation.sql`** 为准（本仓是公开仓，
-有意不保留那份脚本的副本——真源统一在后端仓，见 `docs/assets/quickStart/SOURCE.md`）。那份脚本用的
-全是 `CREATE TABLE IF NOT EXISTS`，表已存在时会**静默跳过**——既不校验结构也不报错，所以在「库里的
-结构与代码不一致」这个场景下，直接跑它修不好任何东西。本脚本的做法是整组推倒重建。
-
-建表脚本按 `$AUTOMATION_SQL` → `$RAGENT_SERVICE_DIR/docker/db/automation.sql` →
-`../ragent-service/docker/db/automation.sql` 的顺序找，三个都没有就直接失败：
-
-```bash
-AUTOMATION_SQL=/path/to/ragent-service/docker/db/automation.sql deploy/init-automation-db.sh
-```
-
-因此它**在有数据时会拒绝执行**：`automation_mailboxes` 里存的是加密后的 IMAP 授权码，
-`automation_tasks` 里是用户建好的自动化（任务之间还会通过 `upstreamAutomationId` 互相引用）。
-删掉之后用户得重新去邮箱后台申请授权码、逐条重填，而且没有任何东西会提示他们发生过什么。
-
-库名与用户从 `.env` 的 `DATABASE_URL` 解析；默认经 `docker exec` 进名为 `postgres` 的容器，
-可用 `DB_CONTAINER` / `PGUSER` / `POSTGRES_DB` 覆盖。
-
-**跑完必须重启前端进程。** 调度器在模块加载期注册，启动时校验不过只打一行日志、不会重试——
-不重启的话界面一切正常，但自动化一封邮件都不会处理。
-
 ## 部署前准备
 
 ### PM2 部署

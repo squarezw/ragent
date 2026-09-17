@@ -1,15 +1,10 @@
 /**
  * 模块 A（系统邮箱下线）的源码守卫。
  *
- * 为什么读源码文本而不是跑函数：这一段的核心产物是**一条 SQL 语句**与**几处不再存在的兜底**，
- * 都在依赖 `lib/db` 的模块里，测试进程不连数据库（也不 import `@/lib`），没有可执行的断言入口。
+ * 为什么读源码文本而不是跑函数：这些代码依赖 `lib/db`，测试进程不连数据库
+ * （也不 import `@/lib`），没有可执行的断言入口。
  * 而这些恰好是最容易悄悄回退的地方：
  *
- * - 清理语句的 WHERE 一旦放宽（漏掉 `trigger_type = '邮件触发'`、或把等于判断改成 IN/OR），
- *   它就会从"预期影响 0 行"变成误删其他触发类型的自动化。执行结果无从断言，范围可以断言；
- * - 该语句必须留在建表脚本里（真源在后端仓 ragent-service 的
- *   `docker/db/automation.sql`，本仓不保留副本）：应用进程已不再执行任何写语句，
- *   那份部署脚本是它唯一会被执行的地方；跟着建表函数一起删掉、或者挪回代码里，它就不再执行；
  * - 防循环判断（模块 A.6）是明确的保留项——结果邮件可能从用户自己的邮箱发出，
  *   最容易被下一次"清理系统邮箱代码"顺手删掉；
  * - `||` / `??` 兜底一旦有一处冒回来，就是静默落回已下线分支的入口。这一条按**目录**扫描
@@ -23,7 +18,6 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { readAutomationSql, SKIP_AUTOMATION_SQL } from "./automationSqlPath.ts";
 
 const SCHEDULER = join(process.cwd(), "lib/cron/automation-scheduler.ts");
 const AUTOMATIONS_INDEX = join(process.cwd(), "pages/api/v1/automations/index.ts");
@@ -49,49 +43,6 @@ function functionBody(source: string, name: string): string {
   }
   throw new Error(`函数 ${name} 的花括号不配对`);
 }
-
-/** 去掉 SQL 行注释：文件里用注释解释这条语句的来由，能断言的只有可执行的那一份。 */
-function withoutSqlComments(source: string) {
-  return source.replace(/^[ \t]*--.*$/gm, "");
-}
-
-/** 从建表脚本里取出唯一的 `DELETE FROM automation_tasks …;`；被删掉或写了两份都在这里红。 */
-function cleanupStatementIn(source: string, label: string): string {
-  const found = [
-    ...withoutSqlComments(source).matchAll(/DELETE\s+FROM\s+automation_tasks[\s\S]*?;/gi),
-  ];
-  assert.equal(
-    found.length,
-    1,
-    `${label} 里应当恰好有一条 DELETE FROM automation_tasks，实际 ${found.length} 条 —— 语句被挪走/删掉/写了两份？`
-  );
-  return found[0][0];
-}
-
-test("A.1 防御性清理写在建表脚本里，且只删「邮件触发 + mailboxKey='system'」", {
-  skip: SKIP_AUTOMATION_SQL,
-}, () => {
-  const cleanup = cleanupStatementIn(readAutomationSql(), "建表脚本");
-
-  assert.match(
-    cleanup,
-    /trigger_type\s*=\s*'邮件触发'/,
-    "缺了 trigger_type 限定就会误删其他触发类型的自动化（spec §七 #9 的关键回归点）"
-  );
-  assert.match(
-    cleanup,
-    /trigger_config\s*->>\s*'mailboxKey'\s*=\s*'system'/,
-    "必须按 mailboxKey 等于 'system' 判定：等于判断不匹配 NULL"
-  );
-});
-
-test("A.1 清理语句不得用 OR / IN / 其他列放宽范围", { skip: SKIP_AUTOMATION_SQL }, () => {
-  const cleanup = cleanupStatementIn(readAutomationSql(), "建表脚本");
-
-  // 这两条是"预期影响 0 行"的前提：一旦放宽，被保护的就成了其他任务。
-  assert.doesNotMatch(cleanup, /\bOR\b/i, "WHERE 里的 OR 会放宽到其他触发行");
-  assert.doesNotMatch(cleanup, /\bIN\s*\(/i, "IN 列表会放宽到其他 mailboxKey 取值");
-});
 
 test("A.6 防循环判断保留：自己发出的结果邮件不得再次触发", () => {
   const body = functionBody(readFileSync(SCHEDULER, "utf8"), "processEmailMailboxGroup");

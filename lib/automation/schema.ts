@@ -3,11 +3,8 @@ import pool from "@/lib/db";
 /**
  * 自动化数据表的**校验清单**，不是建表清单。
  *
- * 表结构由部署时执行的建表脚本建立——**真源是后端仓 ragent-service 的
- * `docker/db/automation.sql`**（执行命令见该文件头部），本仓 ragent-public 是公开仓、
- * 不保留它的副本，应用进程也不做任何 DDL。
- * 这个清单、那份建表脚本、以及代码里实际用到的表名，三者的一致性由
- * `test/automationSchemaFile.test.ts` 守住（拿不到后端仓检出时，涉及建表脚本的那几条会跳过）。
+ * 表结构由受控的部署流程建立，应用进程不做任何 DDL。
+ * 这个清单与代码里实际用到的表名的一致性由 `test/automationSchemaFile.test.ts` 守住。
  *
  * 单独成模块而不是挂在 `store.ts` 上：`mailboxes.ts` 需要同一套校验，而它被 `store.ts`
  * 反向依赖，直接 import 会成环。
@@ -25,10 +22,7 @@ export const AUTOMATION_TABLES = [
   "automation_mailboxes",
 ] as const;
 
-/**
- * 去重表的唯一键（后端仓 docker/db/automation.sql 里显式命名的那一条），
- * 与 claim 的 ON CONFLICT 目标同源。
- */
+/** 去重表的唯一键，与 claim 的 ON CONFLICT 目标同源。 */
 const EMAIL_CLAIM_CONSTRAINT = "automation_email_processed_once_per_automation";
 
 /** 该唯一键的列，按建表语句的顺序写全。缺少 automation_id 就是本次改造要做的那件事没生效。 */
@@ -65,11 +59,8 @@ export async function assertAutomationTablesReady() {
     );
 
     if (rows.length > 0) {
-      const missing = rows.map((row) => row.name).join(", ");
       throw new Error(
-        `AUTOMATION_SCHEMA_MISSING: 数据库缺少自动化数据表 ${missing}。` +
-          "表结构由部署时的 SQL 脚本一次性建立，应用不会自行建表——" +
-          "请先执行后端仓 ragent-service 的 docker/db/automation.sql（命令见该文件头部）。"
+        "AUTOMATION_SCHEMA_UNAVAILABLE: 自动化所需服务尚未就绪，请联系系统管理员。"
       );
     }
 
@@ -93,16 +84,7 @@ export async function assertAutomationTablesReady() {
     const definition = claimConstraints[0]?.definition?.replace(/\s+/g, " ") ?? null;
 
     if (!definition?.includes(EMAIL_CLAIM_COLUMNS)) {
-      throw new Error(
-        "AUTOMATION_SCHEMA_MISSING: 数据库的 automation_email_processed_messages 上" +
-          (definition
-            ? `唯一约束 ${EMAIL_CLAIM_CONSTRAINT} 与预期不符（现为 ${definition}）。`
-            : `缺少唯一约束 ${EMAIL_CLAIM_CONSTRAINT} ${EMAIL_CLAIM_COLUMNS}。`) +
-          "这条约束是「一封邮件命中的每条自动化各领一次」的开关：它不对，claim 的" +
-          " ON CONFLICT 就找不到匹配的约束，每次都以 42P10 失败，且要到第一封来信才暴露——" +
-          "请执行后端仓 ragent-service 的 docker/db/automation.sql 迁移段（命令见该文件头部），" +
-          "改完重启进程。"
-      );
+      throw new Error("AUTOMATION_SCHEMA_UNAVAILABLE: 自动化所需服务尚未就绪，请联系系统管理员。");
     }
   })().catch((error) => {
     schemaReadyPromise = null;
