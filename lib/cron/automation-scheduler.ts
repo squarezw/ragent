@@ -1,13 +1,13 @@
 import cron, { type ScheduledTask } from "node-cron";
-import jwt from "jsonwebtoken";
 import pool from "@/lib/db";
+import { assertAutomationTablesReady } from "@/lib/automation/schema";
 import { executeAutomationAgent, isAutomationTimeoutError } from "@/lib/automation/execute";
 import { executeRunActions } from "@/lib/automation/actions";
 import {
   claimAutomationEmailMessage,
   claimDueScheduledRun,
+  cleanupAutomationEmailProcessedMessages,
   createRun,
-  ensureAutomationTables,
   finishRun,
   getAutomationEmailMailboxCursor,
   listActiveEmailAutomationsForScheduler,
@@ -20,8 +20,32 @@ import {
 import {
   getAutomationMailboxForUser,
   mailboxConnectionFromRow,
+  markAutomationMailboxConnected,
+  markAutomationMailboxConnectionError,
 } from "@/lib/automation/mailboxes";
-import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
+import {
+  mailboxGroupKey,
+  normalizeMailboxId,
+  requireMailboxId,
+  requireMailboxLabel,
+} from "@/lib/automation/mailbox-id";
+import {
+  fetchMailboxUnread,
+  fetchMessageAttachments,
+  splitAttachmentsBySize,
+  type MailboxAttachmentFile,
+} from "@/lib/automation/imap-client";
+import {
+  buildEmailAutomationQuestion,
+  normalizeEmailBody,
+  type AutomationAgentAttachment,
+} from "@/lib/automation/agent-payload";
+import { ossClient } from "@/lib/ossClient";
+import {
+  doesMailRuleSetMatch,
+  type MailRuleSet,
+  mailRulesSummary,
+} from "@/lib/automation/mail-rules";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -32,6 +56,8 @@ declare global {
   var automationEmailCronTask: ScheduledTask | undefined;
   // eslint-disable-next-line no-var
   var automationEmailCronBusy: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var automationEmailCleanupTask: ScheduledTask | undefined;
 }
 
 const ADVISORY_LOCK_NAMESPACE = 20260903;
@@ -45,13 +71,6 @@ type InboxMessage = {
   date?: string;
   body?: string;
   attachments?: string[];
-};
-
-type MailTriggerRule = {
-  id?: string;
-  field: string;
-  operator: string;
-  value?: string;
 };
 
 function isScheduleConfigurationError(error: unknown) {
@@ -188,7 +207,7 @@ export async function scanDueAutomations() {
   global.automationCronBusy = true;
 
   try {
-    await ensureAutomationTables();
+    await assertAutomationTablesReady();
 
     const result = await pool.query(`
       SELECT id FROM automation_tasks
@@ -208,182 +227,178 @@ export async function scanDueAutomations() {
   }
 }
 
-function requiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
-function serverAuthorization(userId: number) {
-  const token = jwt.sign({ userId }, requiredEnv("JWT_SECRET"), { expiresIn: "15m" });
-  return `Bearer ${token}`;
-}
-
-function mailboxIdFromKey(mailboxKey: string) {
-  const match = String(mailboxKey || "").match(/^mailbox:(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
-function extractSenderDomain(value?: string) {
-  const match = String(value || "").match(/@([^>\s,;]+)/);
-  return match?.[1]?.toLowerCase() || "";
-}
-
-function attachmentExtensions(names?: string[]) {
-  return (Array.isArray(names) ? names : [])
-    .map((name) => {
-      const match = String(name).toLowerCase().match(/(\.[a-z0-9]+)$/i);
-      return match?.[1] || "";
-    })
-    .filter(Boolean)
-    .join(" ");
-}
-
-function mailRuleSource(rule: MailTriggerRule, message: InboxMessage) {
-  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
-  switch (rule.field) {
-    case "发件人": return String(message.from || "");
-    case "发件人域名": return extractSenderDomain(message.from);
-    case "收件人": return String(message.to || "");
-    case "邮件主题": return String(message.subject || "");
-    case "邮件正文": return String(message.body || "");
-    case "是否包含附件": return attachments.length > 0 ? "是" : "否";
-    case "附件名称": return attachments.join(" ");
-    case "附件类型": return attachmentExtensions(attachments);
-    default: return "";
-  }
-}
-
-function doesMailRuleMatch(rule: MailTriggerRule, message: InboxMessage) {
-  const source = mailRuleSource(rule, message).toLowerCase();
-  const wanted = String(rule.value || "").trim().toLowerCase();
-
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    const exists = rule.field === "是否包含附件" ? source === "是" : source.trim().length > 0;
-    const wantExists = !["否", "false", "0", "no"].includes(wanted || "是");
-    return exists === wantExists;
-  }
-
-  if (!wanted) return false;
-  if (rule.operator === "等于") return source.trim() === wanted;
-  if (rule.operator === "包含") return source.includes(wanted);
-  if (rule.operator === "不包含") return !source.includes(wanted);
-  if (rule.operator === "开头是") return source.startsWith(wanted);
-  if (rule.operator === "结尾是") return source.endsWith(wanted);
-  return false;
-}
-
-function mailAutomationMatches(task: any, message: InboxMessage) {
+// 任务行（automation_tasks）到规范化规则集的适配；规则逻辑本身在 mail-rules.ts。
+function mailRuleSetFromTask(task: any): MailRuleSet {
   const config = task.trigger_config || {};
-  const rules: MailTriggerRule[] = Array.isArray(config.rules) ? config.rules : [];
-  if (rules.length === 0) return true;
-  const results = rules.map((rule) => doesMailRuleMatch(rule, message));
-  return config.ruleMode === "any" ? results.some(Boolean) : results.every(Boolean);
-}
-
-function mailRuleText(rule: MailTriggerRule) {
-  if (rule.operator === "是否存在" || rule.field === "是否包含附件") {
-    return `${rule.field}${rule.value || "是"}`;
-  }
-  return `${rule.field}${rule.operator}“${rule.value || ""}”`;
-}
-
-function mailRulesSummary(task: any) {
-  const config = task.trigger_config || {};
-  const rules: MailTriggerRule[] = Array.isArray(config.rules) ? config.rules : [];
-  if (rules.length === 0) return "收到新邮件即触发";
-  const prefix = config.ruleMode === "any" ? "任一" : "全部";
-  return `${prefix}：${rules.map(mailRuleText).join("；")}`;
-}
-
-async function fetchSystemMailboxUnread(userId: number, afterUid?: number) {
-  const backendUrl = requiredEnv("EXTERNAL_API_BASE_URL").replace(/\/+$/, "");
-  const params = new URLSearchParams();
-  if (Number.isInteger(afterUid)) params.set("after_uid", String(afterUid));
-  const response = await fetch(
-    `${backendUrl}/api/v1/email/unread${params.toString() ? `?${params.toString()}` : ""}`,
-    { headers: { Authorization: serverAuthorization(userId) } }
-  );
-
-  const raw = await response.text();
-  let data: any = raw;
-  try { data = raw ? JSON.parse(raw) : null; } catch { /* keep raw */ }
-
-  if (!response.ok) {
-    const detail = typeof data === "object" && data?.detail ? data.detail : String(data || `HTTP ${response.status}`);
-    throw new Error(detail);
-  }
-  return data ?? { success: true, latest_uid: 0, messages: [] };
+  return { rules: config.rules, mode: config.ruleMode };
 }
 
 async function fetchConfiguredMailboxUnread(
   userId: number,
-  mailboxKey: string,
+  mailboxId: number,
   afterUid?: number
 ) {
-  if (mailboxKey === "system") {
-    return fetchSystemMailboxUnread(userId, afterUid);
+  const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
+  if (!mailbox) throw new Error(`监听邮箱不存在：${mailboxId}`);
+
+  try {
+    // 解密失败（凭据被换过密钥、授权码被清空）与 IMAP 连不上在这里是同一件事：
+    // 这条邮箱管道这次收信失败了，用户看到的都该是"邮箱连接失败"。
+    // 收信是本进程内的直接调用（`lib/automation/imap-client.ts`）：不再需要服务间 JWT，
+    // 也就不再需要一遍自我 HTTP 回调。
+    const data = await fetchMailboxUnread({
+      afterUid,
+      connection: mailboxConnectionFromRow(mailbox),
+    });
+
+    // 模块 E.1：连上了就恢复状态。只在"当前不是 connected"时才写库——正常轮询（每 10 秒一次）
+    // 不产生任何写入；判断用的是上面取到的那一行，省掉一次查询。
+    if (mailbox.status !== "connected") {
+      await markAutomationMailboxConnected(userId, mailboxId);
+    }
+
+    return data;
+  } catch (error) {
+    // 模块 E.1/E.2：一次写入点亮三处（抽屉徽标、抽屉的「最后错误」、通知中心里按
+    // status='error' 派生的那条提醒）。记录失败不抛错，原始错误照旧往上抛给分组层的日志。
+    await markAutomationMailboxConnectionError(userId, mailboxId, error);
+    throw error;
+  }
+}
+
+/**
+ * 附件准备只用到任务行上的这两个字段。窄类型而非 `any`：顺带说明这个 helper 不碰
+ * 任务的其他部分，也让「它需要什么」在签名上直接可读。
+ */
+type EmailAttachmentTask = {
+  created_by_user_id?: unknown;
+  trigger_config?: { mailboxId?: unknown } | null;
+};
+
+/**
+ * 把邮件附件取回来 → 筛掉超限的 → 传上 OSS。
+ *
+ * 每一层失败都只降级、不抛错：附件是本次任务的输入之一，为它拖垮整次运行不划算。
+ * 失败与超限的结果都进 `skippedNames`，最终由提示词点名——模型因此不会把
+ * 「只收到一部分」误当成「附件就这些」，进而对缺数据给出错误的解释。
+ *
+ * 三个名单互斥且穷尽：规则引擎看到过的每个附件名，要么在 `deliveredNames` 里、
+ * 要么在 `skippedNames` 里。
+ */
+async function prepareEmailAttachments(
+  task: EmailAttachmentTask,
+  message: InboxMessage
+): Promise<{
+  delivered: AutomationAgentAttachment[];
+  deliveredNames: string[];
+  skippedNames: string[];
+}> {
+  // 规则引擎判定时看到的名字（`extractAttachmentNames` 的结果）。没拿到字节的也要在这里露面。
+  const seenNames = Array.isArray(message.attachments) ? [...message.attachments] : [];
+  const nothingDelivered = {
+    delivered: [] as AutomationAgentAttachment[],
+    deliveredNames: [] as string[],
+    skippedNames: seenNames,
+  };
+
+  let files: MailboxAttachmentFile[];
+  try {
+    const mailbox = await getAutomationMailboxForUser(
+      Number(task.created_by_user_id),
+      requireMailboxId(task.trigger_config?.mailboxId)
+    );
+    if (!mailbox) return nothingDelivered;
+
+    files = await fetchMessageAttachments(
+      mailboxConnectionFromRow(mailbox),
+      Number(message.uid)
+    );
+  } catch (error) {
+    // 取信失败（连接断了、凭据被换过）不该让任务失败——按「没有附件可读」继续。
+    console.error("[Automation Email] 读取附件失败，本次按无附件处理:", error);
+    return nothingDelivered;
   }
 
-  const mailboxId = mailboxIdFromKey(mailboxKey);
-  if (!mailboxId) throw new Error(`监听邮箱标识无效：${mailboxKey}`);
+  const { accepted, skipped } = splitAttachmentsBySize(files);
+  const skippedNames = skipped.map((file) => file.filename);
 
-  const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
-  if (!mailbox) throw new Error(`监听邮箱不存在：${mailboxKey}`);
+  // `mailparser` 没给出字节的 part：规则看得到名字，却没有可传的内容。
+  const withBytes = new Set(files.map((file) => file.filename));
+  for (const name of seenNames) {
+    if (!withBytes.has(name)) skippedNames.push(name);
+  }
 
-  return fetchMailboxUnread({
-    authorization: serverAuthorization(userId),
-    afterUid,
-    connection: mailboxConnectionFromRow(mailbox),
-  });
+  const delivered: AutomationAgentAttachment[] = [];
+  for (const file of accepted) {
+    try {
+      const objectKey = await ossClient.upload({
+        filename: file.filename,
+        content: file.content,
+        contentType: file.contentType || "application/octet-stream",
+        category: "attachments",
+      });
+
+      delivered.push({
+        objectKey,
+        filename: file.filename,
+        contentType: file.contentType,
+        size: file.size,
+      });
+    } catch (error) {
+      console.error(`[Automation Email] 附件上传失败，跳过《${file.filename}》:`, error);
+      skippedNames.push(file.filename);
+    }
+  }
+
+  return {
+    delivered,
+    deliveredNames: delivered.map((item) => item.filename),
+    skippedNames,
+  };
 }
 
 async function executeEmailAutomation(task: any, message: InboxMessage) {
   const config = task.trigger_config || {};
-  const attachments = Array.isArray(message.attachments) && message.attachments.length > 0
-    ? message.attachments.join("、")
-    : "无";
+  // 模块 A：展示名在创建/更新时按邮箱记录派生（模块 D.3），这里取不到即数据有问题，
+  // 显式抛错而不是兜底成一个已下线的邮箱名。抛错由分组扫描按组记录，不影响其他分组。
+  const mailboxLabel = requireMailboxLabel(config.mailboxLabel);
 
-  const rawBody = typeof message.body === "string" ? message.body.trim() : "";
-  const body = rawBody.length > 20000
-    ? `${rawBody.slice(0, 20000)}\n\n[正文较长，已截取前 20000 个字符]`
-    : rawBody || "（无正文）";
+  // 规则判定早就做完了，这里才把字节取回来——只处理真正要执行的那封。
+  const emailAttachments = await prepareEmailAttachments(task, message);
 
-  const question = [
-    "【自动化任务】",
-    String(task.task || ""),
-    "",
-    "【本次收到的新邮件】",
-    `监听邮箱：${config.mailboxLabel || "系统邮箱"}`,
-    `发件人：${message.from || "未知"}`,
-    `收件人：${message.to || "未知"}`,
-    `主题：${message.subject || "无主题"}`,
-    `时间：${message.date || "未知"}`,
-    `附件：${attachments}`,
-    "正文：",
-    body,
-    "",
-    "【执行要求】",
-    "请根据上面的真实邮件内容完成自动化任务。",
-    "只输出本次邮件的处理结果，不要自行调用发送邮件、通知或其他外部发送工具；结果将由自动化统一发送。",
-  ].join("\n");
+  const body = normalizeEmailBody(message.body);
+
+  const question = buildEmailAutomationQuestion({
+    task: String(task.task || ""),
+    mailboxLabel,
+    from: message.from,
+    to: message.to,
+    subject: message.subject,
+    date: message.date,
+    // 传原始正文：规范化由 builder 统一做，避免两处各截一次。
+    body: message.body,
+    delivered: emailAttachments.deliveredNames,
+    skipped: emailAttachments.skippedNames,
+  });
 
   const triggerContext = {
     source: "email-server",
     firedAt: new Date().toISOString(),
     uid: Number(message.uid),
     messageId: message.message_id || undefined,
-    mailboxKey: config.mailboxKey || "system",
-    mailbox: config.mailboxLabel || "系统邮箱",
+    mailboxId: requireMailboxId(config.mailboxId),
+    mailbox: mailboxLabel,
     folder: config.folder || "INBOX",
-    matchedRule: mailRulesSummary(task),
-    priority: Number(config.priority ?? 50),
+    matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
     from: message.from,
     to: message.to,
     subject: message.subject,
     date: message.date,
     body,
+    // 保持既有形状：规则引擎与运行详情都按「名字列表」读它。
     attachments: message.attachments || [],
+    // 新增：已上传成功的附件元信息，供运行详情给出下载入口。
+    attachmentFiles: emailAttachments.delivered,
   };
 
   const run = await createRun(task, "running", triggerContext);
@@ -393,6 +408,9 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
       userId: Number(task.created_by_user_id),
       appId: Number(task.app_id),
       question,
+      // 附件以结构化字段下发：后端在 skill 沙箱起容器前取回、写进 inputs/，
+      // 模型按文件名引用即可。object_key 不进提示词（见 agent-payload.ts）。
+      attachments: emailAttachments.delivered,
     });
 
     const answer = result.answer || "任务已完成，未返回文本结果";
@@ -453,12 +471,13 @@ async function processEmailMailboxGroup(tasks: any[]) {
 
   const userId = Number(tasks[0].created_by_user_id);
   const config = tasks[0].trigger_config || {};
-  const mailboxKey = String(config.mailboxKey || "system").trim() || "system";
-  const cursor = await getAutomationEmailMailboxCursor(userId, mailboxKey);
+  // 遗留数据缺少整数 mailboxId 时直接抛错（不再回退 system），错误由 scanEmailAutomations 按分组记录。
+  const mailboxId = requireMailboxId(config.mailboxId);
+  const cursor = await getAutomationEmailMailboxCursor(userId, mailboxId);
 
   const data = await fetchConfiguredMailboxUnread(
     userId,
-    mailboxKey,
+    mailboxId,
     cursor.initialized ? cursor.lastUid : undefined
   );
 
@@ -467,7 +486,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
 
   // 第一次建立服务端基线，不处理历史邮件。
   if (!cursor.initialized) {
-    await saveAutomationEmailMailboxCursor(userId, mailboxKey, latestUid, true);
+    await saveAutomationEmailMailboxCursor(userId, mailboxId, latestUid, true);
     return;
   }
 
@@ -482,47 +501,41 @@ async function processEmailMailboxGroup(tasks: any[]) {
     // 防止平台自己发送的结果邮件再次触发自动化形成循环。
     if (!subject.startsWith("自动化执行结果：") && !subject.startsWith("[AI对话]")) {
       const messageKey = String(message.message_id || "").trim() || `uid:${uid}`;
-      const matched = tasks
-        .filter((task) => mailAutomationMatches(task, message))
-        .sort((a, b) => {
-          const priorityDelta = Number(b.trigger_config?.priority ?? 50) - Number(a.trigger_config?.priority ?? 50);
-          return priorityDelta !== 0 ? priorityDelta : Number(a.id) - Number(b.id);
-        });
+      const matched = tasks.filter((task) =>
+        doesMailRuleSetMatch(mailRuleSetFromTask(task), message)
+      );
 
-      const winner = matched[0];
-      let claimed = false;
-      if (winner) {
-        claimed = await claimAutomationEmailMessage(
-          userId,
-          mailboxKey,
-          messageKey,
-          Number(winner.id)
-        );
+      // 每条自动化各自 claim（唯一键含 automation_id，互不阻塞）。
+      // 一封邮件命中的多条自动化会**全部执行**，不再由优先级选出一条胜出。
+      const claimedTasks: any[] = [];
+      const claimedIds = new Set<number>();
+      for (const task of matched) {
+        const taskId = Number(task.id);
+        if (await claimAutomationEmailMessage(userId, mailboxId, messageKey, taskId)) {
+          claimedIds.add(taskId);
+          claimedTasks.push(task);
+        }
       }
 
       const matchedIds = new Set(matched.map((task) => Number(task.id)));
       await recordAutomationEmailRuleEvaluations(
         tasks.map((task) => {
           const taskId = Number(task.id);
-          let outcome: "triggered" | "suppressed_by_priority" | "not_matched" | "duplicate";
+          let outcome: "triggered" | "not_matched" | "duplicate";
           if (!matchedIds.has(taskId)) {
             outcome = "not_matched";
-          } else if (winner && taskId === Number(winner.id)) {
-            outcome = claimed ? "triggered" : "duplicate";
           } else {
-            outcome = "suppressed_by_priority";
+            outcome = claimedIds.has(taskId) ? "triggered" : "duplicate";
           }
 
           return {
             userId,
-            mailboxKey,
+            mailboxId,
             messageKey,
             messageUid: uid,
             automationId: taskId,
             outcome,
-            winnerAutomationId: winner ? Number(winner.id) : null,
-            matchedRule: mailRulesSummary(task),
-            priority: Number(task.trigger_config?.priority ?? 50),
+            matchedRule: mailRulesSummary(mailRuleSetFromTask(task)),
             from: message.from,
             to: message.to,
             subject: message.subject,
@@ -531,13 +544,29 @@ async function processEmailMailboxGroup(tasks: any[]) {
         })
       );
 
-      if (winner && claimed) {
-        await executeEmailAutomation(winner, message);
-      }
+      // 并发执行，失败互不影响（allSettled 而非 all）；等全部结束再推进游标，
+      // 保持与改动前一致的 at-most-once 语义：崩溃时游标落后 → 重新读到这封邮件
+      // → claim 已写入 → 判为 duplicate → 不重复执行。
+      const results = await Promise.allSettled(
+        claimedTasks.map((task) => executeEmailAutomation(task, message))
+      );
+      // 不重抛：一条失败不该拖累同一封邮件命中的其他自动化。但也不能不记——
+      // executeEmailAutomation 的 try 从 createRun 之后才开始，requireMailboxLabel /
+      // requireMailboxId / createRun 抛出时不会写 failed 状态、也没有任何日志，
+      // 只在这里落一条带 automation id 的记录，否则这类失败对运维完全不可见。
+      // （claim 已写入，重扫会判 duplicate，所以这里只补可观测性，不涉及重试。）
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(
+            `[Automation Email] automation ${claimedTasks[index]?.id} failed: user=${userId} mailboxId=${mailboxId} uid=${uid}`,
+            result.reason
+          );
+        }
+      });
     }
 
     // 无论是否命中规则都推进游标；规则调整不会回溯历史邮件。
-    await saveAutomationEmailMailboxCursor(userId, mailboxKey, uid, true);
+    await saveAutomationEmailMailboxCursor(userId, mailboxId, uid, true);
   }
 }
 
@@ -551,8 +580,10 @@ export async function scanEmailAutomations() {
 
     for (const task of tasks) {
       const userId = Number(task.created_by_user_id);
-      const mailboxKey = String(task.trigger_config?.mailboxKey || "system").trim() || "system";
-      const key = `${userId}:${mailboxKey}`;
+      // 分组键：同一用户同一监听邮箱为一组（决定 claim 与去重的作用范围）。
+      // 遗留数据没有整数 mailboxId，单独归组后由 processEmailMailboxGroup 抛错。
+      const mailboxId = normalizeMailboxId(task.trigger_config?.mailboxId);
+      const key = mailboxId === null ? `${userId}:MAILBOX_ID_REQUIRED` : mailboxGroupKey(userId, mailboxId);
       const current = groups.get(key) || [];
       current.push(task);
       groups.set(key, current);
@@ -564,7 +595,7 @@ export async function scanEmailAutomations() {
       } catch (error) {
         const first = groupTasks[0];
         console.error(
-          `[Automation Email] mailbox scan failed: user=${first?.created_by_user_id} mailbox=${first?.trigger_config?.mailboxKey || "system"}`,
+          `[Automation Email] mailbox scan failed: user=${first?.created_by_user_id} automation=${first?.id} mailboxId=${first?.trigger_config?.mailboxId ?? "(缺失)"}`,
           error
         );
       }
@@ -576,8 +607,22 @@ export async function scanEmailAutomations() {
   }
 }
 
+/**
+ * 模块 E.4：去重表保留期清理（每次执行都幂等——一条按 `created_at` 截止的 DELETE）。
+ *
+ * 失败只记日志：这是维护动作，不该影响邮件扫描本身；下一次执行会补上。
+ */
+async function runAutomationEmailRetentionCleanup() {
+  try {
+    const removed = await cleanupAutomationEmailProcessedMessages();
+    console.log(`[Automation Email] dedup retention cleanup: ${removed} row(s) removed`);
+  } catch (error) {
+    console.error("[Automation Email] dedup retention cleanup failed:", error);
+  }
+}
+
 export async function initAutomationScheduler() {
-  await ensureAutomationTables();
+  await assertAutomationTablesReady();
 
   if (!global.automationCronTask) {
     await scanDueAutomations();
@@ -597,5 +642,16 @@ export async function initAutomationScheduler() {
     console.log("[Automation Email] scheduler initialized (every 10 seconds)");
   } else {
     console.log("[Automation Email] scheduler already initialized");
+  }
+
+  // 模块 E.4：去重表清理，每天一次。与上面两个扫描任务同一套做法（同一个 node-cron、
+  // 同样的 global 句柄防重复初始化），不另起计时器；启动时也跑一次，保证进程活不到每天那个
+  // 时刻（频繁重启的部署）也总有机会清理——清理语句幂等，多跑一次没有副作用。
+  if (!global.automationEmailCleanupTask) {
+    await runAutomationEmailRetentionCleanup();
+    global.automationEmailCleanupTask = cron.schedule("0 3 * * *", () => {
+      void runAutomationEmailRetentionCleanup();
+    });
+    console.log("[Automation Email] dedup retention cleanup initialized (daily at 03:00)");
   }
 }

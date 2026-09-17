@@ -1,26 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
+import { respondMailboxApiError } from "@/lib/automation/mailbox-errors";
 import {
   createAutomationMailbox,
   listAutomationMailboxes,
   mailboxRowToApi,
 } from "@/lib/automation/mailboxes";
-import { fetchMailboxUnread } from "@/lib/automation/mailbox-client";
-
-function errorResponse(res: NextApiResponse, error: any) {
-  const code = String(error?.message || "");
-  const map: Record<string, string> = {
-    MAILBOX_EMAIL_INVALID: "请输入正确的邮箱地址",
-    MAILBOX_USERNAME_REQUIRED: "请填写邮箱登录账号",
-    MAILBOX_PASSWORD_REQUIRED: "请填写邮箱授权码或密码",
-    MAILBOX_IMAP_HOST_REQUIRED: "请填写 IMAP 服务器",
-    MAILBOX_IMAP_PORT_INVALID: "IMAP 端口不正确",
-    AUTOMATION_MAILBOX_SECRET_MISSING: "服务端尚未配置邮箱凭证加密密钥",
-  };
-  if (map[code]) return res.status(400).json({ detail: map[code] });
-  console.error("[Automation Mailboxes API] error:", error);
-  return res.status(500).json({ detail: code || "邮箱操作失败" });
-}
+import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
@@ -30,8 +16,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const rows = await listAutomationMailboxes(userId);
       return res.status(200).json({ items: rows.map(mailboxRowToApi) });
-    } catch (error: any) {
-      return errorResponse(res, error);
+    } catch (error) {
+      return respondMailboxApiError(res, error);
     }
   }
 
@@ -50,7 +36,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       // 保存前先真实连接一次，避免把不可用的账号写入“已连接邮箱”。
       await fetchMailboxUnread({
-        authorization: req.headers.authorization,
         connection: {
           email: input.email,
           username: input.username || input.email,
@@ -64,18 +49,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const row = await createAutomationMailbox(userId, input);
       return res.status(201).json(mailboxRowToApi(row));
-    } catch (error: any) {
-      const message = String(error?.message || "邮箱连接失败");
-      if (
-        message.includes("IMAP") ||
-        message.includes("登录") ||
-        message.includes("连接") ||
-        message.includes("认证") ||
-        message.includes("AUTHENTICATION")
-      ) {
-        return res.status(400).json({ detail: message });
-      }
-      return errorResponse(res, error);
+    } catch (error) {
+      // 连接类失败沿用上游原文（见 mailbox-errors.ts），其余按错误码映射。
+      return respondMailboxApiError(res, error);
     }
   }
 

@@ -1,0 +1,12 @@
+# Shell scripts MUST keep LF line endings.
+#
+# core.autocrlf=true (set on this Windows checkout) rewrites files to CRLF when
+# they land in the working tree. For a .sh file that is bind-mounted into a
+# Linux container this is fatal rather than cosmetic: the kernel reads the
+# shebang as `/bin/bash\r`, which is not a real path, so exec() fails with
+# ENOENT — Docker reports it as "no such file or directory" even though the
+# script is right there. A trailing \r on every other line also poisons the
+# value of any variable assigned from it.
+#
+# This attribute overrides autocrlf for shell scripts on every platform.
+*.sh text eol=lf

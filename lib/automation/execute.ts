@@ -1,5 +1,9 @@
 import jwt from "jsonwebtoken";
 import { extractSseErrorMessage, isSseCommentLine } from "@/lib/chatSse";
+import {
+  buildAutomationAgentPayload,
+  type AutomationAgentAttachment,
+} from "@/lib/automation/agent-payload";
 
 export interface AutomationExecutionAttachment {
   filename: string;
@@ -79,6 +83,11 @@ export async function executeAutomationAgent(params: {
   userId: number;
   appId: number;
   question: string;
+  /**
+   * 邮件附件（已上传 OSS）。交给后端在 skill 沙箱起容器前取回、写进 `inputs/`，
+   * 模型按文件名引用即可——object_key 不进提示词，见 `agent-payload.ts` 的说明。
+   */
+  attachments?: readonly AutomationAgentAttachment[];
 }): Promise<AutomationExecutionResult> {
   const jwtSecret = requiredEnv("JWT_SECRET");
   const backendUrl = requiredEnv("EXTERNAL_API_BASE_URL").replace(/\/+$/, "");
@@ -91,10 +100,13 @@ export async function executeAutomationAgent(params: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: params.question }],
-      app_id: params.appId,
-    }),
+    body: JSON.stringify(
+      buildAutomationAgentPayload({
+        question: params.question,
+        appId: params.appId,
+        attachments: params.attachments,
+      }),
+    ),
   });
 
   if (!response.ok) {

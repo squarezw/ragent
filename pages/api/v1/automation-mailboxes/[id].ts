@@ -1,6 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
-import { deleteAutomationMailbox } from "@/lib/automation/mailboxes";
+import { respondMailboxApiError } from "@/lib/automation/mailbox-errors";
+import { mailboxUpdateInputFromBody } from "@/lib/automation/mailbox-input";
+import {
+  deleteAutomationMailbox,
+  mailboxRowToApi,
+  updateAutomationMailbox,
+} from "@/lib/automation/mailboxes";
 
 function parseId(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -13,6 +19,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
   const mailboxId = parseId(req.query.id);
   if (!mailboxId) return res.status(400).json({ detail: "Invalid mailbox id" });
+
+  if (req.method === "PUT") {
+    try {
+      const row = await updateAutomationMailbox(
+        userId,
+        mailboxId,
+        mailboxUpdateInputFromBody(req.body)
+      );
+      if (!row) return res.status(404).json({ detail: "邮箱不存在" });
+      return res.status(200).json(mailboxRowToApi(row));
+    } catch (error) {
+      return respondMailboxApiError(res, error);
+    }
+  }
 
   if (req.method === "DELETE") {
     try {
@@ -31,6 +51,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  res.setHeader("Allow", ["DELETE"]);
+  res.setHeader("Allow", ["PUT", "DELETE"]);
   return res.status(405).json({ detail: "Method Not Allowed" });
 }

@@ -1,0 +1,424 @@
+/**
+ * IMAP 收信：本进程内实现（不再调 ragent-service 的 `/api/v1/email/unread-config`）。
+ *
+ * 那个端点只以临时补丁脚本的形式存在过、从未进入部署镜像，于是每次保存邮箱与每 10 秒一次的
+ * 轮询都 404，错误文案里没有任何关键词、落不到 400 分支，被兜底成 500。收信因此搬进 ragent
+ * 进程——`instrumentation.ts` 本来就在 Next 进程内跑调度器（`ENABLE_CRON=true`），不是新模式。
+ *
+ * 这是 Python 参考实现（`adce8b1:patch_backend_multi_mailbox.py`，含
+ * `patch_backend_mail_batch.py` 的批处理修复）的移植，不是重新设计。三处反直觉的地方：
+ *
+ * 1. **只读打开文件夹**（`readOnly: true`），绝不改动用户邮箱的已读状态。处理与否由我们
+ *    自己的游标与去重表决定，与 `\Seen` 无关——也正因如此，用户在客户端读过的信仍会被处理。
+ * 2. **`latest_uid` 是「文件夹当前最大 UID」**，在游标判断之前就取好；它是调用方建基线的
+ *    依据，与「本批取到了哪些」无关（首次运行甚至一封都不取）。
+ * 3. **一批取「游标之后最早的 20 封」**，不是最新 20 封。游标逐封推进，取最新一批会让它
+ *    一次跳过中间所有邮件，而这些邮件再也不会被读到——静默丢信。
+ *
+ * 纯逻辑（UID 截取、正文与附件名提取、字段规范化）都抽成了可直接喂参数的函数，
+ * 单测 `test/imapClient.test.ts` 不连网也不连库。
+ */
+import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
+
+/** 连接超时：与参考实现的 `timeout=15` 对齐（连接、问候、以及无响应等待都是这个量级）。 */
+export const IMAP_TIMEOUT_MS = 15_000;
+
+/** 单批最多读取的邮件数。积压更多时由下一次轮询继续，游标只在真正处理过的邮件上前进。 */
+export const IMAP_MESSAGE_BATCH_SIZE = 20;
+
+export type MailboxConnection = {
+  email?: string;
+  username: string;
+  password: string;
+  imapHost: string;
+  imapPort: number;
+  imapSecure: boolean;
+  folder: string;
+};
+
+/** 单封邮件：调用方（调度器）依赖的 8 个字段恒存在。 */
+export type MailboxUnreadMessage = {
+  uid: number;
+  message_id: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  body: string;
+  attachments: string[];
+};
+
+export type MailboxUnreadResult = {
+  success: boolean;
+  latest_uid: number;
+  messages: MailboxUnreadMessage[];
+};
+
+/** 本地纯函数取值时用到的解析结果视图：`mailparser` 的 `ParsedMail` 是它的超集。 */
+export type ParsedMailView = {
+  text?: unknown;
+  html?: unknown;
+  subject?: unknown;
+  messageId?: unknown;
+  from?: unknown;
+  to?: unknown;
+  attachments?: unknown;
+  headerLines?: unknown;
+};
+
+/** 文件夹 UID 全集 → 「当前最大 UID」；空文件夹为 0。 */
+export function latestUidFrom(uids: readonly number[]): number {
+  let latest = 0;
+  for (const uid of uids) {
+    const value = Number(uid);
+    if (Number.isInteger(value) && value > latest) latest = value;
+  }
+  return latest;
+}
+
+/**
+ * 本轮该取哪些邮件，以及该回报的 `latest_uid`。
+ *
+ * 顺序是承重的：`latestUid` 先算（它来自文件夹的 UID 全集），`afterUid` 只决定**本批**取哪些。
+ * 游标尚未建立（不传 / null / 非整数）时只回报基线、一封不取——调用方拿它写 `initialized`
+ * 游标，下次轮询才开始真正收信。此时若返回 0（或返回本批的最大值），下一次就会把历史邮件
+ * 重放一遍。
+ */
+export function planMailboxFetch(
+  uids: readonly number[],
+  afterUid?: number | null
+): { latestUid: number; targetUids: number[] } {
+  const latestUid = latestUidFrom(uids);
+
+  if (!Number.isInteger(afterUid)) return { latestUid, targetUids: [] };
+
+  const cursor = Number(afterUid);
+  const targetUids = uids
+    .map(Number)
+    .filter((uid) => Number.isInteger(uid) && uid > cursor)
+    .sort((left, right) => left - right)
+    .slice(0, IMAP_MESSAGE_BATCH_SIZE);
+
+  return { latestUid, targetUids };
+}
+
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * `search({all:true},{uid:true})` 的结果 → UID 列表。
+ *
+ * 不是数组即失败。`search` 的失败面比重连不选中邮箱宽得多（`imapflow@2.0.2`）：
+ * `commands/search.js` 在命令抛错时 catch 住并**返回 `false`**（服务端 NO/BAD、命令中途
+ * 断连都落在这里，不往外抛），`imap-flow.js` 在没选中邮箱时返回 `undefined`、在 `run()`
+ * 拿到假值时 `|| false`。把其中任何一种当成空文件夹，**基线调用**就会把 `latest_uid: 0`
+ * 写进游标，下一次轮询从 0 开始把整个邮箱的历史按 20 封一批重放——正是基线机制要防的
+ * 反方向。参考实现在这里同样是直接失败（`无法读取邮箱 UID`），不兜底。
+ *
+ * 正常成功时返回的是排好序的 UID 数组（空文件夹是 `[]`，非空真值，不会被 `|| false` 吃掉），
+ * 所以这条守卫不会误伤空邮箱。
+ */
+export function uidsFromSearchResult(found: unknown): number[] {
+  if (!Array.isArray(found)) throw new Error("IMAP 未返回 UID 列表");
+  return found.map(Number);
+}
+
+/**
+ * 正文：纯文本优先，HTML 兜底，都没有则空串（不是 undefined）。
+ *
+ * 单一取值来源，因此不会有「HTML-only 邮件返回带标签的源码、`开头是`/`等于` 规则拿标签
+ * 去匹配」之外的第二套语义。前提是解析时传了 `skipHtmlToText`：默认行为会把 HTML
+ * 「翻译」成一段纯文本塞进 `text`，那样就再也分不清「本来有纯文本」与「只有 HTML」。
+ */
+export function extractBody(parsed: ParsedMailView): string {
+  const text = textValue(parsed?.text).trim();
+  if (text) return text;
+  return textValue(parsed?.html).trim();
+}
+
+/**
+ * 附件名：`mailparser` 判定为附件的 part 里，取解码后的文件名（inline 也算）。
+ *
+ * 与参考实现（Python `msg.walk()` + `part.get_filename()`：不按 disposition 过滤、且对
+ * `Content-Type` 的 `name` 参数兜底）有几处不一致，都记在这里，因为漏报会让
+ * `是否包含附件`/`附件名称`/`附件类型` 失配，而调度器在**未命中时也会推进游标**
+ * （`automation-scheduler.ts`），那封信的触发就此永久消失：
+ *
+ * - **少报**：带文件名但被 `mailparser` 判成正文的 part 不计入——`Content-Disposition:
+ *   inline; filename="page.html"` 的 text/html、或只有 `Content-Type: text/plain;
+ *   name="notes.txt"` 而没有 disposition 的 part（两者内容都进正文）。
+ * - **转发邮件（`message/rfc822`）的行为取决于容器的 disposition**（实测，逐条见
+ *   `test/imapClient.test.ts` 的 `FORWARDED`）：
+ *   - 容器**不透明**（内层一条都看不到）：无 disposition、`attachment`、带
+ *     `Content-Transfer-Encoding: base64` 三种。此时只见容器自己——它带 filename（含
+ *     只有 `name=` 参数）就报容器名，什么都没带就整条被下面的 filename 过滤掉。
+ *   - 容器**透明**（`Content-Disposition: inline`）：内层 part 直接出现在附件列表里
+ *     （内层的 `attachment; filename="inner.pdf"` 会报出来），**容器自己的 filename 反而
+ *     不报**，内层正文还会并进正文。与不透明那三种正好相反。
+ *   机制不是"mailparser 不肯下钻"：`@zone-eu/mailsplit` 的 `message-splitter.js` 只对
+ *   `Content-Disposition: inline` 的 `message/rfc822` 设 `messageNode = true`（分叉成嵌套
+ *   邮件并继续下钻），mailparser 对该节点 `break`——容器因此不进附件列表，内层走嵌套那条路。
+ * - **需过滤**：`attachments` 里会出现没有 filename 的条目（只有 `Content-ID` 的内嵌图片、
+ *   或上面那种不透明的 `message/rfc822` 容器），所以必须按 filename 过滤。
+ *
+ * 完全对齐参考实现要放弃 `simpleParser` 自己走 MIME 树，代价是丢掉当前正确的那些形态
+ * （编码词文件名、RFC 2231、嵌套 multipart、逐 part charset），不划算。故按现状记录，
+ * 并由 `test/imapClient.test.ts` 把这个判定钉住——将来要改就是一次有意识的选择。
+ */
+export function extractAttachmentNames(parsed: ParsedMailView): string[] {
+  const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
+  const names: string[] = [];
+
+  for (const attachment of attachments) {
+    const filename = textValue((attachment as { filename?: unknown })?.filename);
+    if (filename.trim()) names.push(filename);
+  }
+
+  return names;
+}
+
+/** 附件随运行落地的形态：文件名 + 解码后的字节 + 类型。 */
+export type MailboxAttachmentFile = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+  size: number;
+};
+
+/**
+ * 附件内容：与 `extractAttachmentNames` **同判定、同顺序**，只是多带上字节。
+ *
+ * 两者必须一致——规则引擎按名字判定（`附件名称`/`附件类型`），而这里决定实际传给数字员工
+ * 的是哪几个文件。判定一旦分叉，就会出现「规则说有附件、模型却没收到」这种对不上的情况。
+ *
+ * 拿不到字节的 part（`mailparser` 没给 `content`）直接跳过，而不是留一个空壳：
+ * 没有字节的附件传过去也没用，徒增一次无意义的上传。
+ */
+export function toAttachmentFiles(parsed: ParsedMailView): MailboxAttachmentFile[] {
+  const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
+  const files: MailboxAttachmentFile[] = [];
+
+  for (const attachment of attachments) {
+    const record = attachment as {
+      filename?: unknown;
+      content?: unknown;
+      contentType?: unknown;
+    };
+
+    const filename = textValue(record?.filename);
+    if (!filename.trim()) continue;
+
+    const content = record?.content;
+    if (!Buffer.isBuffer(content)) continue;
+
+    files.push({
+      filename,
+      content,
+      contentType: textValue(record?.contentType),
+      size: content.length,
+    });
+  }
+
+  return files;
+}
+
+/** 原始报文 → 附件内容列表。执行前按 UID 取回单封报文时使用。 */
+export async function parseAttachmentFiles(
+  source: Buffer | string
+): Promise<MailboxAttachmentFile[]> {
+  const parsed = await simpleParser(source, { skipHtmlToText: true, keepCidLinks: true });
+  return toAttachmentFiles(parsed);
+}
+
+/** 单个附件的上传上限，对齐平台既有的 `ASSET_MAX_FILE_BYTES`（技能资产）。 */
+export const ATTACHMENT_MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * 按大小把附件分成「可上传」与「超限跳过」两组，各自保持原顺序。
+ *
+ * 越限的挑出来而不是就地丢掉：调用方要在提示词里**点名**说明哪个附件没传，
+ * 否则模型会把收到的当成全部，进而对缺数据这件事给出错误的解释。
+ */
+export function splitAttachmentsBySize(
+  files: readonly MailboxAttachmentFile[],
+  maxBytes: number = ATTACHMENT_MAX_FILE_BYTES
+): { accepted: MailboxAttachmentFile[]; skipped: MailboxAttachmentFile[] } {
+  const accepted: MailboxAttachmentFile[] = [];
+  const skipped: MailboxAttachmentFile[] = [];
+
+  for (const file of files) {
+    if (file.size <= maxBytes) accepted.push(file);
+    else skipped.push(file);
+  }
+
+  return { accepted, skipped };
+}
+
+/** 原始头部文本（`mailparser` 的 `headerLines` 是 `{key, line}` 列表，key 已小写）。 */
+export function rawHeaderValue(headerLines: unknown, key: string): string {
+  if (!Array.isArray(headerLines)) return "";
+
+  const wanted = key.toLowerCase();
+  for (const entry of headerLines) {
+    const record = entry as { key?: unknown; line?: unknown };
+    if (textValue(record?.key).toLowerCase() !== wanted) continue;
+
+    const line = textValue(record?.line);
+    const colon = line.indexOf(":");
+    return (colon >= 0 ? line.slice(colon + 1) : line).trim();
+  }
+
+  return "";
+}
+
+/** 地址头部取可读文本（`"张三" <a@corp.com>`）；同一头部出现多次时 `mailparser` 给的是数组。 */
+function addressText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => addressText(item))
+      .filter(Boolean)
+      .join(", ");
+  }
+  return textValue((value as { text?: unknown })?.text);
+}
+
+/** 解析结果 → `InboxMessage`：8 个字段恒存在，缺失的一律是空串而非 undefined。 */
+export function toInboxMessage(uid: number, parsed: ParsedMailView): MailboxUnreadMessage {
+  return {
+    uid,
+    message_id: textValue(parsed?.messageId),
+    from: addressText(parsed?.from),
+    to: addressText(parsed?.to),
+    subject: textValue(parsed?.subject),
+    // 与参考实现一致：用 `Date:` 头部原文（不是重新格式化的时间），拿不到就是空串。
+    date: rawHeaderValue(parsed?.headerLines, "date"),
+    body: extractBody(parsed),
+    attachments: extractAttachmentNames(parsed),
+  };
+}
+
+/**
+ * 原始报文 → 单封邮件。
+ *
+ * `keepCidLinks` 让 HTML 保持原样（默认会把内嵌图片的 cid 链接改写成 data URI）；
+ * 与 `skipHtmlToText` 合起来，`text`/`html` 才与参考实现的取法一一对应。
+ */
+export async function parseInboxMessage(
+  uid: number,
+  source: Buffer | string
+): Promise<MailboxUnreadMessage> {
+  const parsed = await simpleParser(source, { skipHtmlToText: true, keepCidLinks: true });
+  return toInboxMessage(uid, parsed);
+}
+
+/** 失败文案统一加前缀：映射层靠 `IMAP` 这个词把它归到连接类失败（400），而不是兜底成 500。 */
+export function imapFailureMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  return `IMAP 收件失败: ${detail}`;
+}
+
+function requireConnectionField(value: string, label: string) {
+  const text = String(value ?? "").trim();
+  if (!text) throw new Error(`IMAP 连接参数不完整：缺少${label}`);
+  return text;
+}
+
+/**
+ * 短连接的统一出入口：连上 → 只读打开文件夹 → 跑 → 退出。
+ *
+ * 两处收信功能（批量收信、按 UID 取附件）共用，避免连接参数校验与超时配置被复制成两份。
+ * 失败文案统一在这里加 `IMAP` 前缀，映射层照旧归到连接类失败（400）而不是 500。
+ */
+async function withReadOnlyMailbox<T>(
+  connection: MailboxConnection,
+  run: (client: ImapFlow) => Promise<T>
+): Promise<T> {
+  const host = requireConnectionField(connection.imapHost, "IMAP 服务器");
+  const username = requireConnectionField(connection.username, "登录账号");
+  const password = requireConnectionField(connection.password, "授权码或密码");
+  const folder = String(connection.folder || "").trim() || "INBOX";
+  const port = Number.isInteger(connection.imapPort) ? Number(connection.imapPort) : 993;
+
+  const client = new ImapFlow({
+    host,
+    port,
+    secure: connection.imapSecure !== false,
+    auth: { user: username, pass: password },
+    // 短连接：连上、读一批、退出。不监听新邮件，因此不需要 IDLE。
+    disableAutoIdle: true,
+    logger: false,
+    connectionTimeout: IMAP_TIMEOUT_MS,
+    greetingTimeout: IMAP_TIMEOUT_MS,
+    socketTimeout: IMAP_TIMEOUT_MS,
+  });
+
+  try {
+    await client.connect();
+
+    // 只读打开：绝不给用户的邮件打上已读标记（处理与否只由游标与去重表决定）。
+    await client.mailboxOpen(folder, { readOnly: true });
+
+    return await run(client);
+  } catch (error) {
+    throw new Error(imapFailureMessage(error), { cause: error });
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      // 连接可能已经断了：logout 失败无所谓，原始错误在上面那个 catch 里已经成形。
+    }
+  }
+}
+
+/**
+ * 收一封信箱的未读（严格说是「游标之后的」）邮件。
+ *
+ * 契约见调度器的 `fetchConfiguredMailboxUnread`：不传 `afterUid` 表示游标尚未建立，
+ * 此时只回报 `latest_uid`、`messages` 为空。
+ */
+export async function fetchMailboxUnread(params: {
+  afterUid?: number | null;
+  connection: MailboxConnection;
+}): Promise<MailboxUnreadResult> {
+  return withReadOnlyMailbox(params.connection, async (client) => {
+    const found = await client.search({ all: true }, { uid: true });
+    const uids = uidsFromSearchResult(found);
+    const { latestUid, targetUids } = planMailboxFetch(uids, params.afterUid);
+
+    const messages: MailboxUnreadMessage[] = [];
+    for (const uid of targetUids) {
+      const fetched = await client.fetchOne(String(uid), { source: true }, { uid: true });
+      const source = fetched ? fetched.source : undefined;
+      if (!source) continue;
+
+      messages.push(await parseInboxMessage(uid, source));
+    }
+
+    return { success: true, latest_uid: latestUid, messages };
+  });
+}
+
+/**
+ * 按 UID 取单封邮件的附件内容。
+ *
+ * 为什么是「执行前按需再取一次」而不是随批次一起返回：批量收信会把整批（最多 20 封）
+ * 全部解析完再返回，把附件字节挂在每封上意味着整批的附件同时驻留内存。按需取只有一封，
+ * 代价是多一次 IMAP 往返——而那封邮件本来就要跑一次几十秒的任务，这一次往返可以忽略。
+ *
+ * 取不到报文时返回空数组而不是抛错：附件取不到不该让整次运行失败，调用方按「没有附件」
+ * 继续即可（见 `buildEmailAutomationQuestion` 对缺失附件的说明）。
+ */
+export async function fetchMessageAttachments(
+  connection: MailboxConnection,
+  uid: number
+): Promise<MailboxAttachmentFile[]> {
+  return withReadOnlyMailbox(connection, async (client) => {
+    const fetched = await client.fetchOne(String(uid), { source: true }, { uid: true });
+    const source = fetched ? fetched.source : undefined;
+    if (!source) return [];
+
+    return parseAttachmentFiles(source);
+  });
+}
