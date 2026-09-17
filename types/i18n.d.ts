@@ -22,7 +22,6 @@ type Messages = typeof import("../messages/en/common.json") & {
   organization: typeof import("../messages/en/organization.json");
   chatSessions: typeof import("../messages/en/chatSessions.json");
   user: typeof import("../messages/en/user.json");
-  sop: typeof import("../messages/en/sop.json");
   products: typeof import("../messages/en/products.json");
   search: typeof import("../messages/en/search.json");
   graph: typeof import("../messages/en/graph.json");

@@ -14,7 +14,6 @@ const TOKEN_KEY = "ragent_token";
 // 不需要认证的公开路径
 const PUBLIC_PATHS = [
   /^\/feedback\/[A-Za-z0-9_-]+$/, // 反馈页面(加密): /feedback/{token}
-  /^\/sop-images\//, // SOP 图片
   /^\/forgot-password$/, // 忘记密码页面
   /^\/reset-password$/, // 重置密码页面
 ];

@@ -2746,108 +2746,6 @@ ALTER SEQUENCE public.skills_id_seq OWNED BY public.skills.id;
 
 
 --
--- Name: sop_category; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.sop_category (
-    id integer NOT NULL,
-    name text NOT NULL
-);
-
-
---
--- Name: sop_category_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.sop_category_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: sop_category_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.sop_category_id_seq OWNED BY public.sop_category.id;
-
-
---
--- Name: sop_detail; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.sop_detail (
-    id integer NOT NULL,
-    subcategory_id integer NOT NULL,
-    step_number text NOT NULL,
-    image_url text,
-    content text NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    vector_status text DEFAULT 'pending'::text NOT NULL,
-    embedding double precision[]
-);
-
-
---
--- Name: sop_detail_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.sop_detail_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: sop_detail_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.sop_detail_id_seq OWNED BY public.sop_detail.id;
-
-
---
--- Name: sop_subcategory; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.sop_subcategory (
-    id integer NOT NULL,
-    category_id integer,
-    name text NOT NULL,
-    vector_status text DEFAULT 'pending'::text NOT NULL,
-    embedding_model text DEFAULT 'bge'::text,
-    type character varying(20) DEFAULT 'process'::character varying NOT NULL,
-    CONSTRAINT check_sop_subcategory_type CHECK (((type)::text = ANY ((ARRAY['process'::character varying, 'iso'::character varying])::text[])))
-);
-
-
---
--- Name: sop_subcategory_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.sop_subcategory_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: sop_subcategory_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.sop_subcategory_id_seq OWNED BY public.sop_subcategory.id;
-
-
---
 -- Name: system_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3805,27 +3703,6 @@ ALTER TABLE ONLY public.skills ALTER COLUMN id SET DEFAULT nextval('public.skill
 
 
 --
--- Name: sop_category id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_category ALTER COLUMN id SET DEFAULT nextval('public.sop_category_id_seq'::regclass);
-
-
---
--- Name: sop_detail id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_detail ALTER COLUMN id SET DEFAULT nextval('public.sop_detail_id_seq'::regclass);
-
-
---
--- Name: sop_subcategory id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_subcategory ALTER COLUMN id SET DEFAULT nextval('public.sop_subcategory_id_seq'::regclass);
-
-
---
 -- Name: system_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4187,30 +4064,6 @@ ALTER TABLE ONLY public.skill_user_envs
 
 ALTER TABLE ONLY public.skills
     ADD CONSTRAINT skills_pkey PRIMARY KEY (id);
-
-
---
--- Name: sop_category sop_category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_category
-    ADD CONSTRAINT sop_category_pkey PRIMARY KEY (id);
-
-
---
--- Name: sop_detail sop_detail_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_detail
-    ADD CONSTRAINT sop_detail_pkey PRIMARY KEY (id);
-
-
---
--- Name: sop_subcategory sop_subcategory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_subcategory
-    ADD CONSTRAINT sop_subcategory_pkey PRIMARY KEY (id);
 
 
 --
@@ -4817,11 +4670,6 @@ CREATE UNIQUE INDEX idx_skills_tenant_name ON public.skills USING btree (COALESC
 CREATE INDEX idx_skills_visibility ON public.skills USING btree (visibility);
 
 
---
--- Name: idx_sop_subcategory_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_sop_subcategory_type ON public.sop_subcategory USING btree (type);
 
 
 --
@@ -5548,14 +5396,6 @@ ALTER TABLE ONLY public.skills
 
 ALTER TABLE ONLY public.skills
     ADD CONSTRAINT skills_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-
---
--- Name: sop_subcategory sop_subcategory_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sop_subcategory
-    ADD CONSTRAINT sop_subcategory_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.sop_category(id) ON DELETE CASCADE;
 
 
 --

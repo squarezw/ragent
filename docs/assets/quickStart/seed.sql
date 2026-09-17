@@ -20,22 +20,18 @@ INSERT INTO public.role_permissions (role_id, resource_type, permission, created
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'dept', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'knowledge', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'prompts', 'admin', NOW());
-INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'sop', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'tenant', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (1, 'user', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'chat', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'dept', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'knowledge', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'prompts', 'admin', NOW());
-INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'sop', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (2, 'user', 'admin', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (3, 'chat', 'read', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (3, 'knowledge', 'read', NOW());
-INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (3, 'sop', 'read', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (3, 'user', 'read', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (4, 'chat', 'read', NOW());
 INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (4, 'knowledge', 'read', NOW());
-INSERT INTO public.role_permissions (role_id, resource_type, permission, created_at) VALUES (4, 'sop', 'read', NOW());
 
 -- tenant / dept：各一行，名称脱敏（活库里是客户公司名与真实部门名）。
 -- ⚠️ 根部门的 path 就等于 code —— 改了 code 必须同步改 path，否则子树判定
