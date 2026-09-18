@@ -62,6 +62,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
+import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { WorkflowConfig } from "@/types/workflow";
 import { DEFAULT_LLM_MODEL_CODE, type LlmModelOption } from "@/lib/llmModels";
 
@@ -466,8 +467,7 @@ export default function AppsPage() {
       settings: app.settings || {},
       is_default: app.is_default || false,
     });
-    // 如果 dataset_ids 为空，则自动选择知识库为 true，否则为 false
-    setAutoSelectDatasets(datasetIds.length === 0);
+    setAutoSelectDatasets(resolveAutoSelectDatasets(app.settings, datasetIds));
 
     setDialogOpen(true);
   }, []);
@@ -482,12 +482,18 @@ export default function AppsPage() {
     try {
       setSubmitting(true);
 
-      const workflow = syncFormToWorkflow({ ...formData }, editingApp?.settings?.workflow, datasets);
+      const workflow = syncFormToWorkflow(
+        { ...formData },
+        editingApp?.settings?.workflow,
+        datasets
+      );
       const submitData = {
         ...formData,
+        dataset_ids: autoSelectDatasets ? [] : formData.dataset_ids,
         settings: {
           ...formData.settings,
           workflow,
+          auto_select_datasets: autoSelectDatasets,
         },
       };
 
@@ -514,7 +520,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, editingApp, loadApps, datasets]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets]);
 
   // 提交应用审核（draft/rejected → pending_review；建即 draft，仅 owner 可测）
   const handleSubmitAppReview = useCallback(
@@ -926,10 +932,10 @@ export default function AppsPage() {
                           <div className="text-sm">
                             <div className="flex items-center gap-4">
                               {/* 数据集为 0 不显示。
-                                  0 不是"没有知识库"——`dataset_ids` 为空时后端走
+                                  空 `dataset_ids` 加上自动选择开关（settings.auto_select_datasets，
+                                  未存过则默认开）时，后端走
                                   `kb_classifier_service.select_relevant_datasets(user_id=...)`，
-                                  在该用户有权限的**所有**知识库里智能选（auto_select_kb）。
-                                  所以 0 表示的是默认行为，把它显示成 0 会读成"这个员工没知识"。*/}
+                                  在该用户有权限的知识库里智能选。把它显示成 0 会读成"这个员工没知识"。*/}
                               {(app.dataset_ids?.length || 0) > 0 && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-muted-foreground">{t("datasets")}</span>
@@ -1364,13 +1370,14 @@ export default function AppsPage() {
                     onCheckedChange={(checked) => {
                       const isChecked = checked === true;
                       setAutoSelectDatasets(isChecked);
-                      // 如果勾选了自动选择知识库，清空所有已选择的知识库
-                      if (isChecked) {
-                        setFormData({
-                          ...formData,
-                          dataset_ids: [],
-                        });
-                      }
+                      setFormData({
+                        ...formData,
+                        dataset_ids: isChecked ? [] : formData.dataset_ids,
+                        settings: {
+                          ...formData.settings,
+                          auto_select_datasets: isChecked,
+                        },
+                      });
                     }}
                   />
                   <label
