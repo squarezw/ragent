@@ -31,7 +31,7 @@ import {
 import { Loader2, Plus, Search, Sparkles, Terminal, Upload } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useSkills } from "@/hooks/useSkills";
+import { useSkills, type SkillReference } from "@/hooks/useSkills";
 import { resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
 import { canEditSkill } from "@/lib/skillPermissions";
 import { filterSkillsByCreator, getSkillCreators } from "@/lib/skillCreatorFilter";
@@ -89,8 +89,9 @@ export default function SkillsPage() {
   );
 
   // 删除被引用时（409）弹引用应用清单
-  const [referencedApps, setReferencedApps] = useState<any[] | null>(null);
+  const [referencedApps, setReferencedApps] = useState<SkillReference[] | null>(null);
   const [deletingSkill, setDeletingSkill] = useState<Skill | null>(null);
+  const [forceDeleting, setForceDeleting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
   const handleDelete = async (skill: Skill) => {
@@ -99,6 +100,30 @@ export default function SkillsPage() {
     if (!result.ok && result.referencedBy) {
       setDeletingSkill(skill);
       setReferencedApps(result.referencedBy);
+    }
+  };
+
+  const closeDeleteConflict = () => {
+    setReferencedApps(null);
+    setDeletingSkill(null);
+  };
+
+  // 后端的 force 删除是一个原子操作：先删全部 app_skills 绑定，再删 Skill。
+  // 不在浏览器逐条调用解绑接口，否则某一条失败就会留下难以解释的半解绑状态。
+  const handleForceDelete = async () => {
+    if (!deletingSkill) return;
+    setForceDeleting(true);
+    try {
+      const result = await deleteSkill(deletingSkill.id, true);
+      if (result.ok) {
+        closeDeleteConflict();
+      } else if (result.referencedBy) {
+        // 若有其他人刚好又绑定了此 Skill，后端会再次给 409；刷新列表后让
+        // 管理员看到当前真实的引用，而不是沿用第一次删除时的旧列表。
+        setReferencedApps(result.referencedBy);
+      }
+    } finally {
+      setForceDeleting(false);
     }
   };
 
@@ -345,7 +370,11 @@ export default function SkillsPage() {
       {/* 删除冲突：被应用引用（409） */}
       <Dialog
         open={referencedApps !== null}
-        onOpenChange={(open) => !open && setReferencedApps(null)}
+        onOpenChange={(open) => {
+          if (!open && !forceDeleting) {
+            closeDeleteConflict();
+          }
+        }}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -358,15 +387,19 @@ export default function SkillsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-60 overflow-y-auto space-y-2">
-            {(referencedApps || []).map((app: any, index: number) => (
+            {(referencedApps || []).map((app, index) => (
               <div key={app.id ?? index} className="p-3 bg-muted rounded-lg border text-sm">
                 {app.name || app.app_name || String(app)}
               </div>
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReferencedApps(null)}>
+            <Button disabled={forceDeleting} variant="outline" onClick={closeDeleteConflict}>
               {tc("close")}
+            </Button>
+            <Button disabled={forceDeleting} variant="destructive" onClick={handleForceDelete}>
+              {forceDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t("unbindAllAndDelete")}
             </Button>
           </DialogFooter>
         </DialogContent>
