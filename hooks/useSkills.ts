@@ -18,6 +18,13 @@ export interface SkillPayload {
   owner_tenant_id?: number | null;
 }
 
+/** 删除 Skill 冲突（409）时，后端返回的已绑定数字员工摘要。 */
+export interface SkillReference {
+  id?: number | string;
+  name?: string;
+  app_name?: string;
+}
+
 /** 后端列表形状兼容：数组或 {items}/{skills} 包裹 */
 function unwrapSkillList(data: unknown): Skill[] {
   if (Array.isArray(data)) return data as Skill[];
@@ -74,7 +81,7 @@ export const useSkills = (query?: string, filters?: SkillListFilters) => {
   const deleteSkill = async (
     skillId: number,
     force = false
-  ): Promise<{ ok: boolean; referencedBy?: any[] }> => {
+  ): Promise<{ ok: boolean; referencedBy?: SkillReference[] }> => {
     try {
       await axios.delete(`/api/v1/skills/${skillId}${force ? "?force=true" : ""}`, {
         // 409（被应用引用）由调用方弹引用清单，不走全局错误 toast
@@ -89,7 +96,10 @@ export const useSkills = (query?: string, filters?: SkillListFilters) => {
       if (error.response?.status === 409) {
         const detail = error.response.data?.detail;
         const referencedBy = Array.isArray(detail) ? detail : detail?.apps || detail?.referenced_by;
-        return { ok: false, referencedBy: Array.isArray(referencedBy) ? referencedBy : [] };
+        return {
+          ok: false,
+          referencedBy: Array.isArray(referencedBy) ? (referencedBy as SkillReference[]) : [],
+        };
       }
       console.error("Delete skill error:", error);
       toast.error(t("deleteFailed"));
