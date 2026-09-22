@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import {
   BookOpen,
+  ChevronDown,
   Download,
   Eye,
   FileCode2,
@@ -128,6 +129,10 @@ export default function SkillAssetsPanel({
 }: SkillAssetsPanelProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  // Mount and fetch on first expansion; later collapses preserve uploads and inputs.
+  const [assetsActivated, setAssetsActivated] = useState(false);
+  const assetsContentId = useId();
 
   const {
     items,
@@ -147,7 +152,7 @@ export default function SkillAssetsPanel({
     deleteAsset,
     saveExecConfig,
     deleteExecConfig,
-  } = useSkillAssets(skill.id, canEdit);
+  } = useSkillAssets(skill.id, canEdit, assetsActivated);
 
   const [staged, setStaged] = useState<StagedFile[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -428,371 +433,398 @@ export default function SkillAssetsPanel({
       {/* 参考文档与资产文件：与「是否可执行」解耦，知识型 skill 也能只用这一块 */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4" />
-            {t("assetFilesSection")}
+          <CardTitle>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-expanded={assetsOpen}
+              aria-controls={assetsContentId}
+              onClick={() => {
+                setAssetsActivated(true);
+                setAssetsOpen((open) => !open);
+              }}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="flex-1">{t("assetFilesSection")}</span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition-transform ${assetsOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">{t("assetFilesDesc")}</p>
         </CardHeader>
 
-        <CardContent className="space-y-6">
-          {willRevertToDraft(skill.status) && (
-            <p className="text-xs rounded-md border border-amber-500/50 text-amber-600 dark:text-amber-400 px-3 py-2">
-              {t("assetRevertNotice")}
-            </p>
-          )}
-
-          {/* 资产清单（draft stage） */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <p className="text-sm font-medium flex items-center gap-2">
-                <FileCode2 className="h-4 w-4" />
-                {t("assetManifestSection")}
-              </p>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {t("assetsQuota", {
-                    count: items.length,
-                    size: formatBytes(totalBytes),
-                    limit: formatBytes(ASSET_MAX_TOTAL_BYTES),
-                  })}
+        <div id={assetsContentId} hidden={!assetsOpen}>
+          {assetsActivated && (
+            <CardContent className="space-y-6">
+              {willRevertToDraft(skill.status) && (
+                <p className="text-xs rounded-md border border-amber-500/50 text-amber-600 dark:text-amber-400 px-3 py-2">
+                  {t("assetRevertNotice")}
                 </p>
-                {/*
+              )}
+
+              {/* 资产清单（draft stage） */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <FileCode2 className="h-4 w-4" />
+                    {t("assetManifestSection")}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t("assetsQuota", {
+                        count: items.length,
+                        size: formatBytes(totalBytes),
+                        limit: formatBytes(ASSET_MAX_TOTAL_BYTES),
+                      })}
+                    </p>
+                    {/*
                   导出的是 draft stage —— 与上面这张清单同一份。导出跟屏幕上看到的
                   不是同一份会很怪。没有资产时不给按钮：一个只装着 SKILL.md 的 zip
                   没有意义，而 SKILL.md 另有导出入口。
                 */}
-                {items.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    title={t("assetExportAllHint")}
-                    disabled={exporting}
-                    onClick={handleExportAll}
-                  >
-                    {exporting ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    ) : (
-                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                    {items.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title={t("assetExportAllHint")}
+                        disabled={exporting}
+                        onClick={handleExportAll}
+                      >
+                        {exporting ? (
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <Download className="h-3.5 w-3.5 mr-1.5" />
+                        )}
+                        {t("assetExportAll")}
+                      </Button>
                     )}
-                    {t("assetExportAll")}
-                  </Button>
+                  </div>
+                </div>
+
+                {assetsLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center border rounded-md">
+                    {t("assetsEmpty")}
+                  </p>
+                ) : (
+                  <div className="rounded-md border divide-y">
+                    {groups.map((group) => (
+                      <div key={group.dir || "__root__"}>
+                        <div className="flex items-center justify-between gap-2 bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
+                          <span className="font-mono break-all min-w-0">
+                            {group.dir ? `${group.dir}/` : t("assetsRootGroup")}
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {group.items.length} · {formatBytes(group.totalBytes)}
+                          </span>
+                        </div>
+                        {/* 行布局而非 table：窄屏下 table-layout:auto 会把路径列压成每字一行并撑出横向滚动 */}
+                        <ul className="text-xs">
+                          {group.items.map((item) => (
+                            <li
+                              key={item.path}
+                              className="border-t px-3 py-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+                            >
+                              <div className="min-w-0 sm:flex-1 flex flex-wrap items-center gap-2">
+                                <span className="font-mono break-all min-w-0">{item.path}</span>
+                                {/* 可读 = 已发布快照里的文本 reference（判据见 isModelReadableAsset） */}
+                                {readablePaths.has(item.path) ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className="gap-1 font-normal"
+                                    title={t("assetReadableHint")}
+                                  >
+                                    <BookOpen className="h-3 w-3" />
+                                    {t("assetReadable")}
+                                  </Badge>
+                                ) : (
+                                  isModelReadableAsset(item) && (
+                                    <span
+                                      className="text-muted-foreground"
+                                      title={t("assetReadableAfterPublishHint")}
+                                    >
+                                      {t("assetReadableAfterPublish")}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
+                                <Badge variant="outline">{assetKindLabel(t, item.kind)}</Badge>
+                                <span className="whitespace-nowrap text-muted-foreground">
+                                  {formatBytes(item.size_bytes)}
+                                </span>
+                                <span className="whitespace-nowrap font-mono text-muted-foreground">
+                                  {shortSha(item.sha256)}
+                                </span>
+                                {/* 能预览的才给按钮：.zip/.so/.pyc 点开只有一屏乱码，
+                                那比没有按钮更让人困惑 */}
+                                {isPreviewableAsset(item.path) ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 ml-auto text-muted-foreground"
+                                    onClick={() => setPreviewTarget(item)}
+                                    aria-label={t("assetPreview")}
+                                    title={t("assetPreview")}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : (
+                                  <span className="ml-auto" />
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground"
+                                  onClick={() => {
+                                    replaceTarget.current = item;
+                                    replaceInput.current?.click();
+                                  }}
+                                  aria-label={t("assetReplace")}
+                                  title={t("assetReplace")}
+                                >
+                                  <Replace className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setDeleteTarget(item.path)}
+                                  aria-label={t("assetDelete")}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
 
-            {assetsLoading ? (
-              <div className="flex justify-center py-6">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : items.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center border rounded-md">
-                {t("assetsEmpty")}
-              </p>
-            ) : (
-              <div className="rounded-md border divide-y">
-                {groups.map((group) => (
-                  <div key={group.dir || "__root__"}>
-                    <div className="flex items-center justify-between gap-2 bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
-                      <span className="font-mono break-all min-w-0">
-                        {group.dir ? `${group.dir}/` : t("assetsRootGroup")}
-                      </span>
-                      <span className="whitespace-nowrap">
-                        {group.items.length} · {formatBytes(group.totalBytes)}
-                      </span>
-                    </div>
-                    {/* 行布局而非 table：窄屏下 table-layout:auto 会把路径列压成每字一行并撑出横向滚动 */}
-                    <ul className="text-xs">
-                      {group.items.map((item) => (
-                        <li
-                          key={item.path}
-                          className="border-t px-3 py-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+              {/* 上传区 */}
+              <div className="space-y-2">
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: 拖放区只是鼠标增强，键盘用户走下方两个选择按钮 */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={handleDrop}
+                  className={`rounded-md border border-dashed p-6 text-center space-y-2 ${
+                    dragging ? "border-primary bg-primary/5" : ""
+                  }`}
+                >
+                  <Upload className="h-5 w-5 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">{t("uploadDropzone")}</p>
+                  <div className="flex justify-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+                      {t("uploadBrowseFiles")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => folderInput.current?.click()}
+                    >
+                      {t("uploadBrowseFolder")}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t("uploadHint", { max: formatBytes(ASSET_MAX_FILE_BYTES) })}
+                  </p>
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={(e) => {
+                      addFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
+                      e.target.value = "";
+                    }}
+                  />
+                  {/* 替换用的单文件选择器。挑完文件才过 guard —— 与"先备好再确认"的上传
+                  流程一致：先弹退回草稿的确认、用户点了确认才弹文件框，会让人不知道
+                  自己刚确认的是什么。 */}
+                  <input
+                    ref={replaceInput}
+                    type="file"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      e.target.value = "";
+                      const target = replaceTarget.current;
+                      replaceTarget.current = null;
+                      if (file && target) guard(() => runReplace(target, file));
+                    }}
+                  />
+                  <input
+                    ref={folderInput}
+                    type="file"
+                    multiple
+                    hidden
+                    {...DIRECTORY_INPUT_PROPS}
+                    onChange={(e) => {
+                      addFolderFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                {staged.length > 0 && (
+                  <div className="rounded-md border">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/50">
+                      <p className="text-xs font-medium">
+                        {t("uploadPending", { count: staged.length })}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setStaged([]);
+                            setStrippedRoot(null);
+                          }}
                         >
-                          <div className="min-w-0 sm:flex-1 flex flex-wrap items-center gap-2">
-                            <span className="font-mono break-all min-w-0">{item.path}</span>
-                            {/* 可读 = 已发布快照里的文本 reference（判据见 isModelReadableAsset） */}
-                            {readablePaths.has(item.path) ? (
-                              <Badge
-                                variant="secondary"
-                                className="gap-1 font-normal"
-                                title={t("assetReadableHint")}
-                              >
-                                <BookOpen className="h-3 w-3" />
-                                {t("assetReadable")}
-                              </Badge>
-                            ) : (
-                              isModelReadableAsset(item) && (
-                                <span
-                                  className="text-muted-foreground"
-                                  title={t("assetReadableAfterPublishHint")}
-                                >
-                                  {t("assetReadableAfterPublish")}
+                          {tc("cancel")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={uploading || pendingCount === 0}
+                          onClick={() => guard(runUpload)}
+                        >
+                          {uploading && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                          {uploading
+                            ? t("uploading", { done: uploadedCount, total: plan.acceptedCount })
+                            : t("uploadStart", { count: pendingCount })}
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                      {t("assetKindHint")}
+                    </p>
+                    {/* 剥掉一层目录是对用户输入的改写，必须看得见。下面那列路径本身已经是
+                    改写后的结果，但不说一句，用户会以为自己选错了文件夹。 */}
+                    {strippedRoot && (
+                      <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                        {t("uploadStrippedRoot", { root: strippedRoot })}
+                      </p>
+                    )}
+                    <ul className="text-xs">
+                      {staged.map((item) => {
+                        const entry = entryByStagedId.get(item.id);
+                        // 正文那一行没有 entry（它不是资产），也就没有类型可选
+                        const isBody = entry === undefined;
+                        const kindWarning = entry ? assetKindWarning(entry.path, entry.kind) : null;
+                        return (
+                          <li
+                            key={item.id}
+                            className="border-t px-3 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3"
+                          >
+                            <div className="min-w-0 sm:flex-1">
+                              <Input
+                                value={item.path}
+                                onChange={(e) =>
+                                  setStaged((prev) =>
+                                    prev.map((s) =>
+                                      s.id === item.id ? { ...s, path: e.target.value } : s
+                                    )
+                                  )
+                                }
+                                className={`h-7 text-xs font-mono ${
+                                  entry?.error ? "border-destructive" : ""
+                                }`}
+                                aria-label={t("uploadTargetPath")}
+                              />
+                              {entry?.error && (
+                                <p className="text-destructive mt-1 break-words">
+                                  {uploadErrorMessage(t, entry.error)}
+                                </p>
+                              )}
+                              {/* 正文行：切分失败要当场看见。成功也要说清 frontmatter 不应用 ——
+                              默默只更新一半是最容易误导人的做法。 */}
+                              {isBody && bodySplit?.error && (
+                                <p className="text-destructive mt-1 break-words">
+                                  {bodySplit.error}
+                                </p>
+                              )}
+                              {isBody && bodySplit && !bodySplit.error && (
+                                <p className="text-muted-foreground mt-1 break-words">
+                                  {t("uploadSkillMdFrontmatterIgnored")}
+                                </p>
+                              )}
+                              {/* 二进制标成 reference 会进注入块 footer 却读不出来，只提示不拦 */}
+                              {kindWarning === "binaryAsReference" && (
+                                <p className="text-amber-600 dark:text-amber-400 mt-1 break-words">
+                                  {t("assetKindWarnBinaryAsReference")}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
+                              {isBody ? (
+                                <span className="whitespace-nowrap text-muted-foreground">
+                                  {t("uploadSkillMdBody")}
                                 </span>
-                              )
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
-                            <Badge variant="outline">{assetKindLabel(t, item.kind)}</Badge>
-                            <span className="whitespace-nowrap text-muted-foreground">
-                              {formatBytes(item.size_bytes)}
-                            </span>
-                            <span className="whitespace-nowrap font-mono text-muted-foreground">
-                              {shortSha(item.sha256)}
-                            </span>
-                            {/* 能预览的才给按钮：.zip/.so/.pyc 点开只有一屏乱码，
-                                那比没有按钮更让人困惑 */}
-                            {isPreviewableAsset(item.path) ? (
+                              ) : (
+                                <Select
+                                  value={entry?.kind ?? "reference"}
+                                  onValueChange={(value) =>
+                                    setStaged((prev) =>
+                                      prev.map((s) =>
+                                        s.id === item.id
+                                          ? { ...s, kind: value as SkillAssetKind }
+                                          : s
+                                      )
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger
+                                    className="h-7 w-28 text-xs"
+                                    aria-label={t("assetKind")}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ASSET_KINDS.map((kind) => (
+                                      <SelectItem key={kind} value={kind}>
+                                        {assetKindLabel(t, kind)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              <span className="whitespace-nowrap text-muted-foreground">
+                                {formatBytes(item.file.size)}
+                              </span>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 ml-auto text-muted-foreground"
-                                onClick={() => setPreviewTarget(item)}
-                                aria-label={t("assetPreview")}
-                                title={t("assetPreview")}
+                                className="h-7 w-7 ml-auto"
+                                onClick={() =>
+                                  setStaged((prev) => prev.filter((s) => s.id !== item.id))
+                                }
+                                aria-label={t("uploadRemove")}
                               >
-                                <Eye className="h-3.5 w-3.5" />
+                                <X className="h-3.5 w-3.5" />
                               </Button>
-                            ) : (
-                              <span className="ml-auto" />
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground"
-                              onClick={() => {
-                                replaceTarget.current = item;
-                                replaceInput.current?.click();
-                              }}
-                              aria-label={t("assetReplace")}
-                              title={t("assetReplace")}
-                            >
-                              <Replace className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => setDeleteTarget(item.path)}
-                              aria-label={t("assetDelete")}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </li>
-                      ))}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 上传区 */}
-          <div className="space-y-2">
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: 拖放区只是鼠标增强，键盘用户走下方两个选择按钮 */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-              className={`rounded-md border border-dashed p-6 text-center space-y-2 ${
-                dragging ? "border-primary bg-primary/5" : ""
-              }`}
-            >
-              <Upload className="h-5 w-5 mx-auto text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">{t("uploadDropzone")}</p>
-              <div className="flex justify-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
-                  {t("uploadBrowseFiles")}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => folderInput.current?.click()}>
-                  {t("uploadBrowseFolder")}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t("uploadHint", { max: formatBytes(ASSET_MAX_FILE_BYTES) })}
-              </p>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                onChange={(e) => {
-                  addFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
-                  e.target.value = "";
-                }}
-              />
-              {/* 替换用的单文件选择器。挑完文件才过 guard —— 与"先备好再确认"的上传
-                  流程一致：先弹退回草稿的确认、用户点了确认才弹文件框，会让人不知道
-                  自己刚确认的是什么。 */}
-              <input
-                ref={replaceInput}
-                type="file"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  e.target.value = "";
-                  const target = replaceTarget.current;
-                  replaceTarget.current = null;
-                  if (file && target) guard(() => runReplace(target, file));
-                }}
-              />
-              <input
-                ref={folderInput}
-                type="file"
-                multiple
-                hidden
-                {...DIRECTORY_INPUT_PROPS}
-                onChange={(e) => {
-                  addFolderFiles(Array.from(e.target.files || []).map((f) => toStaged(f)));
-                  e.target.value = "";
-                }}
-              />
-            </div>
-
-            {staged.length > 0 && (
-              <div className="rounded-md border">
-                <div className="flex items-center justify-between px-3 py-2 bg-muted/50">
-                  <p className="text-xs font-medium">
-                    {t("uploadPending", { count: staged.length })}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setStaged([]);
-                        setStrippedRoot(null);
-                      }}
-                    >
-                      {tc("cancel")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={uploading || pendingCount === 0}
-                      onClick={() => guard(runUpload)}
-                    >
-                      {uploading && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-                      {uploading
-                        ? t("uploading", { done: uploadedCount, total: plan.acceptedCount })
-                        : t("uploadStart", { count: pendingCount })}
-                    </Button>
-                  </div>
-                </div>
-                <p className="border-t px-3 py-2 text-xs text-muted-foreground">
-                  {t("assetKindHint")}
-                </p>
-                {/* 剥掉一层目录是对用户输入的改写，必须看得见。下面那列路径本身已经是
-                    改写后的结果，但不说一句，用户会以为自己选错了文件夹。 */}
-                {strippedRoot && (
-                  <p className="border-t px-3 py-2 text-xs text-muted-foreground">
-                    {t("uploadStrippedRoot", { root: strippedRoot })}
-                  </p>
                 )}
-                <ul className="text-xs">
-                  {staged.map((item) => {
-                    const entry = entryByStagedId.get(item.id);
-                    // 正文那一行没有 entry（它不是资产），也就没有类型可选
-                    const isBody = entry === undefined;
-                    const kindWarning = entry ? assetKindWarning(entry.path, entry.kind) : null;
-                    return (
-                      <li
-                        key={item.id}
-                        className="border-t px-3 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3"
-                      >
-                        <div className="min-w-0 sm:flex-1">
-                          <Input
-                            value={item.path}
-                            onChange={(e) =>
-                              setStaged((prev) =>
-                                prev.map((s) =>
-                                  s.id === item.id ? { ...s, path: e.target.value } : s
-                                )
-                              )
-                            }
-                            className={`h-7 text-xs font-mono ${
-                              entry?.error ? "border-destructive" : ""
-                            }`}
-                            aria-label={t("uploadTargetPath")}
-                          />
-                          {entry?.error && (
-                            <p className="text-destructive mt-1 break-words">
-                              {uploadErrorMessage(t, entry.error)}
-                            </p>
-                          )}
-                          {/* 正文行：切分失败要当场看见。成功也要说清 frontmatter 不应用 ——
-                              默默只更新一半是最容易误导人的做法。 */}
-                          {isBody && bodySplit?.error && (
-                            <p className="text-destructive mt-1 break-words">{bodySplit.error}</p>
-                          )}
-                          {isBody && bodySplit && !bodySplit.error && (
-                            <p className="text-muted-foreground mt-1 break-words">
-                              {t("uploadSkillMdFrontmatterIgnored")}
-                            </p>
-                          )}
-                          {/* 二进制标成 reference 会进注入块 footer 却读不出来，只提示不拦 */}
-                          {kindWarning === "binaryAsReference" && (
-                            <p className="text-amber-600 dark:text-amber-400 mt-1 break-words">
-                              {t("assetKindWarnBinaryAsReference")}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
-                          {isBody ? (
-                            <span className="whitespace-nowrap text-muted-foreground">
-                              {t("uploadSkillMdBody")}
-                            </span>
-                          ) : (
-                            <Select
-                              value={entry?.kind ?? "reference"}
-                              onValueChange={(value) =>
-                                setStaged((prev) =>
-                                  prev.map((s) =>
-                                    s.id === item.id ? { ...s, kind: value as SkillAssetKind } : s
-                                  )
-                                )
-                              }
-                            >
-                              <SelectTrigger
-                                className="h-7 w-28 text-xs"
-                                aria-label={t("assetKind")}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ASSET_KINDS.map((kind) => (
-                                  <SelectItem key={kind} value={kind}>
-                                    {assetKindLabel(t, kind)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                          <span className="whitespace-nowrap text-muted-foreground">
-                            {formatBytes(item.file.size)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 ml-auto"
-                            onClick={() =>
-                              setStaged((prev) => prev.filter((s) => s.id !== item.id))
-                            }
-                            aria-label={t("uploadRemove")}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
               </div>
-            )}
-          </div>
-        </CardContent>
+            </CardContent>
+          )}
+        </div>
       </Card>
 
       {/* 可执行资产的运行配置：仅可执行 skill（或点了转换）才出现，知识型 skill 不必碰 */}

@@ -78,15 +78,18 @@ const imagesFetcher = async (url: string): Promise<SandboxImage[]> => {
  * 四条独立请求：draft 清单 / published 清单（算模型可读集）/ exec 配置（404=非可执行）/
  * 镜像白名单（失败=降级手输）。
  */
-export function useSkillAssets(skillId: number | null, enabled: boolean) {
+export function useSkillAssets(skillId: number | null, enabled: boolean, assetsEnabled = true) {
   const key = enabled && skillId ? skillId : null;
+  const assetsKey = assetsEnabled ? key : null;
 
-  const assets = useSWR(key ? `/api/v1/skills/${key}/assets?stage=draft` : null, listFetcher, {
-    revalidateOnFocus: false,
-  });
+  const assets = useSWR(
+    assetsKey ? `/api/v1/skills/${assetsKey}/assets?stage=draft` : null,
+    listFetcher,
+    { revalidateOnFocus: false }
+  );
   // 可读性只由已发布快照决定（draft 未过审，skill_view 读不到），故单独取一份
   const publishedAssets = useSWR(
-    key ? `/api/v1/skills/${key}/assets?stage=published` : null,
+    assetsKey ? `/api/v1/skills/${assetsKey}/assets?stage=published` : null,
     publishedListFetcher,
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
