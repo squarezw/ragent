@@ -56,12 +56,27 @@ export function normalizeSessionAttachments(raw: unknown): SessionAttachment[] {
   return out;
 }
 
-/** 预览对话框要 MIME；上传时浏览器可能给空串，用扩展名补。 */
+/** content_type 有时是给气泡看的标签（"PDF"），不是 MIME。 */
+function isMimeType(value: string): boolean {
+  return /^[\w.+-]+\/[\w.+-]+$/.test(value);
+}
+
+/**
+ * 对象存储的签名响应带 Content-Disposition: attachment。
+ * iframe 直接跟着 302 走会下载，预览要改走同域 inline 流。
+ */
+export function attachmentPreviewUrl(url: string): string {
+  if (!url.startsWith("/api/oss/")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}inline=1`;
+}
+
+/** 预览对话框要 MIME；标签、空串、octet-stream 都按扩展名补。 */
 export function sessionAttachmentMime(attachment: SessionAttachment): string {
-  if (attachment.contentType && attachment.contentType !== "application/octet-stream") {
-    return attachment.contentType;
+  const stored = (attachment.contentType || "").split(";")[0].trim();
+  if (stored && stored !== "application/octet-stream" && isMimeType(stored)) {
+    return stored;
   }
   const name = attachment.filename.toLowerCase();
   const ext = Object.keys(MIME_BY_EXT).find((suffix) => name.endsWith(suffix));
-  return (ext && MIME_BY_EXT[ext]) || attachment.contentType || "application/octet-stream";
+  return (ext && MIME_BY_EXT[ext]) || stored || "application/octet-stream";
 }
