@@ -48,6 +48,7 @@ import {
   FileText,
   FileType,
   FileSpreadsheet,
+  Paperclip,
   X,
   Download,
 } from "lucide-react";
@@ -55,6 +56,11 @@ import { format, formatDistanceToNow } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
+import { getFileUrl } from "@/lib/ossUpload";
+import {
+  sessionAttachmentMime,
+  type SessionAttachment,
+} from "@/lib/sessionAttachments";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "next-intl";
@@ -107,6 +113,7 @@ interface SessionDetail {
   segmentsIds?: number[];
   segmentSimilarities?: number[];
   usage?: TurnUsage;
+  attachments?: SessionAttachment[];
 }
 
 /** 本会话显式调用过的一个 skill。只有 execute_skill / load_skill 两条
@@ -849,6 +856,36 @@ export default function ChatSessionsPage() {
                                         </div>
                                         <div className="p-3 bg-muted rounded-md">
                                           <MarkdownRenderer content={detail.question} />
+                                          {detail.attachments && detail.attachments.length > 0 && (
+                                            <div className="mt-3 pt-3 border-t border-border">
+                                              <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                                                <Paperclip className="w-3 h-3" />
+                                                {t("attachments")}
+                                              </div>
+                                              <div className="flex flex-wrap gap-2">
+                                                {detail.attachments.map((attachment) => (
+                                                  <button
+                                                    key={attachment.objectKey}
+                                                    type="button"
+                                                    className="flex items-center gap-2 text-sm bg-background border border-border rounded-md px-2 py-1 hover:bg-accent transition-colors"
+                                                    onClick={() =>
+                                                      setPreviewFile({
+                                                        filename: attachment.filename,
+                                                        originalname: attachment.filename,
+                                                        mimetype: sessionAttachmentMime(attachment),
+                                                        sourceUrl: getFileUrl(attachment.objectKey),
+                                                      })
+                                                    }
+                                                  >
+                                                    {getFileIcon(sessionAttachmentMime(attachment))}
+                                                    <span className="truncate max-w-[16rem]">
+                                                      {attachment.filename}
+                                                    </span>
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                       {detail.answer && (
