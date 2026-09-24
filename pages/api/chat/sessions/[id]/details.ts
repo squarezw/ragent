@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
+import { normalizeSessionAttachments } from "@/lib/sessionAttachments";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -130,7 +131,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           WHERE ct.chat_session_detail_id = chat_session_detail.id
             AND ct.tx_type = 'consume' LIMIT 1) AS credits,
         cache_read_tokens,
-        cache_write_tokens
+        cache_write_tokens,
+        attachments
       FROM chat_session_detail
       WHERE session_id = $1
       ORDER BY submitted_at ASC
@@ -205,6 +207,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sessionId: detail.session_id,
         question: detail.question,
         answer: detail.answer,
+        attachments: normalizeSessionAttachments(detail.attachments),
         submittedAt: detail.submitted_at,
         answeredAt: detail.answered_at,
         durationMs: detail.duration_ms,

@@ -24,6 +24,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Attachment } from "./hooks/useFileAttachments";
 import type { TurnUsage } from "@/types/token-usage";
 import { getFileDownloadUrl } from "@/lib/fileApi";
+import { getFileUrl } from "@/lib/ossUpload";
+import type { SessionAttachment } from "@/lib/sessionAttachments";
 import {
   downloadChatLink,
   attachmentPreviewResource,
@@ -41,6 +43,18 @@ interface Message {
   detail_id?: number;
   usage?: TurnUsage;
   attachments?: Attachment[];
+}
+
+function toHistoryAttachments(raw: SessionAttachment[] | undefined): Attachment[] | undefined {
+  if (!raw || raw.length === 0) return undefined;
+  return raw.map((attachment) => ({
+    filename: attachment.filename,
+    type: attachment.contentType || "File",
+    content: "",
+    url: getFileUrl(attachment.objectKey),
+    objectKey: attachment.objectKey,
+    size: attachment.size,
+  }));
 }
 
 export default function ChatPage() {
@@ -437,6 +451,7 @@ export default function ChatPage() {
           historyMessages.push({
             role: "user",
             content: detail.question || "",
+            attachments: toHistoryAttachments(detail.attachments),
           });
 
           let formattedReference: any;
