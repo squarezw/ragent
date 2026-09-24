@@ -58,6 +58,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { getFileUrl } from "@/lib/ossUpload";
 import {
+  attachmentPreviewUrl,
   sessionAttachmentMime,
   type SessionAttachment,
 } from "@/lib/sessionAttachments";
@@ -873,7 +874,7 @@ export default function ChatSessionsPage() {
                                                         filename: attachment.filename,
                                                         originalname: attachment.filename,
                                                         mimetype: sessionAttachmentMime(attachment),
-                                                        sourceUrl: getFileUrl(attachment.objectKey),
+                                                        sourceUrl: attachmentPreviewUrl(getFileUrl(attachment.objectKey)),
                                                       })
                                                     }
                                                   >

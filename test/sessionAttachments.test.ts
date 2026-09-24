@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  attachmentPreviewUrl,
   normalizeSessionAttachments,
   sessionAttachmentMime,
 } from "../lib/sessionAttachments.ts";
@@ -45,6 +46,25 @@ test("空值和非法输入都当成没有附件", () => {
   assert.deepEqual(normalizeSessionAttachments(null), []);
   assert.deepEqual(normalizeSessionAttachments(undefined), []);
   assert.deepEqual(normalizeSessionAttachments({}), []);
+});
+
+test("会话里记下的是展示标签时，预览仍按扩展名识别 PDF", () => {
+  assert.equal(
+    sessionAttachmentMime({
+      filename: "双中心线试验圆角.pdf",
+      objectKey: "attachments/202609/双中心线试验圆角_1f7749.pdf",
+      contentType: "PDF",
+    }),
+    "application/pdf"
+  );
+});
+
+test("会话附件预览走 inline，避免对象存储的 attachment 头触发下载", () => {
+  assert.equal(
+    attachmentPreviewUrl("/api/oss/attachments/202609/a.pdf"),
+    "/api/oss/attachments/202609/a.pdf?inline=1"
+  );
+  assert.equal(attachmentPreviewUrl("https://example.com/a.pdf"), "https://example.com/a.pdf");
 });
 
 test("预览用 MIME：有有效类型就用，否则按扩展名补", () => {
