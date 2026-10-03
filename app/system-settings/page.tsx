@@ -29,6 +29,7 @@ import {
 } from "@/lib/theme";
 import { BillingRatesSection } from "./components/BillingRatesSection";
 import { CollapsibleCard } from "./components/CollapsibleCard";
+import GithubOAuthSection from "./components/GithubOAuthSection";
 import { Badge } from "@/components/ui/badge";
 import { useTranslations } from "next-intl";
 
@@ -380,7 +381,15 @@ export default function SystemSettingsPage() {
 
   if (!user) return null;
   if (!checkSuperAdmin(user)) {
-    return <div className="text-center text-red-500 text-xl mt-20">{t("noPermission")}</div>;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Settings className="h-5 w-5 text-primary" />
+          <h1 className="text-xl font-semibold">{t("title")}</h1>
+        </div>
+        <GithubOAuthSection />
+      </div>
+    );
   }
 
   return (
@@ -391,6 +400,8 @@ export default function SystemSettingsPage() {
       </div>
 
       <div className="columns-1 md:columns-2 gap-4 space-y-4">
+        <GithubOAuthSection />
+
         {/* 平台设置 */}
         <Card className="break-inside-avoid">
           <CardHeader className="pb-3">

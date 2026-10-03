@@ -9,6 +9,7 @@ import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import SkillEditor from "../components/SkillEditor";
 import SkillDiffDialog from "../components/SkillDiffDialog";
 import SkillAssetsPanel from "../components/SkillAssetsPanel";
+import SkillGitPanel from "../components/SkillGitPanel";
 import SkillUserEnvPanel from "../components/SkillUserEnvPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -33,9 +34,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     submitReview,
     exportMarkdown,
     refresh,
-  } = useSkill(
-    Number.isFinite(skillId) ? skillId : null
-  );
+  } = useSkill(Number.isFinite(skillId) ? skillId : null);
   const [saving, setSaving] = useState(false);
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [diffSkillId, setDiffSkillId] = useState<number | null>(null);
@@ -57,12 +56,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   // 原先写的是 `canReview || 作者本人`，而 canReview 里的 checkTenantAdmin 不带租户范围
   // ——别的租户的租户管理员在这一页能改，后端 is_reviewer 却要求同租户。松的一侧是界面，
   // 所以表现为"能编辑能保存，保存时 403"。
-  const canEditAssets = canEditSkill(
-    skill,
-    user,
-    checkSuperAdmin(user),
-    checkTenantAdmin(user)
-  );
+  const canEditAssets = canEditSkill(skill, user, checkSuperAdmin(user), checkTenantAdmin(user));
 
   const handleSaveDraft = async (payload: SkillPayload) => {
     setSaving(true);
@@ -150,8 +144,20 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         onDismissWarnings={() => setSaveWarnings([])}
       />
 
-      {/* P8：参考文档/资产文件（任何 skill）+ 可执行运行配置（仅可执行 skill），仅编辑权可见 */}
-      <SkillAssetsPanel skill={skill} canEdit={canEditAssets} onSkillChanged={() => refresh()} />
+      {/* P8：参考文档/资产文件（任何 skill）+ 可执行运行配置（仅可执行 skill），仅编辑权可见。
+          GitHub 来源夹在这两块之间，默认收起。 */}
+      <SkillAssetsPanel
+        skill={skill}
+        canEdit={canEditAssets}
+        onSkillChanged={() => refresh()}
+        afterAssets={
+          <SkillGitPanel
+            skillId={skill.id}
+            canEdit={canEditAssets && !skill.is_managed}
+            onSynced={() => refresh()}
+          />
+        }
+      />
 
       {/*
         个人环境变量：**不受 canEditAssets 约束**——配凭据的是 skill 的使用者，

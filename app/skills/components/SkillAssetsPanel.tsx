@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
@@ -68,6 +68,8 @@ interface SkillAssetsPanelProps {
   canEdit: boolean;
   /** 资产/配置变更后刷新 skill（状态可能被打回 draft） */
   onSkillChanged: () => void;
+  /** 插在「参考文档与资产文件」和运行配置之间 */
+  afterAssets?: ReactNode;
 }
 
 interface StagedFile {
@@ -126,6 +128,7 @@ export default function SkillAssetsPanel({
   skill,
   canEdit,
   onSkillChanged,
+  afterAssets,
 }: SkillAssetsPanelProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
@@ -426,7 +429,6 @@ export default function SkillAssetsPanel({
   };
 
   if (!canEdit) return null;
-
 
   return (
     <>
@@ -827,6 +829,8 @@ export default function SkillAssetsPanel({
         </div>
       </Card>
 
+      {afterAssets}
+
       {/* 可执行资产的运行配置：仅可执行 skill（或点了转换）才出现，知识型 skill 不必碰 */}
       <Card>
         <CardHeader>
@@ -970,9 +974,7 @@ export default function SkillAssetsPanel({
               <div className="space-y-2">
                 <p>{isExecutable ? t("execCancelConfirmDesc") : t("execCancelLiveOnlyDesc")}</p>
                 {cancelPlan.offerChoice && (
-                  <p className="text-amber-600 dark:text-amber-500">
-                    {t("execCancelRevertNote")}
-                  </p>
+                  <p className="text-amber-600 dark:text-amber-500">{t("execCancelRevertNote")}</p>
                 )}
               </div>
             </AlertDialogDescription>
