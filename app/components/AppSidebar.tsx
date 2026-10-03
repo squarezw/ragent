@@ -180,7 +180,7 @@ export default function AppSidebar() {
           title: t("systemSettings"),
           icon: Settings,
           path: "/system-settings",
-          visible: isSuperAdmin,
+          visible: true,
         },
       ],
     },

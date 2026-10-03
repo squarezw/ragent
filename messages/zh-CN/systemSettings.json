@@ -111,5 +111,15 @@
   "defaultPlatformName": "平台名称",
   "defaultPlatformSubtitle": "平台副标题",
   "billingRatesTitle": "计费系数",
-  "billingRatesDesc": "模型、Skill、工具各自的计费倍率。未单独设置的按全局默认值计费。"
+  "billingRatesDesc": "模型、Skill、工具各自的计费倍率。未单独设置的按全局默认值计费。",
+  "githubOAuthTitle": "GitHub OAuth",
+  "githubOAuthDesc": "填写你自己的 GitHub OAuth 应用。只用于你的账号去连接仓库，不会套到其他用户身上。",
+  "githubClientId": "Client ID",
+  "githubClientSecret": "Client Secret",
+  "githubSecretPlaceholder": "GitHub OAuth App 的 Client Secret",
+  "githubSecretKept": "已保存。留空则不修改",
+  "githubRedirectUri": "回调地址",
+  "githubRedirectHelp": "必须和这个 OAuth App 在 GitHub 上登记的 Authorization callback URL 完全一致。",
+  "githubOAuthSaved": "GitHub OAuth 已保存",
+  "githubOAuthSaveFailed": "保存 GitHub OAuth 失败"
 }

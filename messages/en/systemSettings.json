@@ -111,5 +111,15 @@
   "defaultPlatformName": "Platform Name",
   "defaultPlatformSubtitle": "Platform Subtitle",
   "billingRatesTitle": "Billing rates",
-  "billingRatesDesc": "Per-model, per-skill and per-tool billing multipliers. Anything not set individually uses the global default."
+  "billingRatesDesc": "Per-model, per-skill and per-tool billing multipliers. Anything not set individually uses the global default.",
+  "githubOAuthTitle": "GitHub OAuth",
+  "githubOAuthDesc": "Your own GitHub OAuth app. It is used only when your account connects to a repository, not for other users.",
+  "githubClientId": "Client ID",
+  "githubClientSecret": "Client Secret",
+  "githubSecretPlaceholder": "Client Secret from your GitHub OAuth app",
+  "githubSecretKept": "Saved. Leave blank to keep it",
+  "githubRedirectUri": "Callback URL",
+  "githubRedirectHelp": "Must match the Authorization callback URL registered on this OAuth app.",
+  "githubOAuthSaved": "GitHub OAuth saved",
+  "githubOAuthSaveFailed": "Failed to save GitHub OAuth"
 }
