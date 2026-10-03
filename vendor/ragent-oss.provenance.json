@@ -1,0 +1,16 @@
+{
+  "package": "ragent-oss",
+  "version": "0.1.0",
+  "source": "/Users/zhaowei/Documents/AI/ragent/node_modules/.pnpm/ragent-oss@0.1.0/node_modules/ragent-oss",
+  "recovered_at": "2026-10-03T08:47:06.758004+00:00",
+  "files_sha256": {
+    "README.md": "b19c89d54f28a94ff855418406d6913e363007277ff9d8e3532d88f7e9d1b9fe",
+    "package.json": "6d9ba2fcf54a4d315ddbfecb3f1708324fbe5a73f89aeddce8fe48264b00a8a8",
+    "src/client.ts": "4b117ba6a94b5a3eaefa9ef714d5f2c91800ca1d81b1b706addf30276f939c86",
+    "src/errors.ts": "fdf8350323f1068892a21558fb743c79c9cde4f13a4b8c98927950002e104f91",
+    "src/index.ts": "4087062eefe37147fd19fe5b9eaa15867a5a2688e3fe40b454f7da191ef306ce",
+    "src/types.ts": "8e6977070553bbbf28d6784ba1d3f6ae8c7b744175a09e7dbeb7d2698214cd2f",
+    "src/upload.ts": "7da93b4cc0501bac01755f44b70b4f40866f3a2e60fb1ad44fd399ff71b574c3"
+  },
+  "scope": "Installed npm SDK package, not OSS server source; no claim of unreleased/latest upstream code"
+}

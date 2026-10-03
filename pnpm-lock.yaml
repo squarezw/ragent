@@ -141,8 +141,8 @@ importers:
         specifier: ^8.16.3
         version: 8.23.0
       ragent-oss:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: file:./vendor/ragent-oss
+        version: file:vendor/ragent-oss
       react:
         specifier: ^19.2.1
         version: 19.2.8
@@ -3536,8 +3536,8 @@ packages:
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
 
-  ragent-oss@0.1.0:
-    resolution: {integrity: sha512-5VZ4/Yhs7BI7qo6sdm4lQmRKhW1AZG+scZGtvIoQy5HIBxgO4tWytAevA+flCwS8prImzpQRx8onlyj/EqXgPA==}
+  ragent-oss@file:vendor/ragent-oss:
+    resolution: {directory: vendor/ragent-oss, type: directory}
 
   react-dom@19.2.8:
     resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
@@ -7694,7 +7694,7 @@ snapshots:
 
   quick-format-unescaped@4.0.4: {}
 
-  ragent-oss@0.1.0: {}
+  ragent-oss@file:vendor/ragent-oss: {}
 
   react-dom@19.2.8(react@19.2.8):
     dependencies:
