@@ -14,6 +14,7 @@ RUN npm install -g pnpm
 # `pnpm` 字段被忽略）。它里面登记着 allowBuilds —— 缺了它，安装会因为"有依赖的构建
 # 脚本未评审"直接失败（ERR_PNPM_IGNORED_BUILDS），而且报错不会提示文件没拷进来。
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY vendor/ragent-oss ./vendor/ragent-oss
 
 # 安装依赖，使用更快的安装策略
 RUN pnpm install --frozen-lockfile --prefer-offline
