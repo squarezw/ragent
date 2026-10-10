@@ -7,10 +7,11 @@
 /**
  * Backend contract (ragent-service):
  *   event: tool_status
- *   data: {"name":"<tool>","skill":"<skill, optional>","display_name":"<human-readable skill name, optional>","phase":"started"|"finished","ok":<bool, finished only>}
+ *   data: {"name":"<tool>","tool_call_id":"<optional call id>","skill":"<skill, optional>","display_name":"<human-readable skill name, optional>","phase":"started"|"finished","ok":<bool, finished only>}
  */
 export interface ToolStatusEvent {
   name: string;
+  tool_call_id?: string;
   skill?: string;
   display_name?: string;
   /** 模型自报的这一步目的，一句短语。纯展示，可能缺席 */
@@ -29,6 +30,8 @@ export function parseToolStatusPayload(parsed: unknown): ToolStatusEvent | null 
   if (obj.phase !== "started" && obj.phase !== "finished") return null;
 
   const event: ToolStatusEvent = { name: obj.name, phase: obj.phase };
+  if (typeof obj.tool_call_id === "string" && obj.tool_call_id !== "")
+    event.tool_call_id = obj.tool_call_id;
   if (typeof obj.skill === "string" && obj.skill !== "") {
     event.skill = obj.skill;
   }
@@ -70,4 +73,17 @@ export function extractSseErrorMessage(parsed: unknown): string {
 /** SSE comment lines (heartbeats like `: ping`) must be skipped, not parsed. */
 export function isSseCommentLine(trimmedLine: string): boolean {
   return trimmedLine.startsWith(":");
+}
+
+/** Match one completion to its invocation, including parallel calls with identical labels. */
+export function findToolCompletionIndex(
+  steps: { label: string; toolCallId?: string; ok?: boolean }[],
+  event: ToolStatusEvent
+): number {
+  if (event.tool_call_id)
+    return steps.findIndex((s) => s.toolCallId === event.tool_call_id && s.ok === undefined);
+  // Legacy servers have no IDs; finish the oldest outstanding matching call.
+  return steps.findIndex(
+    (s) => s.label === (event.display_name || event.skill || event.name) && s.ok === undefined
+  );
 }

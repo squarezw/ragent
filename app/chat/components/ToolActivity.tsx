@@ -4,9 +4,9 @@ import { useTranslations } from "next-intl";
 import { ChevronDown, ChevronRight, Check, X, Loader2 } from "lucide-react";
 
 export interface ToolStep {
-  /** Stable identity within a turn. Backend has no per-call id on these frames,
-   *  so we mint one — two calls to the same tool must not collapse into one row. */
+  /** Local row identity; toolCallId correlates backend invocation events. */
   id: number;
+  toolCallId?: string;
   label: string;
   /** 模型自报的这一步目的。有就跟在名称后，让「一连串飞书套件」变得可读 */
   purpose?: string;
