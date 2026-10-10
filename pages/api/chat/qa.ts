@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/auth";
+import { watchQaDisconnect } from "@/lib/qaCancellation";
 import { runQA } from "@/lib/qaCore";
 import { logError } from "@/lib/logError";
 import { NextApiRequest, NextApiResponse } from "next";
@@ -12,7 +13,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { question, stream, attachments, ...rest } = req.body;
   if (!question) return res.status(400).json({ error: "Missing question" });
 
+  const cancellation = watchQaDisconnect(req, res);
   try {
+    cancellation.signal.throwIfAborted();
     // 如果是流式请求
     if (stream) {
       // 设置完整的 SSE 响应头
@@ -34,9 +37,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           },
           req,
           undefined,
-          res
+          res,
+          cancellation.signal
         ); // 传递响应对象给 runQA，不传递回调函数
       } catch (error: any) {
+        if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
         console.error("[QA API Stream] Error:", error);
         // 发送错误信息。
         //
@@ -55,12 +60,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     } else {
       // 非流式请求，使用原有逻辑
-      const result = await runQA({ question, attachments, ...rest }, req);
+      const result = await runQA(
+        { question, attachments, ...rest },
+        req,
+        undefined,
+        undefined,
+        cancellation.signal
+      );
       if (!result) throw new Error("No result returned from runQA");
       const { answer, reference, segment_ids, detail_id, chat_id } = result;
       res.json({ answer, detail_id, reference, segment_ids, chat_id });
     }
   } catch (error: any) {
+    if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
     console.error(`[QA API] Error processing QA request:`, error);
     logError(error);
 
@@ -93,5 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       error: errorMessage,
       detail: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
+  } finally {
+    cancellation.dispose();
   }
 }

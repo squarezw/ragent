@@ -1,4 +1,5 @@
 import axios from "@/lib/axios";
+import { closeQaReader, forwardQaStream } from "@/lib/qaCancellation";
 
 /**
  * 402 余额不足。两条路径（流式 fetch / 非流式 axios）把状态码放在不同位置，
@@ -19,12 +20,14 @@ export async function runQA(
     onComplete: (result: any) => void;
     onError: (error: any) => void;
   },
-  res?: any // 添加响应对象用于直接转发流式数据
+  res?: any, // 添加响应对象用于直接转发流式数据
+  signal?: AbortSignal
 ) {
   const { question, datasetId, enableWebSearch, attachments, app_id, chat_id } = params || {};
   if (!question) throw new Error("Missing question");
 
   try {
+    signal?.throwIfAborted();
     const headers: any = {
       "Content-Type": "application/json",
     };
@@ -148,6 +151,7 @@ export async function runQA(
         method: "POST",
         headers,
         body: JSON.stringify(apiPayload),
+        signal,
       });
 
       if (!response.ok) {
@@ -178,34 +182,7 @@ export async function runQA(
 
       // 如果有响应对象但没有回调函数，说明需要完全透传
       if (res && !callbacks) {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) {
-              break;
-            }
-
-            // 解码并直接透传数据，不做任何处理
-            const chunk = decoder.decode(value, { stream: true });
-            res.write(chunk);
-
-            // 立即刷新，确保数据及时发送
-            if (typeof (res as any).flush === "function") {
-              (res as any).flush();
-            }
-          }
-          // 流式响应完成
-          res.end();
-        } catch (error: any) {
-          // 发送错误信息
-          res.write(`event: error\n`);
-          res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-          res.end();
-          throw error;
-        } finally {
-          reader.releaseLock();
-        }
+        await forwardQaStream(reader, res, signal);
         return;
       }
 
@@ -217,7 +194,9 @@ export async function runQA(
 
       try {
         while (true) {
+          signal?.throwIfAborted();
           const { done, value } = await reader.read();
+          signal?.throwIfAborted();
 
           if (done) {
             break;
@@ -227,6 +206,7 @@ export async function runQA(
           const lines = chunk.split("\n");
 
           for (const line of lines) {
+            signal?.throwIfAborted();
             if (line.startsWith("data: ")) {
               const data = line.slice(6);
 
@@ -269,6 +249,7 @@ export async function runQA(
               }
             }
 
+            signal?.throwIfAborted();
             // 如果有响应对象，直接转发原始数据
             if (res && line.trim()) {
               res.write(line + "\n");
@@ -279,10 +260,11 @@ export async function runQA(
           }
         }
       } finally {
-        reader.releaseLock();
+        await closeQaReader(reader);
       }
 
       // 如果没有收到 [DONE] 标记，手动调用完成回调
+      signal?.throwIfAborted();
       callbacks?.onComplete({ reference, segment_ids: segmentIds, detail_id: detailId });
     } else {
       // 非流式请求，使用原有逻辑
@@ -291,6 +273,7 @@ export async function runQA(
 
       const completionRes = await axios.post(externalApiUrl, apiPayload, {
         headers,
+        signal,
         timeout: 120000, // 2分钟超时
         maxRedirects: 3,
         validateStatus: (status) => status < 500, // 只接受5xx以下的错误
@@ -342,6 +325,7 @@ export async function runQA(
       };
     }
   } catch (error: any) {
+    if (signal?.aborted) throw error;
     console.error("[QA Core] Error in runQA:", error);
 
     // 如果有回调函数，调用错误回调
