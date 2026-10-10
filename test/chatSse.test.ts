@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   extractSseErrorMessage,
+  findToolCompletionIndex,
   isSseCommentLine,
   parseToolStatusPayload,
 } from "../lib/chatSse.ts";
@@ -106,4 +107,83 @@ test("isSseCommentLine: 心跳注释行跳过，event/data 行不受影响", () 
   assert.equal(isSseCommentLine(":keepalive"), true);
   assert.equal(isSseCommentLine("event: tool_status"), false);
   assert.equal(isSseCommentLine('data: {"v":"x"}'), false);
+});
+
+test("parallel tool completions use call IDs and accept out-of-order finishes", () => {
+  const steps = [
+    { label: "inspect", toolCallId: "a" },
+    { label: "inspect", toolCallId: "b" },
+  ];
+  assert.equal(
+    findToolCompletionIndex(steps, { name: "inspect", phase: "finished", tool_call_id: "b" }),
+    1
+  );
+  const finished = [{ ...steps[0], ok: true }, steps[1]];
+  assert.equal(
+    findToolCompletionIndex(finished, { name: "inspect", phase: "finished", tool_call_id: "a" }),
+    -1
+  );
+  assert.equal(findToolCompletionIndex(finished, { name: "inspect", phase: "finished" }), 1);
+  assert.equal(
+    parseToolStatusPayload({ name: "inspect", phase: "started", tool_call_id: "a" })?.tool_call_id,
+    "a"
+  );
+});
+
+test("unknown and duplicate IDs never complete another outstanding call", () => {
+  const steps = [
+    { label: "inspect", toolCallId: "a", ok: false },
+    { label: "inspect", toolCallId: "b" },
+  ];
+  assert.equal(
+    findToolCompletionIndex(steps, { name: "inspect", phase: "finished", tool_call_id: "missing" }),
+    -1
+  );
+  assert.equal(
+    findToolCompletionIndex(steps, { name: "inspect", phase: "finished", tool_call_id: "a" }),
+    -1
+  );
+  assert.equal(
+    findToolCompletionIndex(steps, {
+      name: "different label",
+      phase: "finished",
+      tool_call_id: "b",
+    }),
+    1
+  );
+});
+
+test("legacy completions match the oldest unfinished display label", () => {
+  const steps = [
+    { label: "Skill title", ok: true },
+    { label: "other" },
+    { label: "Skill title" },
+    { label: "Skill title" },
+  ];
+  assert.equal(
+    findToolCompletionIndex(steps, {
+      name: "execute_skill",
+      skill: "skill-id",
+      display_name: "Skill title",
+      phase: "finished",
+    }),
+    2
+  );
+  assert.equal(
+    findToolCompletionIndex([{ label: "skill-id" }], {
+      name: "execute_skill",
+      skill: "skill-id",
+      phase: "finished",
+    }),
+    0
+  );
+  assert.equal(findToolCompletionIndex(steps, { name: "missing", phase: "finished" }), -1);
+});
+
+test("malformed or empty call IDs are omitted", () => {
+  for (const tool_call_id of ["", null, 1, {}]) {
+    const parsed = parseToolStatusPayload({ name: "inspect", phase: "started", tool_call_id });
+    assert.ok(parsed);
+    assert.equal(parsed.tool_call_id, undefined);
+  }
 });

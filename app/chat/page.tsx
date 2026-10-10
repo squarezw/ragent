@@ -1,5 +1,6 @@
 "use client";
 import { useTranslations } from "next-intl";
+import { findToolCompletionIndex } from "@/lib/chatSse";
 import type { ToolStep } from "./components/ToolActivity";
 import WelcomeView from "@/app/chat/components/WelcomeView";
 import ChatInputComposite from "@/app/chat/components/ChatInputComposite";
@@ -287,19 +288,16 @@ export default function ChatPage() {
               {
                 id: prev.length,
                 label,
+                toolCallId: status.tool_call_id,
                 purpose: status.purpose,
                 detail: status.detail,
                 startedAt: Date.now(),
               },
             ]);
           } else {
-            // finished：结掉**最后一个同名且未结束**的步骤。
-            //
-            // 这些帧没有携带 tool_call_id，所以只能按名字回填。从后往前找是因为
-            // 同一个工具可能被连调多次（模型轮询就是这样）—— 从前往后会把新的
-            // finished 记到早已结束的那一条上，表现是「有的步骤永远转圈」。
+            // Correlate parallel invocations by their backend ID.
             setToolSteps((prev) => {
-              const i = prev.map((x) => x.label).lastIndexOf(label);
+              const i = findToolCompletionIndex(prev, status);
               if (i < 0 || prev[i].ok !== undefined) return prev;
               const next = [...prev];
               next[i] = { ...next[i], ok: status.ok !== false, endedAt: Date.now() };

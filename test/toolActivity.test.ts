@@ -22,16 +22,6 @@ test("步骤是累积的，不是替换", () => {
     "started 应当往列表里追加");
 });
 
-test("finished 从后往前找同名步骤", () => {
-  // 这些帧不带 tool_call_id，只能按名字回填。同一个工具会被连调多次
-  // （模型轮询就是这样）—— 从前往后找会把新的 finished 记到早已结束的那条上，
-  // 表现是「有的步骤永远转圈」。
-  const src = read("app/chat/page.tsx");
-  const seg = src.slice(src.indexOf("finished：结掉"));
-  assert.match(seg.slice(0, 500), /lastIndexOf\(label\)/, "必须从后往前找");
-  assert.match(seg.slice(0, 500), /prev\[i\]\.ok !== undefined/, "不能重复结掉已完成的步骤");
-});
-
 test("每轮开始时清空", () => {
   // 不清的话上一轮的步骤会跟着这一轮显示。
   const src = read("app/chat/page.tsx");
