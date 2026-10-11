@@ -80,3 +80,28 @@ export function sessionAttachmentMime(attachment: SessionAttachment): string {
   const ext = Object.keys(MIME_BY_EXT).find((suffix) => name.endsWith(suffix));
   return (ext && MIME_BY_EXT[ext]) || stored || "application/octet-stream";
 }
+
+
+export interface UploadedAttachment {
+  objectKey?: string;
+  filename: string;
+  type?: string;
+  contentType?: string;
+  uploadReceipt?: string;
+  size?: number;
+  content?: string;
+}
+
+/** Only this turn's upload references go to the backend; previews are not inputs. */
+export function chatAttachmentPayload(attachments: UploadedAttachment[]) {
+  return attachments.filter((a) => a?.objectKey).map((a) => ({
+    object_key: a.objectKey,
+    filename: a.filename,
+    content_type: sessionAttachmentMime({
+      filename: a.filename, objectKey: a.objectKey!, contentType: a.contentType || a.type,
+    }),
+    size: a.size,
+    extracted_text: a.content,
+    ...(a.uploadReceipt ? { upload_receipt: a.uploadReceipt } : {}),
+  }));
+}
