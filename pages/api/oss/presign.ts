@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
+import { signChatUploadReceipt } from "@/lib/chatUploadReceipt";
+import { requireEnv } from "@/lib/env";
 import { ossClient } from "@/lib/ossClient";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -22,7 +24,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const result = await ossClient.presign({ filename, contentType, category });
-    return res.status(200).json(result);
+    const uploadReceipt = category === "attachments"
+      ? signChatUploadReceipt(userId, result.objectKey, contentType, requireEnv("JWT_SECRET"))
+      : undefined;
+    return res.status(200).json({ ...result, ...(uploadReceipt ? { uploadReceipt } : {}) });
   } catch (error: any) {
     console.error("[OSS Presign] Error:", {
       message: error.message,

@@ -5,6 +5,7 @@ interface UploadFileOptions {
   category: string;
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
+  onPresigned?: (metadata: { uploadReceipt?: string }) => void;
 }
 
 /**
@@ -15,6 +16,7 @@ export async function uploadFile({
   category,
   onProgress,
   signal,
+  onPresigned,
 }: UploadFileOptions): Promise<string> {
   // Step 1: Get presigned URL from our proxy
   const { data } = await axios.post("/api/oss/presign", {
@@ -24,6 +26,7 @@ export async function uploadFile({
   });
 
   const { objectKey, uploadUrl, headers } = data;
+  onPresigned?.({ uploadReceipt: data.uploadReceipt });
 
   // Step 2: Upload directly to storage via XHR (for progress tracking)
   await new Promise<void>((resolve, reject) => {

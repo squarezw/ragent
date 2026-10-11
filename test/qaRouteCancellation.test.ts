@@ -5,11 +5,12 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
+import * as sessionAttachments from "../lib/sessionAttachments.ts";
 import * as cancellation from "../lib/qaCancellation.ts";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
-function loadProduction(path: string, imports: Record<string, unknown>) {
+function loadProduction(path: string, imports: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
   const module = { exports: {} as Record<string, any> };
   const compiled = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -25,6 +26,7 @@ function loadProduction(path: string, imports: Record<string, unknown>) {
     TextDecoder,
     console: { log() {}, error() {}, warn() {} },
     process,
+    ...overrides,
   });
   return module.exports;
 }
@@ -49,6 +51,7 @@ test("actual QA route and core propagate stop to backend without SSE errors", {
   process.env.EXTERNAL_API_BASE_URL = `http://127.0.0.1:${backendAddress.port}`;
   const core = loadProduction("../lib/qaCore.ts", {
     "@/lib/axios": {},
+    "@/lib/sessionAttachments": sessionAttachments,
     "@/lib/qaCancellation": cancellation,
   });
   let logs = 0;
@@ -102,3 +105,22 @@ test("actual QA route and core propagate stop to backend without SSE errors", {
     ]);
   }
 });
+
+for (const status of [403, 413, 422, 503]) {
+  test(`streaming backend ${status} preserves its safe detail and status`, async () => {
+    const detail = "图片上传凭证无效或已过期，请重新上传图片";
+    const core = loadProduction("../lib/qaCore.ts", {
+      "@/lib/axios": {},
+      "@/lib/qaCancellation": cancellation,
+      "@/lib/sessionAttachments": sessionAttachments,
+    }, { fetch: async () => new Response(JSON.stringify({ detail }), { status }) });
+    await assert.rejects(core.runQA({ question: "inspect" }, undefined, undefined, {}),
+      (error: any) => error.message === detail && error.statusCode === status);
+    let captured: any;
+    await core.runQA({ question: "inspect" }, undefined, {
+      onChunk() {}, onComplete() {}, onError(error: any) { captured = error; },
+    });
+    assert.equal(captured.message, detail);
+    assert.equal(captured.statusCode, status);
+  });
+}
