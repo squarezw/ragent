@@ -1,3 +1,4 @@
+import { chatAttachmentPayload } from "@/lib/sessionAttachments";
 import axios from "@/lib/axios";
 import { closeQaReader, forwardQaStream } from "@/lib/qaCancellation";
 
@@ -101,28 +102,8 @@ export async function runQA(
     // object_key 仅在平台侧流转，不下发给模型：模型只能按文件名引用 inputs/ 里
     // 已经放好的文件，否则就等于拿到了对象存储的任意读能力。
     if (attachments && attachments.length > 0) {
-      type UploadedAttachment = {
-        objectKey?: string;
-        filename: string;
-        type?: string;
-        size?: number;
-        content?: string;
-      };
-      const withKey = (attachments as UploadedAttachment[]).filter((a) => a?.objectKey);
-      if (withKey.length > 0) {
-        apiPayload.attachments = withKey.map((a) => ({
-          object_key: a.objectKey,
-          filename: a.filename,
-          content_type: a.type,
-          size: a.size,
-          // 抽好的文本也发过去，后端写成 inputs/<主名>.extracted.md 让 skill 直接读。
-          // 它在上面的 system 消息里也有一份，但那一份经 JSON.stringify 之后换行被
-          // 转义成字面 \n——模型照着转述进 stdin_data，整份材料就成了一行，分页标记
-          // 全部失配（实测：16 页的材料被当成 1 页，报告里页码全写"第1页"）。
-          // 材料是数据，不该穿过模型的输出。
-          extracted_text: a.content,
-        }));
-      }
+      const payloadAttachments = chatAttachmentPayload(attachments);
+      if (payloadAttachments.length) apiPayload.attachments = payloadAttachments;
     }
 
     // 如果有 datasetId，添加到请求中（转换为数组格式）
@@ -140,7 +121,7 @@ export async function runQA(
     if (chat_id) {
       apiPayload.chat_id = chat_id;
     }
-    console.log("[QA Core] API payload:", JSON.stringify(apiPayload, null, 2));
+    // Never log upload receipts or attachment data.
 
     // 如果有回调函数或响应对象，说明是流式请求
     if (callbacks || res) {
@@ -326,7 +307,14 @@ export async function runQA(
     }
   } catch (error: any) {
     if (signal?.aborted) throw error;
-    console.error("[QA Core] Error in runQA:", error);
+    console.error("[QA Core] Request failed:", { status: error.statusCode || error.response?.status, name: error.name });
+    const backendStatus = error.statusCode || error.response?.status;
+    const backendDetail = error.response?.data?.detail;
+    if ([403, 413, 422, 503].includes(backendStatus) && typeof backendDetail === "string") {
+      const safeError = Object.assign(new Error(backendDetail), { statusCode: backendStatus });
+      if (callbacks) { callbacks.onError(safeError); return; }
+      throw safeError;
+    }
 
     // 如果有回调函数，调用错误回调
     if (callbacks) {

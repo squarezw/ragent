@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { uploadFile, getFileUrl } from "@/lib/ossUpload";
+import { sessionAttachmentMime } from "@/lib/sessionAttachments";
 import { isAllowedAttachment } from "@/lib/chatAttachments";
 
 export interface Attachment {
@@ -20,6 +21,8 @@ export interface Attachment {
   objectKey?: string;
   /** 字节数，随请求发给后端用于超限预判（避免白下载一遍大文件） */
   size?: number;
+  contentType?: string;
+  uploadReceipt?: string;
 }
 
 export function useFileAttachments() {
@@ -41,9 +44,14 @@ export function useFileAttachments() {
         throw new Error(t("pleaseLoginFirst"));
       }
 
+      let uploadReceipt: string | undefined;
+      const contentType = sessionAttachmentMime({
+        filename: file.name, objectKey: "", contentType: file.type,
+      });
       const objectKey = await uploadFile({
         file,
         category: "attachments",
+        onPresigned: (metadata) => { uploadReceipt = metadata.uploadReceipt; },
       });
 
       const response = await axios.post("/api/chat/upload-confirm", {
@@ -60,6 +68,8 @@ export function useFileAttachments() {
         url: getFileUrl(result.objectKey),
         objectKey: result.objectKey,
         size: file.size,
+        contentType,
+        uploadReceipt,
       };
 
       setAttachments((prev) => [...prev, newAttachment]);

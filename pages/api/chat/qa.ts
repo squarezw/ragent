@@ -8,7 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!requireAuth(req, res)) return;
   if (req.method !== "POST") return res.status(405).end();
 
-  console.log("req.body", req.body);
+  // Upload proofs and attachment content must not enter logs.
 
   const { question, stream, attachments, ...rest } = req.body;
   if (!question) return res.status(400).json({ error: "Missing question" });
@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ); // 传递响应对象给 runQA，不传递回调函数
       } catch (error: any) {
         if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
-        console.error("[QA API Stream] Error:", error);
+        console.error("[QA API Stream] Request failed:", { status: error.statusCode, name: error.name });
         // 发送错误信息。
         //
         // 402 额外带一个 code：余额不足**不是故障**，是一个用户可以自己解决的状态
@@ -73,19 +73,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } catch (error: any) {
     if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
-    console.error(`[QA API] Error processing QA request:`, error);
-    logError(error);
+    console.error("[QA API] Request failed:", { status: error.statusCode, name: error.name });
+    logError(new Error(`QA request failed (${error.statusCode || 500})`));
 
     // 返回用户友好的错误信息
     let errorMessage = "Internal server error";
     let statusCode = 500;
 
-    if ((error as any).statusCode === 402) {
+    if ([402, 403, 413, 422, 503].includes(error.statusCode)) {
       // 原样透出。落到下面的兜底会变成 500「Internal server error」——
       // 一句本来写给用户的话（「余额不足」）被换成一句说明不了任何事的话，
       // 而用户的下一步动作（充值 vs 报障）完全不同。
       errorMessage = error.message;
-      statusCode = 402;
+      statusCode = error.statusCode;
     } else if (error.message?.includes("VALIDATION_ERROR:") || (error as any).statusCode === 422) {
       // 422 Unprocessable Entity - 从后端服务返回的验证错误
       errorMessage = "Request validation failed";

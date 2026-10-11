@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
+import * as sessionAttachments from "../lib/sessionAttachments.ts";
 import * as cancellation from "../lib/qaCancellation.ts";
 
 const require = createRequire(import.meta.url);
@@ -49,6 +50,7 @@ test("actual QA route and core propagate stop to backend without SSE errors", {
   process.env.EXTERNAL_API_BASE_URL = `http://127.0.0.1:${backendAddress.port}`;
   const core = loadProduction("../lib/qaCore.ts", {
     "@/lib/axios": {},
+    "@/lib/sessionAttachments": sessionAttachments,
     "@/lib/qaCancellation": cancellation,
   });
   let logs = 0;
