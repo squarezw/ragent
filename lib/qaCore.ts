@@ -309,7 +309,8 @@ export async function runQA(
     if (signal?.aborted) throw error;
     console.error("[QA Core] Request failed:", { status: error.statusCode || error.response?.status, name: error.name });
     const backendStatus = error.statusCode || error.response?.status;
-    const backendDetail = error.response?.data?.detail;
+    const backendDetail = error.response?.data?.detail
+      || (error.statusCode ? error.message : undefined);
     if ([403, 413, 422, 503].includes(backendStatus) && typeof backendDetail === "string") {
       const safeError = Object.assign(new Error(backendDetail), { statusCode: backendStatus });
       if (callbacks) { callbacks.onError(safeError); return; }
