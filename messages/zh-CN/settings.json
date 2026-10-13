@@ -29,5 +29,7 @@
   "confirmUnbind": "确定要解绑企业微信吗？",
   "syncingUserData": "同步用户数据...",
   "cannotLoadUser": "无法加载用户信息",
-  "reload": "重新加载"
+  "reload": "重新加载",
+  "phone": "手机号（可选）",
+  "phonePlaceholder": "请输入手机号"
 }

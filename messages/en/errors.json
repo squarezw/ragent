@@ -22,5 +22,6 @@
   "loadPromptsFailed": "Failed to load prompts",
   "loadWechatAppsFailed": "Failed to load WeChat apps",
   "enterAppName": "Please enter digital employee name",
-  "cannotDeleteApp": "Unable to delete digital employee"
+  "cannotDeleteApp": "Unable to delete digital employee",
+  "phoneAlreadyRegistered": "Phone number already registered"
 }

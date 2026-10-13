@@ -29,5 +29,7 @@
   "confirmUnbind": "Are you sure you want to unbind WeChat Work?",
   "syncingUserData": "Syncing user data...",
   "cannotLoadUser": "Unable to load user info",
-  "reload": "Reload"
+  "reload": "Reload",
+  "phone": "Phone number (optional)",
+  "phonePlaceholder": "Enter your phone number"
 }

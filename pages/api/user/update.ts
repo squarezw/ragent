@@ -31,6 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       password,
       currentPassword,
       email,
+      phone: rawPhone,
       role,
       tenant_id,
       dept_id,
@@ -76,6 +77,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    if (rawPhone !== undefined && rawPhone !== null && typeof rawPhone !== "string") {
+      return res.status(400).json({ error: "Invalid phone", code: "INVALID_PHONE" });
+    }
+    const phone = typeof rawPhone === "string" ? rawPhone.trim() || null : rawPhone;
+
     const client = await pool.connect();
     try {
       // 检查邮箱唯一性（排除自身）
@@ -85,7 +91,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           targetId,
         ]);
         if (exists.rowCount && exists.rowCount > 0) {
-          return res.status(409).json({ error: "邮箱已被使用" });
+          return res.status(409).json({ error: "邮箱已被使用", code: "EMAIL_ALREADY_REGISTERED" });
+        }
+      }
+
+      // 全局检查手机号唯一性（包括停用用户，排除自身）
+      if (phone) {
+        const exists = await client.query("SELECT 1 FROM users WHERE phone=$1 AND id<>$2", [
+          phone,
+          targetId,
+        ]);
+        if (exists.rowCount && exists.rowCount > 0) {
+          return res.status(409).json({ error: "手机号已注册", code: "PHONE_ALREADY_REGISTERED" });
         }
       }
 
@@ -174,6 +191,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           updateValues.push(email);
         }
 
+        if (phone !== undefined) {
+          updateFields.push(`phone = $${paramIndex++}`);
+          updateValues.push(phone);
+        }
+
         if (wechat_id !== undefined) {
           updateFields.push(`wechat_id = $${paramIndex++}`);
           updateValues.push(wechat_id);
@@ -190,6 +212,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           updateValues.push(email);
         }
 
+        if (phone !== undefined) {
+          updateFields.push(`phone = $${paramIndex++}`);
+          updateValues.push(phone);
+        }
+
         if (wechat_id !== undefined) {
           updateFields.push(`wechat_id = $${paramIndex++}`);
           updateValues.push(wechat_id);
@@ -204,6 +231,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (email !== undefined) {
           updateFields.push(`email = $${paramIndex++}`);
           updateValues.push(email);
+        }
+
+        if (phone !== undefined) {
+          updateFields.push(`phone = $${paramIndex++}`);
+          updateValues.push(phone);
         }
 
         if (wechat_id !== undefined) {
@@ -331,7 +363,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       updateFields.push(`updated_at = NOW()`);
       updateValues.push(targetId);
 
-      const query = `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${paramIndex} RETURNING id, username, nickname, email, tenant_id, dept_id, status, wechat_id`;
+      const query = `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${paramIndex} RETURNING id, username, nickname, email, phone, tenant_id, dept_id, status, wechat_id`;
       const result = await client.query(query, updateValues);
 
       // 如果需要更新角色
@@ -383,6 +415,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       client.release();
     }
   } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "23505" &&
+      "constraint" in err &&
+      err.constraint === "users_phone_unique"
+    ) {
+      return res.status(409).json({ error: "手机号已注册", code: "PHONE_ALREADY_REGISTERED" });
+    }
     console.error("更新用户 API 错误:", err);
     res.status(500).json({ error: "Database error", details: err });
   }
