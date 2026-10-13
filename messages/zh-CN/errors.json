@@ -22,5 +22,6 @@
   "loadPromptsFailed": "加载提示词失败",
   "loadWechatAppsFailed": "加载微信应用失败",
   "enterAppName": "请输入数字员工名称",
-  "cannotDeleteApp": "无法删除数字员工"
+  "cannotDeleteApp": "无法删除数字员工",
+  "phoneAlreadyRegistered": "手机号已注册"
 }

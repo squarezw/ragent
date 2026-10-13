@@ -15,6 +15,7 @@ interface UserInfo {
   username: string;
   nickname: string;
   email: string;
+  phone?: string | null;
   tenant_id?: number;
   dept_id?: number;
   status: string;
@@ -29,7 +30,7 @@ interface UserInfo {
 }
 
 export default function SettingsPage() {
-  const { user, loading } = useCurrentUser();
+  const { user, loading, refetch } = useCurrentUser();
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,6 +46,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState({
     nickname: "",
     email: "",
+    phone: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
@@ -56,6 +58,7 @@ export default function SettingsPage() {
       setForm({
         nickname: user.nickname || "",
         email: user.email || "",
+        phone: user.phone || "",
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
@@ -79,10 +82,11 @@ export default function SettingsPage() {
 
     setSaving(true);
     try {
-      await axios.put("/api/user/update", {
+      const response = await axios.put("/api/user/update", {
         id: user?.id,
         nickname: form.nickname,
         email: form.email,
+        phone: form.phone,
       });
 
       // 更新本地用户信息
@@ -90,18 +94,29 @@ export default function SettingsPage() {
         setUserInfo({
           ...userInfo,
           nickname: form.nickname,
-          email: form.email,
+          email: response.data.user.email,
+          phone: response.data.user.phone,
         });
       }
 
+      await refetch();
       setSuccess(ts("personalInfoUpdated"));
     } catch (error: any) {
-      if (error.response?.status === 409) {
+      if (
+        error.response?.status === 409 &&
+        error.response?.data?.code === "PHONE_ALREADY_REGISTERED"
+      ) {
+        setError(te("phoneAlreadyRegistered"));
+      } else if (
+        error.response?.status === 409 &&
+        (error.response?.data?.code === "EMAIL_ALREADY_REGISTERED" ||
+          error.response?.data?.error === "邮箱已被使用")
+      ) {
         setError(te("emailInUse"));
       } else {
         setError(te("updateFailed"));
+        console.error("更新个人信息失败:", error);
       }
-      console.error("更新个人信息失败:", error);
     } finally {
       setSaving(false);
     }
@@ -320,6 +335,19 @@ export default function SettingsPage() {
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   placeholder={t("emailPlaceholder")}
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-phone" className="block text-sm font-medium mb-1">
+                  {t("phone")}
+                </label>
+                <Input
+                  id="profile-phone"
+                  type="tel"
+                  autoComplete="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder={t("phonePlaceholder")}
                 />
               </div>
             </div>

@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 获取用户基本信息
       const dbRes = await client.query(
         `
-        SELECT u.id, u.username, u.nickname, u.email, u.tenant_id, u.dept_id, u.status, u.wechat_id, u.created_at, u.updated_at,
+        SELECT u.id, u.username, u.nickname, u.email, u.phone, u.tenant_id, u.dept_id, u.status, u.wechat_id, u.created_at, u.updated_at,
                t.name as tenant_name, d.name as dept_name
         FROM users u
         LEFT JOIN tenant t ON u.tenant_id = t.id
@@ -39,9 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const userPerms = await getUserPermissions(userId);
 
       // 构建响应数据
-      const companyCode = user.tenant_id
-        ? getCompanyCodeByTenantId(user.tenant_id)
-        : undefined;
+      const companyCode = user.tenant_id ? getCompanyCodeByTenantId(user.tenant_id) : undefined;
       const response = {
         ...user,
         company_code: companyCode || null,
