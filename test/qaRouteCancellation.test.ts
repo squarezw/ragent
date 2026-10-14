@@ -53,12 +53,14 @@ test("actual QA route and core propagate stop to backend without SSE errors", {
     "@/lib/axios": {},
     "@/lib/sessionAttachments": sessionAttachments,
     "@/lib/qaCancellation": cancellation,
+    "@/lib/qaBusinessError": loadProduction("../lib/qaBusinessError.ts", {}),
   });
   let logs = 0;
   const route = loadProduction("../pages/api/chat/qa.ts", {
     "@/lib/auth": { requireAuth: () => true },
     "@/lib/qaCore": core,
     "@/lib/qaCancellation": cancellation,
+    "@/lib/qaBusinessError": loadProduction("../lib/qaBusinessError.ts", {}),
     "@/lib/logError": { logError: () => logs++ },
   });
   let finished!: () => void;
@@ -112,6 +114,7 @@ for (const status of [403, 413, 422, 503]) {
     const core = loadProduction("../lib/qaCore.ts", {
       "@/lib/axios": {},
       "@/lib/qaCancellation": cancellation,
+    "@/lib/qaBusinessError": loadProduction("../lib/qaBusinessError.ts", {}),
       "@/lib/sessionAttachments": sessionAttachments,
     }, { fetch: async () => new Response(JSON.stringify({ detail }), { status }) });
     await assert.rejects(core.runQA({ question: "inspect" }, undefined, undefined, {}),

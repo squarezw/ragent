@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import {
   type UsageFilters,
   type UsageTurnRow,
   useCreditAccounts,
+  useMyCreditAccount,
   useUsageSummary,
   useUsageTurns,
 } from "@/hooks/useBilling";
@@ -42,6 +44,8 @@ function isoDay(offsetDays: number): string {
 }
 
 export default function BillingPage() {
+  const tu = useTranslations("user");
+  const myCredits = useMyCreditAccount();
   const [rangeKey, setRangeKey] = useState("7d");
   const [groupBy, setGroupBy] = useState<GroupBy>("user");
   const [drill, setDrill] = useState<{ userId?: number; sessionId?: number }>({});
@@ -121,6 +125,30 @@ export default function BillingPage() {
         </div>
       )}
 
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-xs text-muted-foreground">{tu("creditMyBalance")}</div>
+          {myCredits.loading ? <p>{tu("creditLoading")}</p> : myCredits.error ? (
+            <div role="alert" className="text-destructive text-sm">
+              {tu("creditBalanceLoadFailed")}
+              <Button variant="ghost" onClick={() => myCredits.reload()}>{tu("creditRetry")}</Button>
+            </div>
+          ) : myCredits.account ? (
+            <>
+              <div className="text-2xl font-semibold mt-1">
+                {myCredits.account.source === "none" || myCredits.account.balance === null ? "—" : Number(myCredits.account.balance).toFixed(2)}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {tu(myCredits.account.source === "user" ? "creditPersonalPool" : myCredits.account.source === "tenant" ? "creditSharedPool" : "creditNoTenant")}
+              </p>
+              {myCredits.account.enforced && Number(myCredits.account.balance) <= 0 && (
+                <p className="text-sm text-destructive">{tu("creditExhausted")}</p>
+              )}
+            </>
+          ) : null}
+        </CardContent>
+      </Card>
+
       {/* 用 md: 而不是 sm:：项目里其他页面（monitoring / apps）都用 md:grid-cols-3，
           而 sm:grid-cols-3 全项目仅此一处。Tailwind 只生成扫到的类，新建目录下
           独一份的断点类容易在 JIT 增量构建里漏掉 —— 表现就是三块竖着排。
@@ -131,7 +159,7 @@ export default function BillingPage() {
             四列自动退回三列 —— 不给他们看到一个「余额 0」的假象。 */}
         {accounts.length > 0 && (
           <Stat
-            label={accounts.length === 1 ? "剩余积分" : `剩余积分（${accounts.length} 个租户合计）`}
+            label={tu("creditTenantPoolTotal", { count: accounts.length })}
             value={totalBalance.toFixed(2)}
           />
         )}

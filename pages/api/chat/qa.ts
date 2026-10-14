@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { watchQaDisconnect } from "@/lib/qaCancellation";
 import { runQA } from "@/lib/qaCore";
+import { creditChatCode } from "@/lib/qaBusinessError";
 import { logError } from "@/lib/logError";
 import { NextApiRequest, NextApiResponse } from "next";
 
@@ -42,18 +43,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ); // 传递响应对象给 runQA，不传递回调函数
       } catch (error: any) {
         if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
-        console.error("[QA API Stream] Request failed:", { status: error.statusCode, name: error.name });
+        const businessCode = creditChatCode(error);
+        if (businessCode)
+          console.log("[QA API Stream] Credit request stopped:", { code: businessCode });
+        else
+          console.error("[QA API Stream] Request failed:", {
+            status: error.statusCode,
+            name: error.name,
+          });
         // 发送错误信息。
         //
         // 402 额外带一个 code：余额不足**不是故障**，是一个用户可以自己解决的状态
         // （去充值）。靠文案匹配来识别它太脆 —— 文案改一个字就失效，而失效的表现是
         // 用户重新看到「发生了错误」，没人会注意到。
-        const insufficient = error?.statusCode === 402;
+        // Known credit states preserve machine-readable codes through the SSE proxy.
         res.write(`event: error\n`);
         res.write(
           `data: ${JSON.stringify({
             error: error.message,
-            ...(insufficient ? { code: "insufficient_balance" } : {}),
+            ...(businessCode ? { code: businessCode } : {}),
           })}\n\n`
         );
         res.end();
@@ -73,14 +81,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } catch (error: any) {
     if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;
-    console.error("[QA API] Request failed:", { status: error.statusCode, name: error.name });
-    logError(new Error(`QA request failed (${error.statusCode || 500})`));
+    const businessCode = creditChatCode(error);
+    if (businessCode) console.log("[QA API] Credit request stopped:", { code: businessCode });
+    else {
+      console.error("[QA API] Request failed:", { status: error.statusCode, name: error.name });
+      logError(new Error(`QA request failed (${error.statusCode || 500})`));
+    }
 
     // 返回用户友好的错误信息
     let errorMessage = "Internal server error";
     let statusCode = 500;
 
-    if ([402, 403, 413, 422, 503].includes(error.statusCode)) {
+    if (
+      (error.statusCode === 409 && businessCode) ||
+      [402, 403, 413, 422, 503].includes(error.statusCode)
+    ) {
       // 原样透出。落到下面的兜底会变成 500「Internal server error」——
       // 一句本来写给用户的话（「余额不足」）被换成一句说明不了任何事的话，
       // 而用户的下一步动作（充值 vs 报障）完全不同。
@@ -103,6 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.status(statusCode).json({
       error: errorMessage,
+      ...(businessCode ? { code: businessCode } : {}),
       detail: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   } finally {

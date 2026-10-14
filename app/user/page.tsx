@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useDebounce } from "use-debounce";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -23,10 +24,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Plus, Edit, Trash2, Building2, Users, UserX, MessageCircle, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Building2,
+  Users,
+  UserX,
+  MessageCircle,
+  Loader2,
+  Wallet,
+} from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
 import DeptSelect from "@/components/DeptSelect";
+import { canAllocateUserCredits } from "@/lib/userCreditAllocation";
+import { formatCreditBalance } from "@/lib/creditDisplay";
+import { type UserCreditBalance, useUserCreditBalances } from "@/hooks/useBilling";
+import UserCreditAllocationDialog from "./components/UserCreditAllocationDialog";
 
 interface User {
   id: number;
@@ -91,6 +106,8 @@ export default function UserPage() {
   const tc = useTranslations("common");
   const { user, loading: userLoading } = useCurrentUser();
   const [users, setUsers] = useState<User[]>([]);
+  const creditBalances = useUserCreditBalances(users.map((item) => item.id));
+  const [allocationUser, setAllocationUser] = useState<User | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [loading, setLoading] = useState(false);
@@ -110,6 +127,7 @@ export default function UserPage() {
   const [debouncedSearchUsername] = useDebounce(searchUsername, 500);
 
   // 检查用户权限
+  const creditActor = user;
   const isSuperAdmin = user?.isSuperAdmin || false;
   const isTenantAdmin = user?.isTenantAdmin || false;
   const isDeptAdmin = user?.isDeptAdmin || false;
@@ -353,10 +371,18 @@ export default function UserPage() {
     try {
       await axios.delete("/api/user/delete", {
         data: { id },
+        suppressErrorToast: true,
       });
-      fetchUsers();
-    } catch (error) {
-      console.error("删除用户失败:", error);
+      setShowDialog(false);
+      await fetchUsers();
+    } catch (error: unknown) {
+      const data = (error as { response?: { data?: { code?: string } } })?.response?.data;
+      if (data?.code === "USER_CREDIT_LIFECYCLE_BLOCKED") {
+        toast.error(t("creditLifecycleBlocked"));
+      } else {
+        toast.error(tc("operationFailed"));
+        console.error("删除用户失败:", error);
+      }
     } finally {
       setLoading(false);
     }
@@ -440,7 +466,7 @@ export default function UserPage() {
       }
 
       if (editing) {
-        await axios.put("/api/user/update", payload);
+        await axios.put("/api/user/update", payload, { suppressErrorToast: true });
       } else {
         await axios.post("/api/user/create", payload);
       }
@@ -448,12 +474,14 @@ export default function UserPage() {
       setShowDialog(false);
       fetchUsers();
     } catch (error: any) {
-      if (error.response?.status === 409) {
+      if (error.response?.data?.code === "USER_CREDIT_LIFECYCLE_BLOCKED") {
+        setError(t("creditLifecycleBlocked"));
+      } else if (error.response?.status === 409) {
         setError(t("usernameOrEmailExists"));
       } else {
         setError(tc("operationFailed"));
+        console.error("用户操作失败:", error);
       }
-      console.error("用户操作失败:", error);
     } finally {
       setLoading(false);
     }
@@ -605,6 +633,9 @@ export default function UserPage() {
                 <TableHead>{t("role")}</TableHead>
                 {isSuperAdmin && <TableHead>{t("tenant")}</TableHead>}
                 <TableHead>{t("dept")}</TableHead>
+                <TableHead className="text-right whitespace-nowrap">
+                  {t("creditBalanceColumn")}
+                </TableHead>
                 <TableHead>{t("actions")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -612,7 +643,7 @@ export default function UserPage() {
               {users.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={isSuperAdmin ? 8 : 7}
+                    colSpan={isSuperAdmin ? 9 : 8}
                     className="text-center text-muted-foreground"
                   >
                     {t("noUsers")}
@@ -675,8 +706,26 @@ export default function UserPage() {
                         <span className="text-sm text-muted-foreground">{t("none")}</span>
                       )}
                     </TableCell>
+                    <TableCell className="text-right tabular-nums whitespace-nowrap">
+                      <UserBalanceValue
+                        account={creditBalances.byUserId.get(user.id)}
+                        loading={creditBalances.loading}
+                        failed={Boolean(creditBalances.error)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
+                        {canAllocateUserCredits(creditActor, user) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setAllocationUser(user)}
+                            title={t("creditAllocation")}
+                            aria-label={t("creditAllocation")}
+                          >
+                            <Wallet className="h-4 w-4" />
+                          </Button>
+                        )}
                         {canEditUserDetails ? (
                           <>
                             <Button
@@ -694,15 +743,6 @@ export default function UserPage() {
                                 title={t("sendWechatMessage")}
                               >
                                 <MessageCircle className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {canDeleteUsers && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleDelete(user.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </>
@@ -1130,18 +1170,43 @@ export default function UserPage() {
                 </div>
               )}
               {error && <div className="text-destructive text-sm">{error}</div>}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowDialog(false)}>
-                  {tc("cancel")}
-                </Button>
-                <Button onClick={handleSubmit} disabled={loading}>
-                  {editing ? tc("save") : t("addUser")}
-                </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+                {editing && canDeleteUsers && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    title={t("deleteUser")}
+                    aria-label={t("deleteUser")}
+                    onClick={() => handleDelete(form.id)}
+                    disabled={loading}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+                <div className="flex justify-end gap-2 sm:ml-auto">
+                  <Button variant="outline" onClick={() => setShowDialog(false)} disabled={loading}>
+                    {tc("cancel")}
+                  </Button>
+                  <Button onClick={handleSubmit} disabled={loading}>
+                    {editing ? tc("save") : t("addUser")}
+                  </Button>
+                </div>
               </div>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {allocationUser && (
+        <UserCreditAllocationDialog
+          key={allocationUser.id}
+          user={allocationUser}
+          onClose={() => setAllocationUser(null)}
+          onAllocated={() => {
+            void creditBalances.reload();
+          }}
+        />
+      )}
 
       {/* 微信发送消息对话框 */}
       <Dialog.Root open={showWechatDialog} onOpenChange={setShowWechatDialog}>
@@ -1213,5 +1278,29 @@ export default function UserPage() {
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+  );
+}
+
+function UserBalanceValue({
+  account,
+  loading,
+  failed,
+}: {
+  account?: UserCreditBalance;
+  loading: boolean;
+  failed: boolean;
+}) {
+  const t = useTranslations("user");
+  const locale = useLocale();
+  if (failed) return <span title={t("creditBalanceLoadFailed")}>—</span>;
+  if (loading && !account) return <span title={t("creditLoading")}>…</span>;
+  if (!account || account.source === "none") return <span title={t("creditNoTenant")}>—</span>;
+  return (
+    <span title={t(account.source === "user" ? "creditPersonalPool" : "creditSharedPool")}>
+      {formatCreditBalance(account.balance, locale)}
+      {account.source === "tenant" && (
+        <span className="ml-1 text-xs text-muted-foreground">{t("creditSharedLabel")}</span>
+      )}
+    </span>
   );
 }

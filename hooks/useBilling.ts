@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "@/lib/axios";
+import useSWR from "swr";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 /** 一笔消耗的分项。落库时的**快照**，不是实时重算的。 */
 export interface UsageBreakdown {
@@ -272,7 +274,9 @@ export function useCreditAccounts(tenantId?: number) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const url = tenantId ? `/api/v1/billing/accounts?tenant_id=${tenantId}` : "/api/v1/billing/accounts";
+      const url = tenantId
+        ? `/api/v1/billing/accounts?tenant_id=${tenantId}`
+        : "/api/v1/billing/accounts";
       const res = await axios.get(url);
       setAccounts(res.data?.items ?? []);
       setTotalBalance(res.data?.total_balance ?? 0);
@@ -337,4 +341,58 @@ export function useRecharges(tenantId?: number, page = 1, pageSize = 50) {
   }, [load]);
 
   return { items, total, loading, reload: load };
+}
+
+export interface EffectiveCreditAccount {
+  source: "tenant" | "user" | "none";
+  tenant_id: number | null;
+  user_id: number;
+  balance: number | null;
+  available: number | null;
+  enforced: boolean;
+}
+
+export function useMyCreditAccount() {
+  const { user } = useCurrentUser();
+  // Separate cache entries across identities; the backend obtains the subject from JWT.
+  const { data, error, isLoading, mutate } = useSWR<EffectiveCreditAccount>(
+    user ? ["/api/v1/billing/my-account", user.id] : null,
+    async ([url]: [string, number]) => (await axios.get(url, { suppressErrorToast: true })).data,
+    { refreshInterval: 30000 }
+  );
+  return { account: data, error, loading: isLoading, reload: mutate };
+}
+
+export type UserCreditBalance = Pick<
+  EffectiveCreditAccount,
+  "user_id" | "source" | "balance" | "available" | "enforced"
+>;
+
+export function useUserCreditBalances(userIds: number[]) {
+  const { user } = useCurrentUser();
+  const idKey = [...new Set(userIds)].sort((a, b) => a - b).join(",");
+  const { data, error, isLoading, mutate } = useSWR<UserCreditBalance[]>(
+    user && idKey ? ["/api/v1/billing/user-balances", user.id, idKey] : null,
+    async ([url, , ids]: [string, number, string]) => {
+      const requested = ids.split(",");
+      const batches = [];
+      for (let offset = 0; offset < requested.length; offset += 200) {
+        batches.push(requested.slice(offset, offset + 200).join(","));
+      }
+      const responses = await Promise.all(
+        batches.map(async (batch) => {
+          const res = await axios.get(`${url}?user_ids=${batch}`, { suppressErrorToast: true });
+          return (res.data?.items ?? []) as UserCreditBalance[];
+        })
+      );
+      return responses.flat();
+    },
+    { refreshInterval: 30000 }
+  );
+  return {
+    byUserId: new Map((data ?? []).map((account) => [account.user_id, account])),
+    loading: isLoading,
+    error,
+    reload: mutate,
+  };
 }
