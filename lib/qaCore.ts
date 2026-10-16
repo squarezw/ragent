@@ -1,6 +1,7 @@
 import { chatAttachmentPayload } from "@/lib/sessionAttachments";
 import axios from "@/lib/axios";
 import { closeQaReader, forwardQaStream } from "@/lib/qaCancellation";
+import { creditChatCode, makeQaBackendError } from "@/lib/qaBusinessError";
 
 /**
  * 402 余额不足。两条路径（流式 fetch / 非流式 axios）把状态码放在不同位置，
@@ -141,17 +142,7 @@ export async function runQA(
         // 不解出来的话，用户看到的是
         // `External service error (402): {"detail":"余额不足 ..."}` ——
         // 一句本来写给他看的话，被包在两层技术噪音里。
-        let detail = "";
-        try {
-          detail = JSON.parse(errorText)?.detail ?? "";
-        } catch {
-          /* 非 JSON 响应（网关错误页等）走下面的原文分支 */
-        }
-        const err = new Error(
-          detail || `External service error (${response.status}): ${errorText}`
-        );
-        (err as Error & { statusCode?: number }).statusCode = response.status;
-        throw err;
+        throw makeQaBackendError(response.status, errorText);
       }
 
       if (!response.body) {
@@ -307,13 +298,33 @@ export async function runQA(
     }
   } catch (error: any) {
     if (signal?.aborted) throw error;
-    console.error("[QA Core] Request failed:", { status: error.statusCode || error.response?.status, name: error.name });
+    const businessCode = creditChatCode(error);
+    if (businessCode) console.log("[QA Core] Credit request stopped:", { code: businessCode });
+    else
+      console.error("[QA Core] Request failed:", {
+        status: error.statusCode || error.response?.status,
+        name: error.name,
+      });
     const backendStatus = error.statusCode || error.response?.status;
-    const backendDetail = error.response?.data?.detail
-      || (error.statusCode ? error.message : undefined);
+    if (backendStatus === 409 && businessCode) {
+      const safeError = makeQaBackendError(
+        backendStatus,
+        error.response?.data || { detail: { message: error.message, code: error.code } }
+      );
+      if (callbacks) {
+        callbacks.onError(safeError);
+        return;
+      }
+      throw safeError;
+    }
+    const backendDetail =
+      error.response?.data?.detail || (error.statusCode ? error.message : undefined);
     if ([403, 413, 422, 503].includes(backendStatus) && typeof backendDetail === "string") {
       const safeError = Object.assign(new Error(backendDetail), { statusCode: backendStatus });
-      if (callbacks) { callbacks.onError(safeError); return; }
+      if (callbacks) {
+        callbacks.onError(safeError);
+        return;
+      }
       throw safeError;
     }
 

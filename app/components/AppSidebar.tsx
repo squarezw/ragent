@@ -162,13 +162,11 @@ export default function AppSidebar() {
       items: [
         { title: t("chatSessions"), icon: MessageSquareMore, path: "/chat-sessions" },
         {
-          // 用量明细：租户管理员看本租户，超管看全部。
-          // 可见性只是导航层面的整理 —— 真正的租户隔离在后端按 tenant 收窄，
-          // 菜单藏起来不等于接口拦得住。
+          // Everyone can view their own effective credit balance. Usage scope is enforced by the backend.
           title: t("billingUsage"),
           icon: Wallet,
           path: "/billing",
-          visible: canManageOperation,
+          visible: true,
         },
         {
           title: t("systemMonitoring"),

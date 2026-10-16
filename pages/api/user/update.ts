@@ -83,6 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const phone = typeof rawPhone === "string" ? rawPhone.trim() || null : rawPhone;
 
     const client = await pool.connect();
+    let lifecycleTransaction = false;
     try {
       // 检查邮箱唯一性（排除自身）
       if (email) {
@@ -363,6 +364,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       updateFields.push(`updated_at = NOW()`);
       updateValues.push(targetId);
 
+      if (isSuper && tenant_id !== undefined) {
+        await client.query("BEGIN");
+        lifecycleTransaction = true;
+        const current = await client.query("SELECT tenant_id FROM users WHERE id=$1 FOR UPDATE", [
+          targetId,
+        ]);
+        if (current.rows[0] && current.rows[0].tenant_id !== tenant_id) {
+          await client.query("SELECT prepare_user_credit_lifecycle($1)", [targetId]);
+        }
+      }
+
       const query = `UPDATE users SET ${updateFields.join(", ")} WHERE id = $${paramIndex} RETURNING id, username, nickname, email, phone, tenant_id, dept_id, status, wechat_id`;
       const result = await client.query(query, updateValues);
 
@@ -410,11 +422,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         role: userRoles[0] || "普通用户",
       };
 
+      if (lifecycleTransaction) {
+        await client.query("COMMIT");
+        lifecycleTransaction = false;
+      }
       res.status(200).json({ user: userWithRole });
     } finally {
-      client.release();
+      try {
+        if (lifecycleTransaction) await client.query("ROLLBACK");
+      } finally {
+        client.release();
+      }
     }
   } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "P0001" &&
+      "message" in err &&
+      String(err.message).includes("USER_CREDIT_LIFECYCLE_BLOCKED")
+    ) {
+      return res
+        .status(409)
+        .json({ code: "USER_CREDIT_LIFECYCLE_BLOCKED", error: "用户有未结清的个人积分或在途请求" });
+    }
     if (
       err &&
       typeof err === "object" &&

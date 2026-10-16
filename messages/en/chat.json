@@ -130,5 +130,7 @@
   "dxfEmpty": "No supported geometry found.",
   "dxfDownload": "Downloading",
   "dxfParse": "Preparing drawing",
-  "dxfOmitted": "Some hatch geometry could not be displayed."
+  "dxfOmitted": "Some hatch geometry could not be displayed.",
+  "creditAccountBusy": "Your personal credit account already has a conversation in progress. Wait for it to finish, then try again.",
+  "creditReconciliationRequired": "The previous conversation’s credit settlement is not confirmed. Contact an administrator to reconcile it and restore access."
 }

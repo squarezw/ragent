@@ -36,6 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const client = await pool.connect();
+    let lifecycleTransaction = false;
     try {
       // 检查目标用户是否存在
       const targetUserRes = await client.query(
@@ -54,15 +55,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: "只有超级管理员可以删除用户" });
       }
 
+      await client.query("BEGIN");
+      lifecycleTransaction = true;
+      await client.query("SELECT prepare_user_credit_lifecycle($1)", [id]);
       const result = await client.query("DELETE FROM users WHERE id=$1 RETURNING id", [id]);
       if (!result.rowCount || result.rowCount === 0) {
         return res.status(404).json({ error: "User not found" });
       }
+      await client.query("COMMIT");
+      lifecycleTransaction = false;
       res.status(200).json({ success: true, id });
     } finally {
-      client.release();
+      try {
+        if (lifecycleTransaction) await client.query("ROLLBACK");
+      } finally {
+        client.release();
+      }
     }
   } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "P0001" &&
+      "message" in err &&
+      String(err.message).includes("USER_CREDIT_LIFECYCLE_BLOCKED")
+    ) {
+      return res
+        .status(409)
+        .json({ code: "USER_CREDIT_LIFECYCLE_BLOCKED", error: "用户有未结清的个人积分或在途请求" });
+    }
     console.error("删除用户 API 错误:", err);
     res.status(500).json({ error: "Database error", details: err });
   }

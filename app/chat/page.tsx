@@ -330,10 +330,12 @@ export default function ChatPage() {
           // 余额不足不是故障，是一个用户自己能解决的状态。套上「抱歉，发生了错误」
           // 会把「去充值」读成「系统坏了」—— 用户会去找运维，而不是找管理员充值。
           const insufficient = error?.code === "insufficient_balance";
+          const creditBusy = error?.code === "user_credit_account_busy";
+          const creditReconciliation = error?.code === "user_credit_reconciliation_required";
           // 余额不足是正常的业务状态，不是故障。用 console.error 打出来会带一条
           // 红色堆栈（Error 记的是构造点，指向 streamPromise），看起来像崩溃 ——
           // 用户和排查的人都会被它误导。
-          if (insufficient) console.info("[Chat] insufficient balance");
+          if (insufficient || creditBusy || creditReconciliation) console.info("[Chat] credit request stopped", error?.code);
           else console.error("Stream error:", error);
           setMessages((msgs) => [
             ...msgs,
@@ -343,7 +345,11 @@ export default function ChatPage() {
               // 拼进来就会在中文界面里出现英文（或反过来）。界面自己完整表达。
               content: insufficient
                 ? t("insufficientBalance")
-                : t("errorOccurred", { message: error.message }),
+                : creditBusy
+                  ? t("creditAccountBusy")
+                  : creditReconciliation
+                    ? t("creditReconciliationRequired")
+                    : t("errorOccurred", { message: error.message }),
               segment_ids: [],
               detail_id: undefined,
             },
