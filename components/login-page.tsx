@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import axios from "@/lib/axios";
+import { interactionPath, submitIdentityInteraction } from "@/lib/identityInteraction";
 import { renderTemplate } from "@/lib/htmlSanitizer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,9 +32,10 @@ import type { SiteConfig } from "@/app/layout";
 interface LoginPageProps {
   onLogin: () => void;
   siteConfig: SiteConfig;
+  interactionUid?: string;
 }
 
-export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
+export function LoginPage({ onLogin, siteConfig, interactionUid }: LoginPageProps) {
   const [loginMethod, setLoginMethod] = useState<"password" | "register">("password");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -57,15 +59,32 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
   const [verificationInfo, setVerificationInfo] = useState<VerificationInfo>();
   const [registrationToken, setRegistrationToken] = useState("");
   const [smsCooldown, setSmsCooldown] = useState(0);
+  const [interactionCsrf, setInteractionCsrf] = useState("");
 
   useEffect(() => {
+    if (interactionUid) {
+      fetch(interactionPath(interactionUid) + "/context", {
+        credentials: "same-origin",
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          if (!response.ok) throw Error("Invalid interaction");
+          return response.json();
+        })
+        .then((data) => {
+          setCloudbaseEnv(data.cloudbaseEnvId || undefined);
+          setInteractionCsrf(data.csrf || "");
+        })
+        .catch(() => setLoginError(t("identityUnavailable")));
+      return;
+    }
     axios
       .get("/api/user/phone-config")
       .then((response) => {
         setCloudbaseEnv(response.data.envId || undefined);
       })
       .catch(() => {});
-  }, []);
+  }, [interactionUid]);
 
   useEffect(() => {
     if (!smsCooldown) return;
@@ -83,6 +102,7 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
   };
 
   const finishLogin = (token: unknown) => {
+    if (interactionUid) throw new Error("Central interaction cannot create a local login");
     if (typeof token !== "string" || !token) throw new Error("INVALID_CREDENTIALS");
     localStorage.setItem("ragent_token", token);
     onLogin();
@@ -161,6 +181,22 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
     }
     setIsLoading(true);
     try {
+      if (interactionUid) {
+        const redirectTo = await submitIdentityInteraction(
+          interactionUid,
+          interactionCsrf,
+          {
+            username: formData.username,
+            password: formData.password,
+            access_token: registrationToken,
+          },
+          true
+        );
+        const client = await loadCloudbaseAuth(cloudbaseEnv);
+        await client.signOut().catch(() => {});
+        window.location.assign(redirectTo);
+        return;
+      }
       const response = await axios.post("/api/user/phone", {
         mode: "register",
         accessToken: registrationToken,
@@ -186,6 +222,14 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
     }
     setIsLoading(true);
     try {
+      if (interactionUid) {
+        const redirectTo = await submitIdentityInteraction(interactionUid, interactionCsrf, {
+          username: formData.username,
+          password: formData.password,
+        });
+        window.location.assign(redirectTo);
+        return;
+      }
       const res = await axios.post("/api/user/login", {
         username: formData.username,
         password: formData.password,
@@ -194,8 +238,9 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
     } catch (e: unknown) {
       const error = e as { response?: { data?: { error?: string } } };
       setLoginError(error.response?.data?.error || t("loginFailed"));
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleSMSVerification = async () => {
@@ -218,6 +263,19 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
         verificationInfo,
       });
       const { accessToken } = await client.getAccessToken();
+      if (interactionUid) {
+        if (loginMethod === "register") {
+          setRegistrationToken(accessToken);
+          setFormData((previous) => ({ ...previous, password: "", confirmPassword: "" }));
+        } else {
+          const redirectTo = await submitIdentityInteraction(interactionUid, interactionCsrf, {
+            access_token: accessToken,
+          });
+          await client.signOut().catch(() => {});
+          window.location.assign(redirectTo);
+        }
+        return;
+      }
       const response = await axios.post("/api/user/phone", {
         mode: loginMethod === "register" ? "verify" : "login",
         accessToken,
@@ -744,6 +802,7 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
                       }
                       disabled={
                         isLoading ||
+                        (!!interactionUid && !interactionCsrf) ||
                         (credentialMethod === "password"
                           ? !formData.username || !formData.password
                           : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||
@@ -874,6 +933,7 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
                       onClick={registrationToken ? handleRegister : handleSMSVerification}
                       disabled={
                         isLoading ||
+                        (!!interactionUid && !interactionCsrf) ||
                         (registrationToken
                           ? !formData.username || !formData.password || !formData.confirmPassword
                           : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||

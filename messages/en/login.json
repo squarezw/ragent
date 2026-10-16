@@ -98,5 +98,6 @@
   "phoneServiceUnavailable": "Authentication is temporarily unavailable. Try again later.",
   "phoneCredentialExpired": "Your phone verification has expired. Request a new code.",
   "phoneIdentityRequired": "This identity has no valid phone number. Use phone verification to sign in.",
-  "phonePasswordTooLong": "This password is too long. Shorten it and try again."
+  "phonePasswordTooLong": "This password is too long. Shorten it and try again.",
+  "identityUnavailable": "Identity sign-in is unavailable. Please refresh and try again."
 }

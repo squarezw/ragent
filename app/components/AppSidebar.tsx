@@ -188,7 +188,8 @@ export default function AppSidebar() {
   if (pendingTenant) {
     for (const group of menuGroups) {
       for (const item of group.items) {
-        if (!["/", "/datasets", "/chat-sessions", "/system-settings"].includes(item.path)) item.visible = false;
+        if (!["/", "/datasets", "/chat-sessions", "/system-settings"].includes(item.path))
+          item.visible = false;
         if (["/", "/datasets"].includes(item.path)) item.deprecated = t("pendingTenantTitle");
       }
       group.visible = group.items.some((item) => item.visible !== false);
@@ -340,7 +341,6 @@ export default function AppSidebar() {
               <DropdownMenuItem
                 onClick={() => {
                   logout();
-                  window.location.reload();
                 }}
               >
                 <Lock className="mr-2 h-4 w-4" />

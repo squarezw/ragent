@@ -5,6 +5,8 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const AUTH_COOKIE = "ragent_token";
 
 export function getTokenFromRequest(req: NextApiRequest): string | null {
+  if (process.env.OIDC_ENABLED === "true" && req.cookies?.[AUTH_COOKIE])
+    return req.cookies[AUTH_COOKIE];
   const auth = req.headers.authorization || "";
   if (auth.startsWith("Bearer ")) return auth.slice(7);
   // 浏览器顶层导航(如企业微信里点参考文件链接)不会带 Authorization 头，只会带 cookie
@@ -24,7 +26,12 @@ export function getUserIdFromRequest(req: NextApiRequest): number | null {
 
 // 把 JWT 同步进 httpOnly cookie，让浏览器顶层导航也能携带鉴权
 export function setAuthCookie(res: NextApiResponse, token: string) {
-  const maxAge = 60 * 60 * 24 * 7; // ponytail: 7d，与 JWT_EXPIRES_IN 默认值对齐；不一致时 cookie 里的 JWT 先失效并触发重新登录，安全
+  const decoded = jwt.decode(token);
+  const remaining =
+    decoded && typeof decoded !== "string" && typeof decoded.exp === "number"
+      ? Math.max(0, decoded.exp - Math.floor(Date.now() / 1000))
+      : 0;
+  const maxAge = Math.min(60 * 60 * 24 * 7, remaining); // ponytail: 7d，与 JWT_EXPIRES_IN 默认值对齐；不一致时 cookie 里的 JWT 先失效并触发重新登录，安全
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader(
     "Set-Cookie",

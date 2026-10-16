@@ -5,7 +5,17 @@ import { defaultLocale, locales, type Locale } from "./i18n/config";
 const LOCALE_COOKIE = "locale";
 
 export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
+  const headers = new Headers(request.headers);
+  const token = request.cookies.get("ragent_token")?.value;
+  if (
+    process.env.OIDC_ENABLED === "true" &&
+    request.nextUrl.pathname.startsWith("/api/") &&
+    !request.nextUrl.pathname.startsWith("/api/auth/") &&
+    token
+  ) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+  const response = NextResponse.next({ request: { headers } });
 
   // Check if locale cookie exists
   const localeCookie = request.cookies.get(LOCALE_COOKIE)?.value as Locale | undefined;
@@ -44,5 +54,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|.*\\..*).*)"],
+  matcher: ["/api/:path*", "/((?!api|_next|.*\\..*).*)"],
 };

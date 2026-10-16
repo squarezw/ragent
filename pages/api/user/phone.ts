@@ -6,6 +6,10 @@ import { setAuthCookie } from "@/lib/auth";
 import { verifyCloudbasePhone } from "@/lib/cloudbaseIdentity";
 import { requireEnv } from "@/lib/env";
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (process.env.OIDC_ENABLED === "true") {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(410).json({ errorCode: "UNIFIED_IDENTITY_REQUIRED" });
+  }
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).end();
   try {

@@ -8,6 +8,10 @@ import { setAuthCookie } from "@/lib/auth";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (process.env.OIDC_ENABLED === "true") {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(410).json({ errorCode: "UNIFIED_IDENTITY_REQUIRED" });
+  }
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
