@@ -2,6 +2,7 @@ import { isChatDownloadOnly, downloadChatLink } from "@/lib/chatResourcePreview"
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
+import { isCookieAuthMode } from "@/lib/browserAuthMode";
 import { uploadFile, getFileUrl } from "@/lib/ossUpload";
 import { sessionAttachmentMime } from "@/lib/sessionAttachments";
 import { isAllowedAttachment } from "@/lib/chatAttachments";
@@ -40,18 +41,22 @@ export function useFileAttachments() {
       const token = localStorage.getItem("ragent_token");
       const loginStatus = localStorage.getItem("ragent_logged_in");
 
-      if (!token || loginStatus !== "true") {
+      if (!isCookieAuthMode() && (!token || loginStatus !== "true")) {
         throw new Error(t("pleaseLoginFirst"));
       }
 
       let uploadReceipt: string | undefined;
       const contentType = sessionAttachmentMime({
-        filename: file.name, objectKey: "", contentType: file.type,
+        filename: file.name,
+        objectKey: "",
+        contentType: file.type,
       });
       const objectKey = await uploadFile({
         file,
         category: "attachments",
-        onPresigned: (metadata) => { uploadReceipt = metadata.uploadReceipt; },
+        onPresigned: (metadata) => {
+          uploadReceipt = metadata.uploadReceipt;
+        },
       });
 
       const response = await axios.post("/api/chat/upload-confirm", {
@@ -127,7 +132,8 @@ export function useFileAttachments() {
 
   const handlePreviewAttachment = (attachment: Attachment) => {
     if (isChatDownloadOnly(attachment.filename, attachment.type)) {
-      const url = attachment.url || (attachment.objectKey ? getFileUrl(attachment.objectKey) : undefined);
+      const url =
+        attachment.url || (attachment.objectKey ? getFileUrl(attachment.objectKey) : undefined);
       if (url) downloadChatLink(url, attachment.filename);
       return;
     }

@@ -20,13 +20,6 @@ const UserContext = createContext<{
 
 // 获取用户的函数
 const fetchUserData = async () => {
-  const token = typeof window !== "undefined" ? localStorage.getItem("ragent_token") : null;
-  if (!token) {
-    globalUser = null;
-    globalLoading = false;
-    return null;
-  }
-
   try {
     const res = await axios.get("/api/user/me");
     globalUser = res.data;
@@ -89,6 +82,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    // Clear the HttpOnly local session as well; no OIDC tokens reach browser storage.
+    void fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).then(
+      (response) => {
+        if (response.ok) window.location.assign("/?signedOut=1");
+      }
+    );
     localStorage.removeItem("ragent_token");
     localStorage.removeItem("ragent_logged_in");
 

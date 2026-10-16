@@ -1,4 +1,5 @@
 "use client";
+import { setCookieAuthMode } from "@/lib/browserAuthMode";
 import { LoginPage } from "@/components/login-page";
 import { getCurrentUser } from "@/hooks/useCurrentUser";
 import { AxiosError } from "axios";
@@ -30,6 +31,8 @@ export default function AuthGate({
   const [loggedIn, setLoggedIn] = useState<boolean | undefined>(undefined);
   const [isValidating, setIsValidating] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [authUnavailable, setAuthUnavailable] = useState(false);
 
   // 检查是否是公开路径
   const isPublicPath = useMemo(
@@ -41,34 +44,55 @@ export default function AuthGate({
   const validateToken = useCallback(async () => {
     if (typeof window === "undefined") return;
 
-    const token = localStorage.getItem(TOKEN_KEY);
-    const loginStatus = localStorage.getItem(LOGIN_KEY);
-
-    if (!token || loginStatus !== "true") {
-      setLoggedIn(false);
-      return;
-    }
-
     setIsValidating(true);
+    let cookieMode = false;
     try {
+      const methods = await fetch("/api/auth/methods", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!methods.ok) throw Error("Authentication configuration unavailable");
+      const config = await methods.json();
+      cookieMode = config.oidcEnabled === true;
+      setCookieAuthMode(cookieMode);
+      setOidcEnabled(cookieMode);
+      if (
+        !cookieMode &&
+        (!localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LOGIN_KEY) !== "true")
+      ) {
+        setLoggedIn(false);
+        return;
+      }
       // 使用全局用户状态检查 token 有效性
       // 这里会触发一次 API 调用，UserProvider 会复用这个结果
       await getCurrentUser();
       setLoggedIn(true);
     } catch (error) {
       // 如果验证失败，清除登录状态
-      if (error instanceof AxiosError && error.response?.status === 401) {
+      if (error instanceof AxiosError && [401, 403].includes(error.response?.status || 0)) {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(LOGIN_KEY);
         setLoggedIn(false);
       } else {
-        // 其他错误，暂时保持登录状态
-        setLoggedIn(true);
+        setAuthUnavailable(true);
+        setLoggedIn(false);
       }
     } finally {
       setIsValidating(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (
+      loggedIn === false &&
+      oidcEnabled &&
+      !authUnavailable &&
+      new URLSearchParams(window.location.search).get("signedOut") !== "1"
+    ) {
+      const returnTo = window.location.pathname + window.location.search;
+      window.location.assign("/api/auth/oidc/start?returnTo=" + encodeURIComponent(returnTo));
+    }
+  }, [loggedIn, oidcEnabled, authUnavailable]);
 
   // 处理登出事件
   const handleLogout = useCallback(() => {
@@ -146,6 +170,31 @@ export default function AuthGate({
       </div>
     );
   }
+
+  if (
+    !loggedIn &&
+    oidcEnabled &&
+    mounted &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("signedOut") === "1"
+  )
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <a
+          className="rounded-md bg-primary px-6 py-3 text-primary-foreground"
+          href="/api/auth/oidc/start"
+        >
+          {t("loginButton")}
+        </a>
+      </div>
+    );
+
+  if (authUnavailable || (!loggedIn && oidcEnabled))
+    return (
+      <div role="status" className="p-6">
+        {t(authUnavailable ? "identityUnavailable" : "verifyingLogin")}
+      </div>
+    );
 
   if (!loggedIn) {
     return (

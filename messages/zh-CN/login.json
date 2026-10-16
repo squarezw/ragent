@@ -98,5 +98,6 @@
   "phoneServiceUnavailable": "认证服务暂不可用，请稍后重试。",
   "phoneCredentialExpired": "手机号验证凭据已失效，请重新获取验证码。",
   "phoneIdentityRequired": "认证身份未提供有效手机号，请使用手机验证码登录。",
-  "phonePasswordTooLong": "密码过长，请缩短后重试。"
+  "phonePasswordTooLong": "密码过长，请缩短后重试。",
+  "identityUnavailable": "统一登录暂时不可用，请刷新后重试。"
 }

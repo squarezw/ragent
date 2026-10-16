@@ -6,6 +6,8 @@ const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Keep an active local dev server separate from production build output.
+  distDir: process.env.NODE_ENV === "development" ? process.env.NEXT_DEV_DIST_DIR || ".next" : ".next",
   transpilePackages: ["ragent-oss"],
   eslint: {
     ignoreDuringBuilds: true,

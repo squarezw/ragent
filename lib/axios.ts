@@ -3,12 +3,14 @@ import { toast } from "sonner";
 import { getApiErrorMessage } from "./apiError";
 import { clearChatSelectionCache, clearSwrCache } from "./authUtils";
 
+import { isCookieAuthMode } from "./browserAuthMode";
+
 const instance = axios.create();
 
 instance.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("ragent_token");
-    if (token) {
+    if (token && !isCookieAuthMode()) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }

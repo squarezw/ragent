@@ -69,6 +69,7 @@ async function invoke(
     ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
     {
       module,
+      process: { env: { OIDC_ENABLED: "false" } },
       exports: module.exports,
       require: (name: string) => mocks[name],
       Buffer,

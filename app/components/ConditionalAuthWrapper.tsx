@@ -8,6 +8,8 @@ import ThemeProvider from "./ThemeProvider";
 
 // 不需要布局的公开路径（无侧边栏、无认证）
 const PUBLIC_PATHS_NO_LAYOUT = [
+  /^\/identity-login$/, // Central issuer UI has its own interaction session, never app auth.
+
   /^\/public\//, // 公开页面
   /^\/forgot-password$/, // 忘记密码页面
   /^\/reset-password$/, // 重置密码页面
