@@ -3,6 +3,7 @@
   "description": "Manage system users",
   "userList": "Users",
   "addUser": "Add User",
+  "phone": "Phone number",
   "editUser": "Edit User",
   "deleteUser": "Delete User",
   "username": "Username",

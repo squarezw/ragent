@@ -79,3 +79,7 @@ export function canManageDept(user: any, deptId: number): boolean {
 
   return false;
 }
+
+export function isPendingTenant(user: any): boolean {
+  return !!user && user.tenant_id == null && !checkSuperAdmin(user);
+}

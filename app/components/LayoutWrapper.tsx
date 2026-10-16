@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import TenantBoundary from "./TenantBoundary";
 import AppSidebar from "./AppSidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import HeaderActions from "./HeaderActions";
@@ -58,7 +59,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                   : "flex-1 overflow-y-auto p-2 sm:p-6 min-w-0"
               }
             >
-              {children}
+              <TenantBoundary>{children}</TenantBoundary>
             </main>
           </SidebarInset>
         </div>

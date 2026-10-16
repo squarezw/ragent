@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
 
       query = `
-        SELECT u.id, u.username, u.nickname, u.email, u.tenant_id, u.dept_id, 
+        SELECT u.id, u.username, u.nickname, u.email, u.phone, u.tenant_id, u.dept_id,
                u.status, u.created_at, u.wechat_id,
                t.name as tenant_name, d.name as dept_name,
                ARRAY_AGG(r.name) as roles

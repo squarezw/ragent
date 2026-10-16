@@ -21,9 +21,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: "用户不存在" });
     }
 
-    const { username, nickname, password, email, role, tenant_id, dept_id } = req.body;
-    if (!username || !password || !email || !role) {
+    const { username, nickname, password, email: rawEmail, role, tenant_id, dept_id } = req.body;
+    if (!username || !password || !role) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (rawEmail != null && typeof rawEmail !== "string") {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+    const email = typeof rawEmail === "string" ? rawEmail.trim() || null : null;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email" });
     }
 
     const client = await pool.connect();

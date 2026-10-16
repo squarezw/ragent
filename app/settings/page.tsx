@@ -8,6 +8,7 @@ import { Building2, Users, ShieldCheck, QrCode } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
 import { validatePassword } from "@/lib/utils";
+import { PhoneChangeForm } from "@/components/PhoneChangeForm";
 import { useTranslations } from "next-intl";
 
 interface UserInfo {
@@ -71,11 +72,11 @@ export default function SettingsPage() {
     setSuccess("");
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!form.nickname || !form.email) {
+    if (!form.nickname) {
       setError(te("requiredFields"));
       return;
     }
-    if (!emailRegex.test(form.email)) {
+    if (form.email.trim() && !emailRegex.test(form.email.trim())) {
       setError(te("invalidEmail"));
       return;
     }
@@ -85,8 +86,7 @@ export default function SettingsPage() {
       const response = await axios.put("/api/user/update", {
         id: user?.id,
         nickname: form.nickname,
-        email: form.email,
-        phone: form.phone,
+        email: form.email.trim() || null,
       });
 
       // 更新本地用户信息
@@ -330,7 +330,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">{t("email")} *</label>
+                <label className="block text-sm font-medium mb-1">{t("email")}</label>
                 <Input
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -346,8 +346,15 @@ export default function SettingsPage() {
                   type="tel"
                   autoComplete="tel"
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  readOnly
+                  className="bg-muted text-muted-foreground"
                   placeholder={t("phonePlaceholder")}
+                />
+                <PhoneChangeForm
+                  onChanged={async () => {
+                    await refetch();
+                    setSuccess(t("phoneChangeSuccess"));
+                  }}
                 />
               </div>
             </div>

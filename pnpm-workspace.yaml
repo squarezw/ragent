@@ -10,4 +10,5 @@
 allowBuilds:
   '@parcel/watcher': false
   '@swc/core': false
+  core-js-pure: false
   sharp: false

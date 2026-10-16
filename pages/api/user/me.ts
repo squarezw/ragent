@@ -34,6 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (dbRes.rows.length === 0) return res.status(404).json({ error: "用户不存在" });
 
       const user = dbRes.rows[0];
+      if (user.status !== "active") return res.status(403).json({ errorCode: "ACCOUNT_DISABLED" });
 
       // 获取用户权限信息
       const userPerms = await getUserPermissions(userId);
@@ -42,6 +43,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const companyCode = user.tenant_id ? getCompanyCodeByTenantId(user.tenant_id) : undefined;
       const response = {
         ...user,
+        pending_tenant:
+          user.tenant_id == null &&
+          !userPerms?.roles.some((role) => role.name === "超级管理员" && role.isSystem),
+        tenant_status:
+          user.tenant_id == null &&
+          !userPerms?.roles.some((role) => role.name === "超级管理员" && role.isSystem)
+            ? "pending"
+            : "assigned",
         company_code: companyCode || null,
         roles: userPerms?.roles || [],
         permissions: userPerms?.permissions || [],

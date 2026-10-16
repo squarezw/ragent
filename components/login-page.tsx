@@ -21,7 +21,8 @@ import {
   User,
   UserPlus,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { loadCloudbaseAuth, type VerificationInfo } from "@/lib/cloudbaseClient";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import LocaleSwitcher from "@/components/LocaleSwitcher";
@@ -42,8 +43,7 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
     username: "",
     password: "",
     confirmPassword: "",
-    email: "",
-    inviteCode: "",
+    phone: "",
     smsCode: "",
     agreeTerms: true,
     rememberPassword: false,
@@ -52,6 +52,41 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
   const [registerError, setRegisterError] = useState("");
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const t = useTranslations("login");
+  const [credentialMethod, setCredentialMethod] = useState<"password" | "sms">("password");
+  const [cloudbaseEnv, setCloudbaseEnv] = useState<string>();
+  const [verificationInfo, setVerificationInfo] = useState<VerificationInfo>();
+  const [registrationToken, setRegistrationToken] = useState("");
+  const [smsCooldown, setSmsCooldown] = useState(0);
+
+  useEffect(() => {
+    axios
+      .get("/api/user/phone-config")
+      .then((response) => {
+        setCloudbaseEnv(response.data.envId || undefined);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!smsCooldown) return;
+    const timer = setTimeout(() => setSmsCooldown(smsCooldown - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [smsCooldown]);
+
+  const resetPhoneVerification = () => {
+    setVerificationInfo(undefined);
+    setRegistrationToken("");
+    setLoginError("");
+    setRegisterError("");
+    setRegisterSuccess(false);
+    setFormData((previous) => ({ ...previous, smsCode: "" }));
+  };
+
+  const finishLogin = (token: unknown) => {
+    if (typeof token !== "string" || !token) throw new Error("INVALID_CREDENTIALS");
+    localStorage.setItem("ragent_token", token);
+    onLogin();
+  };
 
   // 系统设置
   const {
@@ -65,84 +100,82 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
   // 判断是否应该显示自定义 HTML（只有在加载完成且有非空值时才显示）
   const shouldShowCustomHtml = !systemSettingsLoading && !!loginLeftPanelHtml?.trim();
 
+  const phoneErrorMessage = (
+    error: unknown,
+    fallback:
+      | "phoneSendFailed"
+      | "phoneVerificationFailed"
+      | "phoneLoginFailed"
+      | "phoneRegistrationFailed"
+  ) => {
+    const code = (error as { response?: { data?: { errorCode?: string } } } | null)?.response?.data
+      ?.errorCode;
+    const messages: Record<string, string> = {
+      PHONE_NOT_REGISTERED: "phoneNotRegistered",
+      PHONE_ALREADY_REGISTERED: "phoneAlreadyRegistered",
+      PHONE_ACCOUNT_AMBIGUOUS: "phoneAccountAmbiguous",
+      PHONE_IDENTITY_CONFLICT: "phoneIdentityConflict",
+      ACCOUNT_DISABLED: "phoneAccountDisabled",
+      AUTH_SCHEMA_NOT_READY: "phoneSchemaNotReady",
+      AUTH_UNAVAILABLE: "phoneServiceUnavailable",
+      INVALID_CREDENTIALS: "phoneCredentialExpired",
+      PHONE_IDENTITY_REQUIRED: "phoneIdentityRequired",
+      INVALID_USERNAME: "phoneInvalidUsername",
+      PASSWORD_LENGTH: "phonePasswordLength",
+      PASSWORD_TOO_LONG: "phonePasswordTooLong",
+    };
+    return t((code && messages[code]) || fallback);
+  };
+
   const handleRegister = async () => {
     setRegisterError("");
     setRegisterSuccess(false);
-
-    // 验证必填字段
-    if (!formData.username || !formData.password || !formData.email || !formData.inviteCode) {
+    if (
+      !registrationToken ||
+      !formData.username ||
+      !formData.password ||
+      !formData.confirmPassword
+    ) {
       setRegisterError(t("enterAllFields"));
       return;
     }
-
-    // 验证邮箱格式
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setRegisterError(t("invalidEmail"));
+    if (!/^[A-Za-z0-9_]{3,32}$/.test(formData.username)) {
+      setRegisterError(t("phoneInvalidUsername"));
       return;
     }
-
-    // 验证密码长度
     if (formData.password.length < 6) {
-      setRegisterError(t("passwordTooShort"));
+      setRegisterError(t("phonePasswordLength"));
       return;
     }
-
-    // 验证密码确认
+    if (new TextEncoder().encode(formData.password).length > 72) {
+      setRegisterError(t("phonePasswordTooLong"));
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       setRegisterError(t("passwordMismatch"));
       return;
     }
-
-    // 验证同意条款
     if (!formData.agreeTerms) {
       setRegisterError(t("agreeTermsRequired"));
       return;
     }
-
     setIsLoading(true);
     try {
-      const res = await axios.post("/api/user/register", {
+      const response = await axios.post("/api/user/phone", {
+        mode: "register",
+        accessToken: registrationToken,
         username: formData.username,
         password: formData.password,
-        email: formData.email,
-        inviteCode: formData.inviteCode,
       });
-
-      if (res.data.user) {
-        setRegisterSuccess(true);
-        // 注册成功后，自动切换到登录 Tab
-        setTimeout(() => {
-          setLoginMethod("password");
-          setFormData({
-            ...formData,
-            password: "",
-            confirmPassword: "",
-            email: "",
-            inviteCode: "",
-          });
-          setRegisterSuccess(false);
-        }, 2000);
-      }
-    } catch (e: unknown) {
-      const error = e as { response?: { data?: { error?: string; errorCode?: string } } };
-      const errorCode = error.response?.data?.errorCode || error.response?.data?.error;
-
-      // 根据错误代码显示多语言错误信息
-      if (errorCode) {
-        const translationKey = `registerError_${errorCode}` as any;
-        const translatedError = t(translationKey);
-        // next-intl 如果找不到翻译会返回键本身，检查是否是有效的翻译
-        if (translatedError && translatedError !== translationKey) {
-          setRegisterError(translatedError);
-        } else {
-          setRegisterError(error.response?.data?.error || t("registerFailed"));
-        }
-      } else {
-        setRegisterError(error.response?.data?.error || t("registerFailed"));
-      }
+      const client = await loadCloudbaseAuth(cloudbaseEnv);
+      await client.signOut().catch(() => {});
+      setRegisterSuccess(true);
+      finishLogin(response.data.token);
+    } catch (error) {
+      setRegisterError(phoneErrorMessage(error, "phoneRegistrationFailed"));
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handlePasswordLogin = async () => {
@@ -157,10 +190,7 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
         username: formData.username,
         password: formData.password,
       });
-      if (res.data.token) {
-        localStorage.setItem("ragent_token", res.data.token);
-      }
-      onLogin();
+      finishLogin(res.data.token);
     } catch (e: unknown) {
       const error = e as { response?: { data?: { error?: string } } };
       setLoginError(error.response?.data?.error || t("loginFailed"));
@@ -169,20 +199,121 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
   };
 
   const handleSMSVerification = async () => {
-    if (!formData.smsCode) {
+    const setError = loginMethod === "register" ? setRegisterError : setLoginError;
+    setError("");
+    if (!verificationInfo || !/^\d{6}$/.test(formData.smsCode)) {
+      setError(t("phoneSendFirst"));
+      return;
+    }
+    if (!formData.agreeTerms) {
+      setError(t("agreeTermsRequired"));
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      const client = await loadCloudbaseAuth(cloudbaseEnv);
+      await client.signInWithSms({
+        phoneNum: `+86 ${formData.phone}`,
+        verificationCode: formData.smsCode,
+        verificationInfo,
+      });
+      const { accessToken } = await client.getAccessToken();
+      const response = await axios.post("/api/user/phone", {
+        mode: loginMethod === "register" ? "verify" : "login",
+        accessToken,
+      });
+      if (loginMethod === "register") {
+        setRegistrationToken(accessToken);
+        setFormData((previous) => ({ ...previous, password: "", confirmPassword: "" }));
+      } else {
+        await client.signOut().catch(() => {});
+        finishLogin(response.data.token);
+      }
+    } catch (error) {
+      setError(
+        phoneErrorMessage(
+          error,
+          loginMethod === "register" ? "phoneVerificationFailed" : "phoneLoginFailed"
+        )
+      );
+    } finally {
       setIsLoading(false);
-      onLogin();
-    }, 1000);
+    }
   };
 
-  const sendSMSCode = () => {
-    // 模拟发送短信验证码
-    console.log("发送短信验证码");
+  const sendSMSCode = async () => {
+    const setError = loginMethod === "register" ? setRegisterError : setLoginError;
+    setError("");
+    if (!/^1\d{10}$/.test(formData.phone)) {
+      setError(t("phoneInvalidNumber"));
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const client = await loadCloudbaseAuth(cloudbaseEnv);
+      const info = await client.getVerification({ phone_number: `+86 ${formData.phone}` });
+      setVerificationInfo(info);
+      setSmsCooldown(60);
+    } catch (error) {
+      setError(phoneErrorMessage(error, "phoneSendFailed"));
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const renderPhoneFields = (prefix: string, hidePhoneLabel = false) => (
+    <>
+      <div className="space-y-2">
+        {!hidePhoneLabel && <Label htmlFor={`${prefix}Phone`}>{t("phoneNumber")}</Label>}
+        <Input
+          id={`${prefix}Phone`}
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel-national"
+          placeholder={t("phoneNumberPlaceholder")}
+          value={formData.phone}
+          disabled={isLoading}
+          maxLength={11}
+          onChange={(event) => {
+            resetPhoneVerification();
+            setFormData((previous) => ({ ...previous, phone: event.target.value, smsCode: "" }));
+          }}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}SmsCode`}>{t("verificationCode")}</Label>
+        <div className="flex gap-2">
+          <Input
+            id={`${prefix}SmsCode`}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder={t("verificationCodePlaceholder")}
+            value={formData.smsCode}
+            disabled={isLoading}
+            maxLength={6}
+            onChange={(event) =>
+              setFormData({ ...formData, smsCode: event.target.value.replace(/\D/g, "") })
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={sendSMSCode}
+            disabled={
+              isLoading || !cloudbaseEnv || smsCooldown > 0 || !/^1\d{10}$/.test(formData.phone)
+            }
+          >
+            {smsCooldown ? t("phoneResendCountdown", { seconds: smsCooldown }) : t("phoneSend")}
+          </Button>
+        </div>
+      </div>
+      {!cloudbaseEnv && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("phoneUnavailable")}
+        </p>
+      )}
+    </>
+  );
 
   if (step === 2) {
     return (
@@ -247,7 +378,11 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
                   </div>
                 </div>
                 <h2 className="text-3xl font-bold mb-2 text-primary">{t("smsVerification")}</h2>
-                <p className="text-muted-foreground">{t("smsSentTo", { phone: "138****5678" })}</p>
+                <p className="text-muted-foreground">
+                  {t("smsSentTo", {
+                    phone: formData.phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2"),
+                  })}
+                </p>
               </div>
 
               <div className="space-y-5">
@@ -460,13 +595,17 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
             <CardContent>
               <Tabs
                 value={loginMethod}
-                onValueChange={(v) => setLoginMethod(v as "password" | "register")}
+                onValueChange={(value) => {
+                  if (isLoading) return;
+                  resetPhoneVerification();
+                  setLoginMethod(value as "password" | "register");
+                }}
                 className="space-y-4"
               >
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="password" className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    {t("passwordLogin")}
+                    {t("phoneSignIn")}
                   </TabsTrigger>
                   <TabsTrigger value="register" className="flex items-center gap-2">
                     <UserPlus className="h-4 w-4" />
@@ -476,69 +615,111 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
 
                 <TabsContent value="password" className="space-y-4">
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="username">{t("username")}</Label>
-                      <Input
-                        id="username"
-                        placeholder={t("usernamePlaceholder")}
-                        value={formData.username}
-                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="password">{t("password")}</Label>
-                      <div className="relative">
-                        <Input
-                          id="password"
-                          type={showPassword ? "text" : "password"}
-                          placeholder={t("passwordPlaceholder")}
-                          value={formData.password}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              password: e.target.value,
-                            })
-                          }
-                        />
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor={credentialMethod === "password" ? "username" : "loginPhone"}>
+                        {credentialMethod === "password" ? t("username") : t("phoneNumber")}
+                      </Label>
+                      <div
+                        role="group"
+                        aria-label={`${t("passwordLogin")} / ${t("phoneSmsTab")}`}
+                        className="inline-flex gap-1 rounded-lg border border-border bg-muted p-1"
+                      >
                         <Button
                           type="button"
                           variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowPassword(!showPassword)}
+                          className={`h-9 cursor-pointer rounded-md px-4 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring ${credentialMethod === "password" ? "bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
+                          disabled={isLoading}
+                          aria-pressed={credentialMethod === "password"}
+                          onClick={() => {
+                            resetPhoneVerification();
+                            setCredentialMethod("password");
+                          }}
                         >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
+                          {t("passwordLogin")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className={`h-9 cursor-pointer rounded-md px-4 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring ${credentialMethod === "sms" ? "bg-primary/10 text-primary shadow-sm hover:bg-primary/15 hover:text-primary" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}
+                          disabled={isLoading}
+                          aria-pressed={credentialMethod === "sms"}
+                          onClick={() => {
+                            resetPhoneVerification();
+                            setCredentialMethod("sms");
+                          }}
+                        >
+                          {t("phoneSmsTab")}
                         </Button>
                       </div>
                     </div>
+                    {credentialMethod === "sms" ? (
+                      renderPhoneFields("login", true)
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <Input
+                            id="username"
+                            placeholder={t("usernamePlaceholder")}
+                            value={formData.username}
+                            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          />
+                        </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="rememberPassword"
-                          checked={formData.rememberPassword}
-                          onCheckedChange={(checked) =>
-                            setFormData({
-                              ...formData,
-                              rememberPassword: checked as boolean,
-                            })
-                          }
-                        />
-                        <Label htmlFor="rememberPassword" className="text-sm">
-                          {t("rememberPassword")}
-                        </Label>
-                      </div>
-                      <Link href="/forgot-password">
-                        <Button variant="link" className="text-sm p-0 h-auto">
-                          {t("forgotPassword")}
-                        </Button>
-                      </Link>
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="password">{t("password")}</Label>
+                          <div className="relative">
+                            <Input
+                              id="password"
+                              type={showPassword ? "text" : "password"}
+                              placeholder={t("passwordPlaceholder")}
+                              value={formData.password}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  password: e.target.value,
+                                })
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => setShowPassword(!showPassword)}
+                            >
+                              {showPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="rememberPassword"
+                              checked={formData.rememberPassword}
+                              onCheckedChange={(checked) =>
+                                setFormData({
+                                  ...formData,
+                                  rememberPassword: checked as boolean,
+                                })
+                              }
+                            />
+                            <Label htmlFor="rememberPassword" className="text-sm">
+                              {t("rememberPassword")}
+                            </Label>
+                          </div>
+                          <Link href="/forgot-password">
+                            <Button variant="link" className="text-sm p-0 h-auto">
+                              {t("forgotPassword")}
+                            </Button>
+                          </Link>
+                        </div>
+                      </>
+                    )}
 
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -558,11 +739,14 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
 
                     <Button
                       className="w-full"
-                      onClick={handlePasswordLogin}
+                      onClick={
+                        credentialMethod === "sms" ? handleSMSVerification : handlePasswordLogin
+                      }
                       disabled={
                         isLoading ||
-                        !formData.username ||
-                        !formData.password ||
+                        (credentialMethod === "password"
+                          ? !formData.username || !formData.password
+                          : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||
                         !formData.agreeTerms
                       }
                     >
@@ -583,98 +767,87 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
                   )}
 
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="registerUsername">{t("username")}</Label>
-                      <Input
-                        id="registerUsername"
-                        placeholder={t("usernamePlaceholder")}
-                        value={formData.username}
-                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      />
-                    </div>
+                    {!registrationToken ? (
+                      renderPhoneFields("register")
+                    ) : (
+                      <>
+                        <Alert>
+                          <CheckCircle className="h-4 w-4" />
+                          <AlertDescription>{t("phoneSetCredentials")}</AlertDescription>
+                        </Alert>
+                        <div className="space-y-2">
+                          <Label htmlFor="registerUsername">{t("username")}</Label>
+                          <Input
+                            id="registerUsername"
+                            placeholder={t("usernamePlaceholder")}
+                            value={formData.username}
+                            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          />
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="registerEmail">{t("email")}</Label>
-                      <Input
-                        id="registerEmail"
-                        type="email"
-                        placeholder={t("emailPlaceholder")}
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="registerPassword">{t("password")}</Label>
+                          <div className="relative">
+                            <Input
+                              id="registerPassword"
+                              type={showPassword ? "text" : "password"}
+                              placeholder={t("passwordPlaceholder")}
+                              value={formData.password}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  password: e.target.value,
+                                })
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => setShowPassword(!showPassword)}
+                            >
+                              {showPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="registerPassword">{t("password")}</Label>
-                      <div className="relative">
-                        <Input
-                          id="registerPassword"
-                          type={showPassword ? "text" : "password"}
-                          placeholder={t("passwordPlaceholder")}
-                          value={formData.password}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              password: e.target.value,
-                            })
-                          }
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword">{t("confirmPassword")}</Label>
-                      <div className="relative">
-                        <Input
-                          id="confirmPassword"
-                          type={showConfirmPassword ? "text" : "password"}
-                          placeholder={t("confirmPasswordPlaceholder")}
-                          value={formData.confirmPassword}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              confirmPassword: e.target.value,
-                            })
-                          }
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        >
-                          {showConfirmPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="inviteCode">{t("inviteCode")}</Label>
-                      <Input
-                        id="inviteCode"
-                        placeholder={t("inviteCodePlaceholder")}
-                        value={formData.inviteCode}
-                        onChange={(e) => setFormData({ ...formData, inviteCode: e.target.value })}
-                      />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="confirmPassword">{t("confirmPassword")}</Label>
+                          <div className="relative">
+                            <Input
+                              id="confirmPassword"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder={t("confirmPasswordPlaceholder")}
+                              value={formData.confirmPassword}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  confirmPassword: e.target.value,
+                                })
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -698,18 +871,20 @@ export function LoginPage({ onLogin, siteConfig }: LoginPageProps) {
 
                     <Button
                       className="w-full"
-                      onClick={handleRegister}
+                      onClick={registrationToken ? handleRegister : handleSMSVerification}
                       disabled={
                         isLoading ||
-                        !formData.username ||
-                        !formData.password ||
-                        !formData.confirmPassword ||
-                        !formData.email ||
-                        !formData.inviteCode ||
+                        (registrationToken
+                          ? !formData.username || !formData.password || !formData.confirmPassword
+                          : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||
                         !formData.agreeTerms
                       }
                     >
-                      {isLoading ? t("registering") : t("registerButton")}
+                      {isLoading
+                        ? t("verifying")
+                        : registrationToken
+                          ? t("registerButton")
+                          : t("phoneVerify")}
                     </Button>
                   </div>
                 </TabsContent>

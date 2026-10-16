@@ -19,6 +19,7 @@
     "check:i18n:missing": "node scripts/check-missing-translations.js"
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "^2.32.0",
     "@onlyoffice/document-editor-react": "^2.1.1",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-checkbox": "latest",
