@@ -18,6 +18,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const tokenUserId = getUserIdFromRequest(req);
     if (!tokenUserId) return res.status(401).json({ error: "未登录" });
 
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "phone")) {
+      return res
+        .status(400)
+        .json({
+          errorCode: "PHONE_VERIFICATION_REQUIRED",
+          code: "PHONE_VERIFICATION_REQUIRED",
+          error: "请在个人设置中验证新手机号后修改",
+        });
+    }
+
     // 获取用户权限信息
     const userPerms = await getUserPermissions(tokenUserId);
     if (!userPerms) {
@@ -30,14 +40,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       nickname,
       password,
       currentPassword,
-      email,
-      phone: rawPhone,
+      email: rawEmail,
       role,
       tenant_id,
       dept_id,
       status,
       wechat_id,
     } = req.body;
+
+    if (rawEmail != null && typeof rawEmail !== "string") {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+    const email = rawEmail === undefined ? undefined : typeof rawEmail === "string" ? rawEmail.trim() || null : null;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email" });
+    }
 
     // 判断目标 id
     let targetId = id;
@@ -77,11 +94,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    if (rawPhone !== undefined && rawPhone !== null && typeof rawPhone !== "string") {
-      return res.status(400).json({ error: "Invalid phone", code: "INVALID_PHONE" });
-    }
-    const phone = typeof rawPhone === "string" ? rawPhone.trim() || null : rawPhone;
-
     const client = await pool.connect();
     let lifecycleTransaction = false;
     try {
@@ -93,17 +105,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ]);
         if (exists.rowCount && exists.rowCount > 0) {
           return res.status(409).json({ error: "邮箱已被使用", code: "EMAIL_ALREADY_REGISTERED" });
-        }
-      }
-
-      // 全局检查手机号唯一性（包括停用用户，排除自身）
-      if (phone) {
-        const exists = await client.query("SELECT 1 FROM users WHERE phone=$1 AND id<>$2", [
-          phone,
-          targetId,
-        ]);
-        if (exists.rowCount && exists.rowCount > 0) {
-          return res.status(409).json({ error: "手机号已注册", code: "PHONE_ALREADY_REGISTERED" });
         }
       }
 
@@ -192,11 +193,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           updateValues.push(email);
         }
 
-        if (phone !== undefined) {
-          updateFields.push(`phone = $${paramIndex++}`);
-          updateValues.push(phone);
-        }
-
         if (wechat_id !== undefined) {
           updateFields.push(`wechat_id = $${paramIndex++}`);
           updateValues.push(wechat_id);
@@ -213,11 +209,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           updateValues.push(email);
         }
 
-        if (phone !== undefined) {
-          updateFields.push(`phone = $${paramIndex++}`);
-          updateValues.push(phone);
-        }
-
         if (wechat_id !== undefined) {
           updateFields.push(`wechat_id = $${paramIndex++}`);
           updateValues.push(wechat_id);
@@ -232,11 +223,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (email !== undefined) {
           updateFields.push(`email = $${paramIndex++}`);
           updateValues.push(email);
-        }
-
-        if (phone !== undefined) {
-          updateFields.push(`phone = $${paramIndex++}`);
-          updateValues.push(phone);
         }
 
         if (wechat_id !== undefined) {

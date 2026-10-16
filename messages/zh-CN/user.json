@@ -3,6 +3,7 @@
   "description": "管理系统用户",
   "userList": "用户列表",
   "addUser": "新增用户",
+  "phone": "手机号",
   "editUser": "编辑用户",
   "deleteUser": "删除用户",
   "username": "用户名",

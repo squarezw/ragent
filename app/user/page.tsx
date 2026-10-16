@@ -48,6 +48,7 @@ interface User {
   username: string;
   nickname: string;
   email: string;
+  phone?: string | null;
   tenant_id?: number;
   dept_id?: number;
   status: string;
@@ -398,11 +399,11 @@ export default function UserPage() {
       if (!editing) {
         // 新增用户：所有管理员都可以创建用户，显示完整表单
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!form.username || !form.email || !form.role || !form.password) {
+        if (!form.username || !form.role || !form.password) {
           setError(t("requiredFields"));
           return;
         }
-        if (!emailRegex.test(form.email)) {
+        if (form.email?.trim() && !emailRegex.test(form.email.trim())) {
           setError(t("invalidEmail"));
           return;
         }
@@ -413,11 +414,11 @@ export default function UserPage() {
         if (isSuperAdmin) {
           // 超级管理员可以编辑所有字段
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!form.username || !form.email || !form.role) {
+          if (!form.username || !form.role) {
             setError(t("requiredFields"));
             return;
           }
-          if (!emailRegex.test(form.email)) {
+          if (form.email?.trim() && !emailRegex.test(form.email.trim())) {
             setError(t("invalidEmail"));
             return;
           }
@@ -429,11 +430,11 @@ export default function UserPage() {
         } else if (isTenantAdmin || isDeptAdmin) {
           // 租户管理员和部门管理员可以编辑部分字段（昵称、邮箱、身份、状态）
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!form.email || !form.role) {
+          if (!form.role) {
             setError(t("requiredFields"));
             return;
           }
-          if (!emailRegex.test(form.email)) {
+          if (form.email?.trim() && !emailRegex.test(form.email.trim())) {
             setError(t("invalidEmail"));
             return;
           }
@@ -466,6 +467,9 @@ export default function UserPage() {
       }
 
       if (editing) {
+        // Phone changes require the account owner's separate verification flow.
+        delete payload.phone;
+      if ("email" in payload) payload.email = payload.email?.trim() || null;
         await axios.put("/api/user/update", payload, { suppressErrorToast: true });
       } else {
         await axios.post("/api/user/create", payload);
@@ -827,7 +831,7 @@ export default function UserPage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="new-email" className="block text-sm font-medium">
-                      {t("email")} *
+                      {t("email")}
                     </label>
                     <Input
                       id="new-email"
@@ -945,7 +949,7 @@ export default function UserPage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="edit-email" className="block text-sm font-medium">
-                      {t("email")} *
+                      {t("email")}
                     </label>
                     <Input
                       id="edit-email"
@@ -1061,7 +1065,7 @@ export default function UserPage() {
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="admin-email" className="block text-sm font-medium">
-                      {t("email")} *
+                      {t("email")}
                     </label>
                     <Input
                       id="admin-email"
@@ -1167,6 +1171,14 @@ export default function UserPage() {
                     <option value="active">{t("active")}</option>
                     <option value="inactive">{t("inactive")}</option>
                   </select>
+                </div>
+              )}
+              {editing && (
+                <div className="space-y-2">
+                  <label htmlFor="edit-phone" className="block text-sm font-medium">
+                    {t("phone")}
+                  </label>
+                  <Input id="edit-phone" type="tel" value={form.phone || ""} readOnly className="bg-muted text-muted-foreground" />
                 </div>
               )}
               {error && <div className="text-destructive text-sm">{error}</div>}

@@ -26,5 +26,8 @@
   "skillsManagement": "Skills",
   "reviewQueue": "Review Queue",
   "billingUsage": "Usage",
-  "billingRates": "Billing rates"
+  "billingRates": "Billing rates",
+  "pendingTenantTitle": "Waiting for tenant assignment",
+  "pendingTenantDescription": "Please ask an administrator to assign a tenant. Your conversation history and account settings remain available.",
+  "refreshTenantStatus": "Refresh access"
 }

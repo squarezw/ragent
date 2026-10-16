@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
-import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
+import { checkSuperAdmin, checkTenantAdmin, isPendingTenant } from "@/lib/clientPermissions";
 import {
   Building2,
   GitGraph,
@@ -56,7 +56,8 @@ const NEW_CONVERSATION_KEY = "chat.newConversation";
 export default function AppSidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading } = useCurrentUser();
+  const { user, loading, logout } = useCurrentUser();
+  const pendingTenant = isPendingTenant(user);
   const t = useTranslations("navigation");
   const tc = useTranslations("common");
   const tChat = useTranslations();
@@ -184,6 +185,16 @@ export default function AppSidebar() {
     },
   ];
 
+  if (pendingTenant) {
+    for (const group of menuGroups) {
+      for (const item of group.items) {
+        if (!["/", "/datasets", "/chat-sessions", "/system-settings"].includes(item.path)) item.visible = false;
+        if (["/", "/datasets"].includes(item.path)) item.deprecated = t("pendingTenantTitle");
+      }
+      group.visible = group.items.some((item) => item.visible !== false);
+    }
+  }
+
   return (
     <Sidebar className="border-r">
       <SidebarHeader className="border-b p-4">
@@ -276,7 +287,7 @@ export default function AppSidebar() {
                             </span>
                           )}
                         </SidebarMenuButton>
-                        {item.path === "/chat" && (
+                        {item.path === "/chat" && !pendingTenant && (
                           <SidebarMenuAction
                             type="button"
                             showOnHover
@@ -328,7 +339,7 @@ export default function AppSidebar() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => {
-                  localStorage.removeItem("ragent_logged_in");
+                  logout();
                   window.location.reload();
                 }}
               >

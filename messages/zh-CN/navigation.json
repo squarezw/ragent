@@ -26,5 +26,8 @@
   "skillsManagement": "Skill 管理",
   "reviewQueue": "审核队列",
   "billingUsage": "用量明细",
-  "billingRates": "计费系数"
+  "billingRates": "计费系数",
+  "pendingTenantTitle": "等待管理员分配租户",
+  "pendingTenantDescription": "请联系管理员分配租户。您仍可管理自己的会话和个人设置。",
+  "refreshTenantStatus": "刷新访问权限"
 }
