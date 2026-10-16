@@ -4,7 +4,7 @@
 
 ## Runtime configuration
 
-Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, an independent `OIDC_CLIENT_SECRET` (at least 32 characters), exact `OIDC_REDIRECT_URI` ending `/api/auth/oidc/callback`, and `OIDC_TRANSACTION_KEY` (32 random bytes encoded as 64 hex characters, separate from JWT_SECRET and client secret). These are server runtime settings, never NEXT_PUBLIC variables. Production requires HTTPS. `NODE_ENV=test` and the explicit `OIDC_ALLOW_INSECURE_TEST_HTTP=true` allow loopback HTTP for fixtures only.
+Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, an independent `OIDC_CLIENT_SECRET` (at least 32 characters), exact `OIDC_REDIRECT_URI` ending `/api/auth/oidc/callback`, and `OIDC_TRANSACTION_KEY` (32 random bytes encoded as 64 hex characters, separate from JWT_SECRET and client secret). These are server runtime settings, never NEXT_PUBLIC variables. Production requires HTTPS. `NODE_ENV=test` and the explicit `OIDC_ALLOW_INSECURE_TEST_HTTP=true` allow loopback HTTP for fixtures only. For an explicitly enabled local developer instance, `NODE_ENV=development` plus `OIDC_ALLOW_INSECURE_LOCAL_HTTP=true` allow only localhost/127.0.0.1 HTTP issuer and callback; production always rejects HTTP regardless of either switch.
 
 The static issuer client must use `authorization_code`, `code` responses, `client_secret_basic` and the exact callback. `openid-client` 6.8.8 performs discovery, token exchange and claim validation; explicit `enableNonRepudiationChecks` requires JWKS signature verification even over TLS. Authorization, token and JWKS URLs must share the configured issuer origin.
 

@@ -36,7 +36,9 @@ export function readOidcSettings(env: Record<string, string | undefined> = proce
   };
   const issuer = new URL(required("OIDC_ISSUER"));
   const redirect = new URL(required("OIDC_REDIRECT_URI"));
-  const testHttp = env.NODE_ENV === "test" && env.OIDC_ALLOW_INSECURE_TEST_HTTP === "true";
+  const testHttp =
+    (env.NODE_ENV === "test" && env.OIDC_ALLOW_INSECURE_TEST_HTTP === "true") ||
+    (env.NODE_ENV === "development" && env.OIDC_ALLOW_INSECURE_LOCAL_HTTP === "true");
   if (
     issuer.username ||
     issuer.password ||

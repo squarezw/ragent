@@ -58,3 +58,32 @@ test("local session cannot outlive verified ID token, token lifetime or local ma
   assert.throws(() => localSessionTtl({ exp: 999 }, 500, 1000));
   assert.throws(() => localSessionTtl({}, 500, 1000));
 });
+
+test("local HTTP requires explicit development opt-in and stays forbidden in production or remote hosts", () => {
+  const env = {
+    OIDC_ENABLED: "true",
+    NODE_ENV: "development",
+    OIDC_ALLOW_INSECURE_LOCAL_HTTP: "true",
+    OIDC_ISSUER: "http://127.0.0.1:8021",
+    OIDC_REDIRECT_URI: "http://127.0.0.1:3000/api/auth/oidc/callback",
+    OIDC_CLIENT_ID: "local-ragent",
+    OIDC_CLIENT_SECRET: "local-fixture-secret-01234567890123456789",
+    OIDC_TRANSACTION_KEY: "a".repeat(64),
+  };
+  assert.equal(readOidcSettings(env).testHttp, true);
+  assert.throws(() => readOidcSettings({ ...env, OIDC_ALLOW_INSECURE_LOCAL_HTTP: "false" }));
+  assert.throws(() => readOidcSettings({ ...env, NODE_ENV: "production" }));
+  assert.throws(() => readOidcSettings({ ...env, OIDC_ISSUER: "http://192.168.1.2:8021" }));
+  assert.throws(() =>
+    readOidcSettings({ ...env, OIDC_REDIRECT_URI: "http://evil.example/api/auth/oidc/callback" })
+  );
+  assert.equal(
+    readOidcSettings({
+      ...env,
+      NODE_ENV: "test",
+      OIDC_ALLOW_INSECURE_TEST_HTTP: "true",
+      OIDC_ALLOW_INSECURE_LOCAL_HTTP: "false",
+    }).testHttp,
+    true
+  );
+});
