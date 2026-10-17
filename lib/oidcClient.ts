@@ -39,7 +39,8 @@ export async function oidcConfiguration(
 export async function startOidc(
   settings: NonNullable<ReturnType<typeof readOidcSettings>>,
   returnTo: unknown,
-  logoutMarker = ""
+  logoutMarker = "",
+  forceReauthentication = false
 ) {
   const config = await oidcConfiguration(settings);
   const verifier = oidc.randomPKCECodeVerifier();
@@ -57,6 +58,7 @@ export async function startOidc(
     redirect_uri: settings.redirectUri,
     response_type: "code",
     scope: "openid profile",
+    ...((logoutMarker || forceReauthentication) ? { prompt: "login" } : {}),
     code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
     code_challenge_method: "S256",
     state,

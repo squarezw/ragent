@@ -92,3 +92,18 @@ test('legacy /me continues synchronizing Cookie when OIDC is disabled',async()=>
  },{...env,OIDC_ENABLED:'false'}).default;
  await handler({headers:{},cookies:{}},res);assert.equal(res.code,200);assert.equal(res.headers['Set-Cookie'],'legacy-cookie');
 });
+
+test('automatic sign-in derives force reauthentication only from logout marker or exact reauth flag',async()=>{
+ for(const [cookies,query,expected] of [
+  [{},{prompt:'none'},false],
+  [{ragent_signed_out:'generation'},{prompt:'none',reauth:'0'},false],
+  [{},{reauth:'1',prompt:'none'},true],
+  [{},{reauth:['1']},false],
+ ]){
+  const calls:any[]=[];const res=response();
+  const handler=load('pages/api/auth/oidc/start.ts',{'@/lib/oidcClient':{readOidcSettings:()=>({}),startOidc:async(...args:any[])=>{calls.push(args);return{cookie:'encrypted',redirectTo:'https://issuer.example/auth'}},TRANSACTION_COOKIE:'ragent_oidc_tx',TRANSACTION_PATH:'/api/auth/oidc',TRANSACTION_TTL:300}}).default;
+  await handler({method:'GET',cookies,query},res);
+  assert.equal(res.code,303);assert.equal(calls[0][2],cookies.ragent_signed_out||'');assert.equal(calls[0][3],expected);
+  assert.ok(!res.headers['Set-Cookie'].includes('ragent_signed_out='),'start never clears logout state');
+ }
+});
