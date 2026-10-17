@@ -9,3 +9,7 @@ export function setCookieAuthMode(enabled: boolean) {
     localStorage.removeItem("ragent_logged_in");
   }
 }
+
+let logoutPending = false;
+export function isLogoutPending() { return logoutPending; }
+export function setLogoutPending(pending: boolean) { logoutPending = pending; }

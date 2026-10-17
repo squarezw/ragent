@@ -1,103 +1,108 @@
 "use client";
 
+import { setLogoutPending } from "@/lib/browserAuthMode";
+
 import { clearChatSelectionCache, clearSwrCache } from "@/lib/authUtils";
 import axios from "@/lib/axios";
+import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 // 全局用户状态
 let globalUser: any = null;
 let globalLoading = true;
 let globalUserPromise: Promise<any> | null = null;
+let sessionGeneration = 0;
+let logoutInProgress = false;
+let locallySignedOut = false;
 let globalUserInitialized = false; // 标记是否已经初始化过
 
 // 创建 Context
 const UserContext = createContext<{
   user: any;
   loading: boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
   refetch: () => Promise<void>;
 } | null>(null);
 
 // 获取用户的函数
-const fetchUserData = async () => {
-  try {
-    const res = await axios.get("/api/user/me");
+const getCurrentUser = async () => {
+  if (logoutInProgress || locallySignedOut) throw new Error("Session changed");
+  if (globalUser && !globalLoading) return globalUser;
+  if (globalUserPromise) return globalUserPromise;
+  const generation = sessionGeneration;
+  const pending = axios.get("/api/user/me").then((res) => {
+    if (generation !== sessionGeneration || logoutInProgress || locallySignedOut)
+      throw new Error("Session changed");
     globalUser = res.data;
+    globalUserInitialized = true;
     return res.data;
+  });
+  globalUserPromise = pending;
+  try {
+    return await pending;
   } catch (error) {
-    globalUser = null;
+    if (generation === sessionGeneration) globalUser = null;
     throw error;
   } finally {
-    globalLoading = false;
-  }
-};
-
-// 全局获取用户函数（带缓存）
-const getCurrentUser = async () => {
-  // 如果已经有用户数据且不在加载中，直接返回
-  if (globalUser && !globalLoading) {
-    return globalUser;
-  }
-
-  // 如果正在加载中，等待现有的请求
-  if (globalUserPromise) {
-    try {
-      return await globalUserPromise;
-    } catch (error) {
-      // 如果请求失败，清除缓存并重新请求
-      globalUserPromise = null;
-      globalUser = null;
-      globalLoading = true;
+    if (generation === sessionGeneration) {
+      globalLoading = false;
+      if (globalUserPromise === pending) globalUserPromise = null;
     }
-  }
-
-  // 创建新的请求
-  globalUserPromise = fetchUserData();
-  try {
-    const user = await globalUserPromise;
-    globalUserPromise = null;
-    globalUserInitialized = true;
-    return user;
-  } catch (error) {
-    globalUserPromise = null;
-    throw error;
   }
 };
 
 // Provider 组件
 export function UserProvider({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("login");
   const [user, setUser] = useState<any>(globalUser);
   const [loading, setLoading] = useState(globalLoading);
 
   const fetchUser = async () => {
+    const generation = sessionGeneration;
     try {
       setLoading(true);
       const userData = await getCurrentUser();
-      setUser(userData);
+      if (generation === sessionGeneration && !logoutInProgress && !locallySignedOut) setUser(userData);
     } catch (error) {
-      setUser(null);
+      if (generation === sessionGeneration) setUser(null);
     } finally {
-      setLoading(false);
+      if (generation === sessionGeneration) setLoading(false);
     }
   };
 
-  const logout = () => {
-    // Clear the HttpOnly local session as well; no OIDC tokens reach browser storage.
-    void fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).then(
-      (response) => {
-        if (response.ok) window.location.assign("/?signedOut=1");
-      }
-    );
-    localStorage.removeItem("ragent_token");
-    localStorage.removeItem("ragent_logged_in");
-
-    clearChatSelectionCache();
-    clearSwrCache();
-    globalUser = null;
-    globalLoading = false;
+  const logout = async () => {
+    if (logoutInProgress) return;
+    logoutInProgress = true;
+    setLogoutPending(true);
+    ++sessionGeneration;
+    window.dispatchEvent(new CustomEvent("auth:logout-start"));
     globalUserPromise = null;
-    globalUserInitialized = false;
-    setUser(null);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      if (!response.ok) throw new Error("Logout failed");
+      locallySignedOut = true;
+      localStorage.removeItem("ragent_token");
+      localStorage.removeItem("ragent_logged_in");
+      clearChatSelectionCache();
+      clearSwrCache();
+      globalUser = null;
+      globalLoading = false;
+      globalUserInitialized = false;
+      setUser(null);
+      window.location.assign("/?signedOut=1");
+    } catch {
+      logoutInProgress = false;
+      setLogoutPending(false);
+      window.dispatchEvent(new CustomEvent("auth:logout-failed"));
+      toast.error(t("identityUnavailable"));
+    } finally {
+      // Keep auto-SSO paused until successful hard navigation actually unloads this document.
+      if (!locallySignedOut) {
+        logoutInProgress = false;
+        setLogoutPending(false);
+      }
+    }
   };
 
   const refetch = async () => {

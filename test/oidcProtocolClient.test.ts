@@ -17,7 +17,7 @@ function load(file: string, mocks: any = {}) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => mocks[id] || require(id),
+      require: (id: string) => ["./localLogout", "@/lib/localLogout"].includes(id) ? load("localLogout.ts") : mocks[id] || require(id),
       process,
       URL,
       Date,
@@ -117,9 +117,9 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
     OIDC_CLIENT_SECRET: "s".repeat(40),
     OIDC_TRANSACTION_KEY: "a".repeat(64),
   });
-  async function attempt(selected: string, stateOverride?: string) {
+  async function attempt(selected: string, stateOverride?: string, logoutMarker = "") {
     mode = selected;
-    const start = await client.startOidc(settings, "/chat");
+    const start = await client.startOidc(settings, "/chat", logoutMarker);
     authorization = new URL(start.redirectTo).searchParams;
     assert.equal(authorization.get("code_challenge_method"), "S256");
     const query = new URLSearchParams({
@@ -127,13 +127,15 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
       state: stateOverride || authorization.get("state"),
       iss: issuer,
     });
-    return client.completeOidc(settings, query.toString(), start.cookie);
+    return client.completeOidc(settings, query.toString(), start.cookie, logoutMarker);
   }
   const success = await attempt("valid");
   assert.equal(success.sub, "stable-uuid");
   assert.equal(success.returnTo, "/chat");
   assert.ok(success.ttl > 0 && success.ttl <= 200);
   assert.equal(success.access_token, undefined);
+  const explicit = await attempt("valid", undefined, "current-logout-generation");
+  assert.equal(explicit.sub, "stable-uuid", "explicit re-login with matching logout generation succeeds");
   // Exercise the real callback with real verified protocol tokens and a DB mapping fixture.
   const begin = await client.startOidc(settings, "/chat");
   authorization = new URL(begin.redirectTo).searchParams;
@@ -195,4 +197,13 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
   for (const invalid of ["signature", "issuer", "audience", "nonce", "expired"])
     await assert.rejects(() => attempt(invalid), invalid);
   await assert.rejects(() => attempt("valid", "incorrect-state"), "state mismatch");
+});
+
+test("encrypted transaction binds explicit login to the current local logout generation before exchange", async () => {
+  const settings = { transactionKey: "a".repeat(64) };
+  const base = { state:"state",nonce:"nonce",verifier:"verifier",returnTo:"/",createdAt:Math.floor(Date.now()/1000) };
+  for(const [prior,current] of [["","new-logout"],["old-logout","new-logout"],["old-logout",""]]) {
+    const sealed=policy.sealTransaction({...base,logoutMarker:prior},settings.transactionKey);
+    await assert.rejects(client.completeOidc(settings,"code=fixture",sealed,current),/Session changed since sign-in started/);
+  }
 });

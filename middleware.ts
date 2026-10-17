@@ -1,3 +1,4 @@
+import { LOCAL_LOGOUT_COOKIE } from "./lib/localLogout";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { defaultLocale, locales, type Locale } from "./i18n/config";
@@ -6,7 +7,13 @@ const LOCALE_COOKIE = "locale";
 
 export function middleware(request: NextRequest) {
   const headers = new Headers(request.headers);
-  const token = request.cookies.get("ragent_token")?.value;
+  const signedOut = process.env.OIDC_ENABLED === "true" && Boolean(request.cookies.get(LOCAL_LOGOUT_COOKIE)?.value);
+  const token = signedOut ? undefined : request.cookies.get("ragent_token")?.value;
+  if (signedOut) {
+    headers.delete("authorization");
+    const cookies = (headers.get("cookie") || "").split(";").filter((cookie) => cookie.trim().split("=", 1)[0] !== "ragent_token");
+    headers.set("cookie", cookies.join(";"));
+  }
   if (
     process.env.OIDC_ENABLED === "true" &&
     request.nextUrl.pathname.startsWith("/api/") &&

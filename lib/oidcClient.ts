@@ -38,7 +38,8 @@ export async function oidcConfiguration(
 }
 export async function startOidc(
   settings: NonNullable<ReturnType<typeof readOidcSettings>>,
-  returnTo: unknown
+  returnTo: unknown,
+  logoutMarker = ""
 ) {
   const config = await oidcConfiguration(settings);
   const verifier = oidc.randomPKCECodeVerifier();
@@ -50,6 +51,7 @@ export async function startOidc(
     nonce,
     returnTo: safeReturnTo(returnTo),
     createdAt: Math.floor(Date.now() / 1000),
+    logoutMarker,
   };
   const url = oidc.buildAuthorizationUrl(config, {
     redirect_uri: settings.redirectUri,
@@ -65,9 +67,12 @@ export async function startOidc(
 export async function completeOidc(
   settings: NonNullable<ReturnType<typeof readOidcSettings>>,
   query: string,
-  cookie: string
+  cookie: string,
+  logoutMarker = ""
 ) {
   const transaction = openTransaction(cookie, settings.transactionKey);
+  // A pre-logout transaction (including a late /start response) cannot acknowledge a new logout.
+  if ((transaction.logoutMarker || "") !== logoutMarker) throw Error("Session changed since sign-in started");
   const current = new URL(settings.redirectUri);
   current.search = query;
   if (current.searchParams.has("access_token") || current.searchParams.has("id_token"))

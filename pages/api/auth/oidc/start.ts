@@ -1,3 +1,4 @@
+import { LOCAL_LOGOUT_COOKIE, isLocallySignedOut } from "@/lib/localLogout";
 import type { NextApiRequest, NextApiResponse } from "next";
 import {
   readOidcSettings,
@@ -12,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const settings = readOidcSettings();
     if (!settings) return res.status(404).json({ errorCode: "NOT_FOUND" });
-    const start = await startOidc(settings, req.query.returnTo);
+    const start = await startOidc(settings, req.query.returnTo, isLocallySignedOut(req.cookies) ? req.cookies[LOCAL_LOGOUT_COOKIE] : "");
     res.setHeader(
       "Set-Cookie",
       `${TRANSACTION_COOKIE}=${start.cookie}; Path=${TRANSACTION_PATH}; HttpOnly; SameSite=Lax; Max-Age=${TRANSACTION_TTL}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`

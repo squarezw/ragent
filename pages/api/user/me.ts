@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // 顺手把 cookie 续上：老的(仅 localStorage)会话首次加载即可获得 cookie，下载链接随后可用
   const token = getTokenFromRequest(req);
-  if (token) setAuthCookie(res, token);
+  if (token && process.env.OIDC_ENABLED !== "true") setAuthCookie(res, token);
 
   try {
     const client = await pool.connect();

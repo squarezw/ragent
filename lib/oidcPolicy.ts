@@ -8,6 +8,7 @@ export type OidcTransaction = {
   verifier: string;
   returnTo: string;
   createdAt: number;
+  logoutMarker?: string;
 };
 export function safeReturnTo(value: unknown): string {
   if (
