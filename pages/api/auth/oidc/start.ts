@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const settings = readOidcSettings();
     if (!settings) return res.status(404).json({ errorCode: "NOT_FOUND" });
-    const start = await startOidc(settings, req.query.returnTo, isLocallySignedOut(req.cookies) ? req.cookies[LOCAL_LOGOUT_COOKIE] : "");
+    const start = await startOidc(settings, req.query.returnTo, isLocallySignedOut(req.cookies) ? req.cookies[LOCAL_LOGOUT_COOKIE] : "", req.query.reauth === "1");
     res.setHeader(
       "Set-Cookie",
       `${TRANSACTION_COOKIE}=${start.cookie}; Path=${TRANSACTION_PATH}; HttpOnly; SameSite=Lax; Max-Age=${TRANSACTION_TTL}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`

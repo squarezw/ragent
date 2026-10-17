@@ -122,6 +122,7 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
     const start = await client.startOidc(settings, "/chat", logoutMarker);
     authorization = new URL(start.redirectTo).searchParams;
     assert.equal(authorization.get("code_challenge_method"), "S256");
+    assert.equal(authorization.get("prompt"), logoutMarker ? "login" : null);
     const query = new URLSearchParams({
       code: "fixture-code",
       state: stateOverride || authorization.get("state"),
@@ -134,6 +135,9 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
   assert.equal(success.returnTo, "/chat");
   assert.ok(success.ttl > 0 && success.ttl <= 200);
   assert.equal(success.access_token, undefined);
+  const forced = await client.startOidc(settings, "/user?signedOut=1&keep=value#section", "", true);
+  assert.equal(new URL(forced.redirectTo).searchParams.get("prompt"), "login");
+  assert.equal(policy.openTransaction(forced.cookie, settings.transactionKey).returnTo, "/user?keep=value#section");
   const explicit = await attempt("valid", undefined, "current-logout-generation");
   assert.equal(explicit.sub, "stable-uuid", "explicit re-login with matching logout generation succeeds");
   // Exercise the real callback with real verified protocol tokens and a DB mapping fixture.

@@ -26,6 +26,8 @@ export function safeReturnTo(value: unknown): string {
     url.pathname.startsWith("/identity-login")
   )
     return "/";
+  // This logout UI hint must not survive a successful callback and trigger another reauthentication.
+  if (url.searchParams.has("signedOut")) url.searchParams.delete("signedOut");
   return url.pathname + url.search + url.hash;
 }
 export function readOidcSettings(env: Record<string, string | undefined> = process.env) {

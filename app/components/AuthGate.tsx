@@ -100,14 +100,14 @@ export default function AuthGate({
       loggedIn === false &&
       oidcEnabled &&
       !authUnavailable &&
-      !signedOut &&
+      !isPublicPath &&
       !logoutPending &&
       !isLogoutPending()
     ) {
       const returnTo = window.location.pathname + window.location.search;
-      window.location.assign("/api/auth/oidc/start?returnTo=" + encodeURIComponent(returnTo));
+      window.location.assign("/api/auth/oidc/start?returnTo=" + encodeURIComponent(returnTo) + (signedOut ? "&reauth=1" : ""));
     }
-  }, [loggedIn, oidcEnabled, authUnavailable, signedOut, logoutPending]);
+  }, [loggedIn, oidcEnabled, authUnavailable, signedOut, logoutPending, isPublicPath]);
 
   // 处理登出事件
   const handleLogout = useCallback(() => {
@@ -198,23 +198,6 @@ export default function AuthGate({
       </div>
     );
   }
-
-  if (
-    !loggedIn &&
-    oidcEnabled &&
-    mounted &&
-    signedOut
-  )
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <a
-          className="rounded-md bg-primary px-6 py-3 text-primary-foreground"
-          href="/api/auth/oidc/start"
-        >
-          {t("loginButton")}
-        </a>
-      </div>
-    );
 
   if (authUnavailable || (!loggedIn && oidcEnabled))
     return (
