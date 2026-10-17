@@ -17,7 +17,9 @@ function load(file: string, mocks: any = {}) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => ["./localLogout", "@/lib/localLogout"].includes(id) ? load("localLogout.ts") : mocks[id] || require(id),
+      require: (id: string) => ["./localLogout", "@/lib/localLogout"].includes(id) ? load("localLogout.ts") :
+        id === "@/lib/oidcPolicy" ? load("oidcPolicy.ts") :
+        id === "@/lib/oidcRenewal" ? load("oidcRenewal.ts") : mocks[id] || require(id),
       process,
       URL,
       Date,

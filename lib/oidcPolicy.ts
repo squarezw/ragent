@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 export const TRANSACTION_COOKIE = "ragent_oidc_tx";
+export const RENEWAL_TRANSACTION_COOKIE = "ragent_oidc_renewal_tx";
 export const TRANSACTION_PATH = "/api/auth/oidc";
 export const TRANSACTION_TTL = 300;
 export type OidcTransaction = {
@@ -9,6 +10,7 @@ export type OidcTransaction = {
   returnTo: string;
   createdAt: number;
   logoutMarker?: string;
+  renewal?: { mode: "silent" | "popup"; expectedUserId: number; requestId: string };
 };
 export function safeReturnTo(value: unknown): string {
   if (
@@ -108,6 +110,11 @@ export function openTransaction(
     )
   )
     throw Error("Expired transaction");
+  if (transaction.renewal && (
+    !["silent", "popup"].includes(transaction.renewal.mode) ||
+    !Number.isSafeInteger(transaction.renewal.expectedUserId) || transaction.renewal.expectedUserId <= 0 ||
+    !/^[a-f0-9]{32}$/.test(transaction.renewal.requestId)
+  )) throw Error("Invalid renewal transaction");
   transaction.returnTo = safeReturnTo(transaction.returnTo);
   return transaction;
 }

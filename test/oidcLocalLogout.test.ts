@@ -13,7 +13,8 @@ function load(file: string, mocks: any = {}, environment: any = env, globals: an
   require:(id:string)=>{
    if(id in mocks)return mocks[id];
    if(['@/lib/localLogout','./localLogout','./lib/localLogout'].includes(id))return load('lib/localLogout.ts',{},environment);
-   if(id==='@/lib/oidcPolicy')return {TRANSACTION_COOKIE:'ragent_oidc_tx',TRANSACTION_PATH:'/api/auth/oidc'};
+   if(id==='@/lib/oidcRenewal')return load('lib/oidcRenewal.ts',{},environment);
+   if(id==='@/lib/oidcPolicy')return {TRANSACTION_COOKIE:'ragent_oidc_tx',TRANSACTION_PATH:'/api/auth/oidc',RENEWAL_TRANSACTION_COOKIE:'ragent_oidc_renewal_tx'};
    return require(id);
   }
  });return module.exports;

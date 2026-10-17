@@ -3,6 +3,7 @@ import { getUserPermissions } from "@/lib/permissions";
 import { getUserIdFromRequest, getTokenFromRequest, setAuthCookie } from "@/lib/auth";
 import { getCompanyCodeByTenantId } from "@/lib/tenantMapping";
 import pool from "@/lib/db";
+import { decode } from "jsonwebtoken";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
@@ -43,6 +44,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const companyCode = user.tenant_id ? getCompanyCodeByTenantId(user.tenant_id) : undefined;
       const response = {
         ...user,
+        ...(process.env.OIDC_ENABLED === "true" && token ? {
+          auth_session_expires_at: (decode(token) as { exp?: number } | null)?.exp,
+        } : {}),
         pending_tenant:
           user.tenant_id == null &&
           !userPerms?.roles.some((role) => role.name === "超级管理员" && role.isSystem),

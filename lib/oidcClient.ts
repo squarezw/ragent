@@ -3,6 +3,7 @@ import {
   readOidcSettings,
   sealTransaction,
   openTransaction,
+  type OidcTransaction,
   localSessionTtl,
   safeReturnTo,
 } from "./oidcPolicy";
@@ -40,7 +41,8 @@ export async function startOidc(
   settings: NonNullable<ReturnType<typeof readOidcSettings>>,
   returnTo: unknown,
   logoutMarker = "",
-  forceReauthentication = false
+  forceReauthentication = false,
+  renewal?: OidcTransaction["renewal"]
 ) {
   const config = await oidcConfiguration(settings);
   const verifier = oidc.randomPKCECodeVerifier();
@@ -53,12 +55,14 @@ export async function startOidc(
     returnTo: safeReturnTo(returnTo),
     createdAt: Math.floor(Date.now() / 1000),
     logoutMarker,
+    ...(renewal ? { renewal } : {}),
   };
   const url = oidc.buildAuthorizationUrl(config, {
     redirect_uri: settings.redirectUri,
     response_type: "code",
     scope: "openid profile",
-    ...((logoutMarker || forceReauthentication) ? { prompt: "login" } : {}),
+    ...(renewal?.mode === "silent" ? { prompt: "none" } :
+      (logoutMarker || forceReauthentication || renewal?.mode === "popup") ? { prompt: "login" } : {}),
     code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
     code_challenge_method: "S256",
     state,
@@ -93,5 +97,6 @@ export async function completeOidc(
     sub: claims.sub,
     ttl: localSessionTtl(claims, tokens.expires_in),
     returnTo: transaction.returnTo,
+    ...(transaction.renewal ? { renewal: transaction.renewal } : {}),
   };
 }

@@ -1,3 +1,4 @@
+import { ensureSessionCurrent, renewSession } from "@/lib/sessionRenewal";
 import axios from "@/lib/axios";
 import {
   extractSseErrorMessage,
@@ -235,6 +236,8 @@ export function useChatSession() {
       // 立即返回 abort 函数，不等待流式处理完成
       const streamPromise = (async () => {
         try {
+          await ensureSessionCurrent();
+          if (isAborted) return;
           // 使用辅助函数获取认证 headers，复用 axios 的认证逻辑
           const headers = getAuthHeaders();
 
@@ -263,6 +266,10 @@ export function useChatSession() {
           });
 
           if (!response.ok) {
+            if (response.status === 401) {
+              // Renew for the next deliberate send, but never replay this chat/tool request.
+              void renewSession().catch(() => {});
+            }
             throw new Error(`HTTP error! status: ${response.status}`);
           }
 

@@ -1,5 +1,6 @@
 "use client";
-import { isLogoutPending, setCookieAuthMode } from "@/lib/browserAuthMode";
+import { isCookieAuthMode, isLogoutPending, setCookieAuthMode } from "@/lib/browserAuthMode";
+import { notifySessionExpired, reauthenticateSession } from "@/lib/sessionRenewal";
 import { LoginPage } from "@/components/login-page";
 import { getCurrentUser } from "@/hooks/useCurrentUser";
 import { AxiosError } from "axios";
@@ -35,6 +36,9 @@ export default function AuthGate({
   const [signedOut, setSignedOut] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const validationGeneration = useRef(0);
+  const previouslyAuthenticated = useRef(false);
+  const [sessionExpired, setSessionExpired] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const [authUnavailable, setAuthUnavailable] = useState(false);
 
   // 检查是否是公开路径
@@ -78,9 +82,16 @@ export default function AuthGate({
       // 使用全局用户状态检查 token 有效性
       // 这里会触发一次 API 调用，UserProvider 会复用这个结果
       await getCurrentUser();
-      if (generation === validationGeneration.current && !isLogoutPending()) setLoggedIn(true);
+      if (generation === validationGeneration.current && !isLogoutPending()) {
+        previouslyAuthenticated.current = true;
+        setLoggedIn(true);
+      }
     } catch (error) {
       if (generation !== validationGeneration.current) return;
+      if (previouslyAuthenticated.current && cookieMode) {
+        notifySessionExpired(error instanceof AxiosError && error.response?.status === 401 ? "REAUTHENTICATION_REQUIRED" : "SESSION_UNAVAILABLE");
+        return;
+      }
       // 如果验证失败，清除登录状态
       if (error instanceof AxiosError && [401, 403].includes(error.response?.status || 0)) {
         localStorage.removeItem(TOKEN_KEY);
@@ -98,6 +109,7 @@ export default function AuthGate({
   useEffect(() => {
     if (
       loggedIn === false &&
+      !previouslyAuthenticated.current &&
       oidcEnabled &&
       !authUnavailable &&
       !isPublicPath &&
@@ -111,6 +123,10 @@ export default function AuthGate({
 
   // 处理登出事件
   const handleLogout = useCallback(() => {
+    if (previouslyAuthenticated.current && isCookieAuthMode()) {
+      notifySessionExpired();
+      return;
+    }
     setLoggedIn(false);
   }, []);
 
@@ -153,6 +169,17 @@ export default function AuthGate({
     };
   }, [isPublicPath, validateToken, handleLogout]);
 
+  useEffect(() => {
+    const expired = (event: Event) => setSessionExpired((event as CustomEvent).detail?.code || "REAUTHENTICATION_REQUIRED");
+    const restored = () => setSessionExpired(null);
+    window.addEventListener("auth:session-expired", expired);
+    window.addEventListener("auth:session-restored", restored);
+    return () => {
+      window.removeEventListener("auth:session-expired", expired);
+      window.removeEventListener("auth:session-restored", restored);
+    };
+  }, []);
+
   const handleLogin = useCallback(() => {
     setLoggedIn(true);
     if (typeof window !== "undefined") {
@@ -185,6 +212,23 @@ export default function AuthGate({
   // 如果是公开路径，直接返回内容，不需要认证
   if (isPublicPath) {
     return <>{children}</>;
+  }
+
+  // A verified user's chat stays mounted while credentials renew or recovery is required.
+  if (previouslyAuthenticated.current && oidcEnabled) {
+    return <>
+      {children}
+      {sessionExpired && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" role="alertdialog" aria-modal="true" aria-label={t("sessionExpiredTitle")}>
+        <div className="bg-card rounded-lg p-6 max-w-md space-y-4">
+          <h2 className="font-semibold">{t("sessionExpiredTitle")}</h2>
+          <p>{t(sessionExpired === "ACCOUNT_CHANGED" ? "sessionAccountChanged" : sessionExpired === "SESSION_UNAVAILABLE" ? "sessionUnavailable" : "sessionExpiredMessage")}</p>
+          <button className="rounded-md bg-primary px-6 py-3 text-primary-foreground" disabled={recovering} onClick={() => {
+            setRecovering(true);
+            void reauthenticateSession().catch(() => {}).finally(() => setRecovering(false));
+          }}>{t("loginButton")}</button>
+        </div>
+      </div>}
+    </>;
   }
 
   // 在客户端挂载前，显示加载状态以确保服务端和客户端初始渲染一致

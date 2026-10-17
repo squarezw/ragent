@@ -1,3 +1,5 @@
+import { ensureSessionCurrent, renewSession, SessionRenewalError } from "./sessionRenewal";
+import { getAuthenticatedSession } from "./browserAuthMode";
 import axios from "axios";
 import { toast } from "sonner";
 import { getApiErrorMessage } from "./apiError";
@@ -7,7 +9,8 @@ import { isCookieAuthMode } from "./browserAuthMode";
 
 const instance = axios.create();
 
-instance.interceptors.request.use((config) => {
+instance.interceptors.request.use(async (config) => {
+  if (typeof window !== "undefined" && isCookieAuthMode() && !config.url?.includes("/api/user/me") && !config.url?.startsWith("/api/auth/")) await ensureSessionCurrent();
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("ragent_token");
     if (token && !isCookieAuthMode()) {
@@ -27,7 +30,19 @@ instance.interceptors.response.use(
     }
     return response;
   },
-  (error) => {
+  async (error) => {
+    if (error instanceof SessionRenewalError) return Promise.reject(error);
+    if (typeof window !== "undefined" && error.response?.status === 401 && isCookieAuthMode() && getAuthenticatedSession()) {
+      const config = error.config;
+      if (!config?._sessionRetried && !config?.url?.includes("/api/user/me")) {
+        try {
+          await renewSession();
+          if (["get", "head"].includes((config.method || "get").toLowerCase())) return instance.request({ ...config, _sessionRetried: true });
+        } catch (renewalError) { return Promise.reject(renewalError); }
+      }
+      // A write is never replayed. A second resource401 is surfaced without signing out the entire app.
+      return Promise.reject(error);
+    }
     // 对于 blob 响应类型的错误，保留原始错误以便前端处理
     if (error.config?.responseType === "blob" && error.response?.data) {
       // blob 错误响应需要特殊处理，让前端代码处理

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { localLogoutCookie } from "@/lib/localLogout";
-import { TRANSACTION_COOKIE, TRANSACTION_PATH } from "@/lib/oidcPolicy";
+import { TRANSACTION_COOKIE, TRANSACTION_PATH, RENEWAL_TRANSACTION_COOKIE } from "@/lib/oidcPolicy";
 import type { NextApiRequest, NextApiResponse } from "next";
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader("Cache-Control", "no-store");
@@ -20,6 +20,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     [
       `ragent_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
       `${TRANSACTION_COOKIE}=; Path=${TRANSACTION_PATH}; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+      `${RENEWAL_TRANSACTION_COOKIE}=; Path=${TRANSACTION_PATH}; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
       ...(process.env.OIDC_ENABLED === "true" ? [localLogoutCookie(false, randomBytes(16).toString("hex"))] : []),
     ]
   );

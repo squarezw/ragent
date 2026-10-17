@@ -99,5 +99,9 @@
   "phoneCredentialExpired": "Your phone verification has expired. Request a new code.",
   "phoneIdentityRequired": "This identity has no valid phone number. Use phone verification to sign in.",
   "phonePasswordTooLong": "This password is too long. Shorten it and try again.",
-  "identityUnavailable": "Identity sign-in is unavailable. Please refresh and try again."
+  "identityUnavailable": "Identity sign-in is unavailable. Please refresh and try again.",
+  "sessionExpiredTitle": "Sign in to continue",
+  "sessionExpiredMessage": "Your session needs verification. Your conversation is kept here. Sign in in the new window to continue.",
+  "sessionUnavailable": "Sign-in is temporarily unavailable. Your conversation is kept here. Try again when the service is available.",
+  "sessionAccountChanged": "A different account was used. Sign in with the original account to continue this conversation."
 }
