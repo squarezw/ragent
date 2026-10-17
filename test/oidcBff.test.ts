@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { createRequire } from "node:module";
+const nodeRequire = createRequire(import.meta.url);
 function load(file: string, mocks: any) {
   const module = { exports: {} as any };
   vm.runInNewContext(
@@ -12,7 +14,9 @@ function load(file: string, mocks: any) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => id === "@/lib/localLogout" ? load("lib/localLogout.ts", {}) : mocks[id],
+      require: (id: string) => id === "@/lib/localLogout" ? load("lib/localLogout.ts", {}) :
+        id === "@/lib/oidcRenewal" ? load("lib/oidcRenewal.ts", {}) :
+        id === "@/lib/oidcPolicy" ? load("lib/oidcPolicy.ts", {}) : mocks[id] || nodeRequire(id),
       process: { env: { NODE_ENV: "test" } },
       URL,
       Date,

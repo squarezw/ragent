@@ -99,5 +99,9 @@
   "phoneCredentialExpired": "手机号验证凭据已失效，请重新获取验证码。",
   "phoneIdentityRequired": "认证身份未提供有效手机号，请使用手机验证码登录。",
   "phonePasswordTooLong": "密码过长，请缩短后重试。",
-  "identityUnavailable": "统一登录暂时不可用，请刷新后重试。"
+  "identityUnavailable": "统一登录暂时不可用，请刷新后重试。",
+  "sessionExpiredTitle": "请重新验证登录",
+  "sessionExpiredMessage": "登录需要重新验证，当前对话会保留。请在新窗口登录后继续。",
+  "sessionUnavailable": "登录服务暂时不可用，当前对话会保留。请稍后重试。",
+  "sessionAccountChanged": "登录账号与当前对话不一致，请使用原账号登录后继续。"
 }

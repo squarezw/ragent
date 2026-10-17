@@ -1,6 +1,6 @@
 "use client";
 
-import { setLogoutPending } from "@/lib/browserAuthMode";
+import { registerAuthenticatedSession, setLogoutPending } from "@/lib/browserAuthMode";
 
 import { clearChatSelectionCache, clearSwrCache } from "@/lib/authUtils";
 import axios from "@/lib/axios";
@@ -35,6 +35,7 @@ const getCurrentUser = async () => {
     if (generation !== sessionGeneration || logoutInProgress || locallySignedOut)
       throw new Error("Session changed");
     globalUser = res.data;
+    registerAuthenticatedSession(res.data);
     globalUserInitialized = true;
     return res.data;
   });
@@ -113,6 +114,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     globalUserInitialized = false;
     await fetchUser();
   };
+
+  useEffect(() => {
+    const restored = (event: Event) => {
+      const next = (event as CustomEvent).detail?.user;
+      if (!logoutInProgress && !locallySignedOut && next?.id === globalUser?.id) {
+        globalUser = next;
+        setUser(next);
+      }
+    };
+    window.addEventListener("auth:session-restored", restored);
+    return () => window.removeEventListener("auth:session-restored", restored);
+  }, []);
 
   useEffect(() => {
     // 只有在没有初始化过且没有用户数据时才获取
