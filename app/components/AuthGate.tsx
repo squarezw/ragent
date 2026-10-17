@@ -1,10 +1,10 @@
 "use client";
-import { setCookieAuthMode } from "@/lib/browserAuthMode";
+import { isLogoutPending, setCookieAuthMode } from "@/lib/browserAuthMode";
 import { LoginPage } from "@/components/login-page";
 import { getCurrentUser } from "@/hooks/useCurrentUser";
 import { AxiosError } from "axios";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { MOBILE_LANDING_PATH, shouldLandOnChat } from "@/lib/postLoginLanding";
 import type { SiteConfig } from "../layout";
@@ -32,6 +32,9 @@ export default function AuthGate({
   const [isValidating, setIsValidating] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const validationGeneration = useRef(0);
   const [authUnavailable, setAuthUnavailable] = useState(false);
 
   // 检查是否是公开路径
@@ -44,7 +47,9 @@ export default function AuthGate({
   const validateToken = useCallback(async () => {
     if (typeof window === "undefined") return;
 
+    const generation = ++validationGeneration.current;
     setIsValidating(true);
+    setAuthUnavailable(false);
     let cookieMode = false;
     try {
       const methods = await fetch("/api/auth/methods", {
@@ -53,9 +58,16 @@ export default function AuthGate({
       });
       if (!methods.ok) throw Error("Authentication configuration unavailable");
       const config = await methods.json();
+      if (generation !== validationGeneration.current) return;
       cookieMode = config.oidcEnabled === true;
       setCookieAuthMode(cookieMode);
       setOidcEnabled(cookieMode);
+      const explicitlySignedOut = cookieMode && (config.signedOut === true || new URLSearchParams(window.location.search).get("signedOut") === "1");
+      setSignedOut(explicitlySignedOut);
+      if (explicitlySignedOut) {
+        setLoggedIn(false);
+        return;
+      }
       if (
         !cookieMode &&
         (!localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LOGIN_KEY) !== "true")
@@ -66,8 +78,9 @@ export default function AuthGate({
       // 使用全局用户状态检查 token 有效性
       // 这里会触发一次 API 调用，UserProvider 会复用这个结果
       await getCurrentUser();
-      setLoggedIn(true);
+      if (generation === validationGeneration.current && !isLogoutPending()) setLoggedIn(true);
     } catch (error) {
+      if (generation !== validationGeneration.current) return;
       // 如果验证失败，清除登录状态
       if (error instanceof AxiosError && [401, 403].includes(error.response?.status || 0)) {
         localStorage.removeItem(TOKEN_KEY);
@@ -78,7 +91,7 @@ export default function AuthGate({
         setLoggedIn(false);
       }
     } finally {
-      setIsValidating(false);
+      if (generation === validationGeneration.current) setIsValidating(false);
     }
   }, []);
 
@@ -87,12 +100,14 @@ export default function AuthGate({
       loggedIn === false &&
       oidcEnabled &&
       !authUnavailable &&
-      new URLSearchParams(window.location.search).get("signedOut") !== "1"
+      !signedOut &&
+      !logoutPending &&
+      !isLogoutPending()
     ) {
       const returnTo = window.location.pathname + window.location.search;
       window.location.assign("/api/auth/oidc/start?returnTo=" + encodeURIComponent(returnTo));
     }
-  }, [loggedIn, oidcEnabled, authUnavailable]);
+  }, [loggedIn, oidcEnabled, authUnavailable, signedOut, logoutPending]);
 
   // 处理登出事件
   const handleLogout = useCallback(() => {
@@ -114,12 +129,25 @@ export default function AuthGate({
       handleLogout();
     };
 
+    const handleLogoutStart = () => {
+      ++validationGeneration.current;
+      setLogoutPending(true);
+      setIsValidating(false);
+    };
+    const handleLogoutFailed = () => {
+      setLogoutPending(false);
+      void validateToken();
+    };
     if (typeof window !== "undefined") {
+      window.addEventListener("auth:logout-start", handleLogoutStart);
+      window.addEventListener("auth:logout-failed", handleLogoutFailed);
       window.addEventListener("auth:logout", handleAuthLogout);
     }
 
     return () => {
       if (typeof window !== "undefined") {
+        window.removeEventListener("auth:logout-start", handleLogoutStart);
+        window.removeEventListener("auth:logout-failed", handleLogoutFailed);
         window.removeEventListener("auth:logout", handleAuthLogout);
       }
     };
@@ -175,8 +203,7 @@ export default function AuthGate({
     !loggedIn &&
     oidcEnabled &&
     mounted &&
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("signedOut") === "1"
+    signedOut
   )
     return (
       <div className="flex min-h-screen items-center justify-center">

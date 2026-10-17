@@ -14,7 +14,7 @@ function load(file: string, mocks: any, env: any = {}) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => mocks[id] || require(id),
+      require: (id: string) => ["./localLogout", "./lib/localLogout"].includes(id) ? load("lib/localLogout.ts", {}, env) : mocks[id] || require(id),
       process: { env },
       Date,
       Headers,
@@ -69,7 +69,7 @@ test("middleware only bridges same-app Cookie auth in OIDC mode, leaving auth en
     );
     m.middleware({
       headers: new Headers({ authorization: "Bearer old" }),
-      cookies: { get: (name: string) => ({ value: name === "locale" ? "en" : "cookie-jwt" }) },
+      cookies: { get: (name: string) => name === "locale" ? { value: "en" } : name === "ragent_token" ? { value: "cookie-jwt" } : undefined },
       nextUrl: { pathname: path },
     });
     assert.equal(forwarded.get("authorization"), expected);

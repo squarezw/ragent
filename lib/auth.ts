@@ -1,3 +1,4 @@
+import { isLocallySignedOut } from "./localLogout";
 import jwt from "jsonwebtoken";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -5,6 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const AUTH_COOKIE = "ragent_token";
 
 export function getTokenFromRequest(req: NextApiRequest): string | null {
+  if (isLocallySignedOut(req.cookies)) return null;
   if (process.env.OIDC_ENABLED === "true" && req.cookies?.[AUTH_COOKIE])
     return req.cookies[AUTH_COOKIE];
   const auth = req.headers.authorization || "";

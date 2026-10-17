@@ -1,3 +1,4 @@
+import { LOCAL_LOGOUT_COOKIE, isLocallySignedOut, localLogoutCookie } from "@/lib/localLogout";
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import {
@@ -22,7 +23,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const verified = await completeOidc(
       settings,
       (req.url || "").split("?").slice(1).join("?"),
-      encrypted
+      encrypted,
+      isLocallySignedOut(req.cookies) ? req.cookies[LOCAL_LOGOUT_COOKIE] : ""
     );
     const result = await pool.query(
       "SELECT u.id,u.status FROM identity_subjects s JOIN users u ON u.id=s.user_id WHERE s.subject=$1",
@@ -41,6 +43,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         (v) => !v.startsWith(TRANSACTION_COOKIE + "=")
       ),
       clear,
+      // An older in-flight callback without this marker must never erase a later logout.
+      ...(isLocallySignedOut(req.cookies) ? [localLogoutCookie(true)] : []),
     ]);
     return res.redirect(303, verified.returnTo);
   } catch {

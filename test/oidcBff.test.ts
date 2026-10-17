@@ -12,7 +12,7 @@ function load(file: string, mocks: any) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => mocks[id],
+      require: (id: string) => id === "@/lib/localLogout" ? load("lib/localLogout.ts", {}) : mocks[id],
       process: { env: { NODE_ENV: "test" } },
       URL,
       Date,
