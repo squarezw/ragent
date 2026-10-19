@@ -1,7 +1,7 @@
 # Optional local development dependency; no account database or backend included.
 name: ragent-public-auth
 x-auth: &auth
-  image: docker.io/squarezw/ragent-auth@sha256:7e7c69e9ddaa9b3ede580487aec6ef154fb2f830fb62177e8d2e222336d67aa7
+  image: ${AUTH_IMAGE:-docker.io/squarezw/ragent-auth@sha256:7e7c69e9ddaa9b3ede580487aec6ef154fb2f830fb62177e8d2e222336d67aa7}
   platform: linux/amd64
   user: "0:0"
   init: true

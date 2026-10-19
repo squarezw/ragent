@@ -66,3 +66,5 @@ Compose 自动先创建协议库，再使用认证镜像内自带迁移，最后
 默认配置使用密码登录；短信/手机注册还需要后端对应能力以及 CloudBase。首次 auth:init 前可提供公开环境 ID：`export AUTH_CLOUDBASE_ENV_ID=your-public-env-id`，本工具不生成或配置任何 CloudBase 服务端密钥。
 
 `dev:local` 不展开环境文件中的 `$VAR` / `${VAR}` 引用；有效配置含此引用时会只提示变量名并停止。请提供已解析的值，或用进程环境传入已解析值；字面美元符号在环境文件中可写作 `\$`。带 `#`、空格的 secret 请按 dotenv 规则加引号。
+
+如需临时验证已审查的认证镜像，可在已忽略的 `.local/auth/compose.env` 中设置 `AUTH_IMAGE=your-reviewed-image:tag`，再按正常启动流程使用。该项同时作用于认证服务和迁移；省略时仍使用固定的公开 digest，日常使用推荐保留默认值。此覆盖不会构建镜像，请先自行准备已审查的镜像。
