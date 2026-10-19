@@ -50,3 +50,9 @@ docker/certs/
 # font binaries themselves.
 docker/onlyoffice/fonts/*
 !docker/onlyoffice/fonts/.keep
+
+# Local auth credentials and protocol configuration
+/.local/
+/.env.local
+/.env.local-*.tmp
+/.next-local/

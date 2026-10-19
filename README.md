@@ -106,6 +106,21 @@ pnpm install
 pnpm dev
 ```
 
+### 本地 Docker 统一登录（可选）
+
+不改认证源码时，可使用本仓库提供的 `pnpm auth:init` / `pnpm auth:up` 启动独立认证镜像。仍需已运行的后端账户桥接及共享账户数据库配置；详见[本地 Docker 统一登录](docs/local-auth-docker.md)。
+
+已有兼容后端账户桥接、完成迁移的共享用户库后：
+
+```bash
+pnpm install
+pnpm dev:local
+```
+
+首次运行会按缺项询问数据库、匹配后端的 JWT/OnlyOffice 密钥、API 地址、桥接地址及其现有 token（密钥隐藏输入），生成独立 auth 配置，备份并自动合并 OIDC 设置到 `.env.local`，启动 Docker 并等待健康，然后运行前端。已有 `.env` / `.env.local` 值会复用；再次执行直接启动。`Ctrl+C` 仅停止本次前端，`pnpm auth:down` 显式停止 Docker auth。
+
+打开 http://127.0.0.1:3000/chat 发起登录。`pnpm dev` 保持原行为；手动分步启动仍可使用 `pnpm auth:init` / `pnpm auth:up`。非交互环境需预先设置缺少的环境变量，详见[本地 Docker 统一登录](docs/local-auth-docker.md)。
+
 ### Tests & Checks
 
 ```bash
