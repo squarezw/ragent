@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint:biome": "biome lint .",
@@ -16,7 +16,13 @@
     "check": "biome check --write .",
     "check:ci": "biome check .",
     "check:i18n": "node scripts/check-i18n-keys.js",
-    "check:i18n:missing": "node scripts/check-missing-translations.js"
+    "check:i18n:missing": "node scripts/check-missing-translations.js",
+    "auth:init": "node scripts/local-auth.mjs init",
+    "auth:up": "node scripts/local-auth.mjs up",
+    "auth:down": "node scripts/local-auth.mjs down",
+    "auth:logs": "node scripts/local-auth.mjs logs",
+    "auth:status": "node scripts/local-auth.mjs status",
+    "dev:local": "node scripts/dev-local.mjs"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "^2.32.0",

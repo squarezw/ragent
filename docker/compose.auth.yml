@@ -1,0 +1,62 @@
+# Optional local development dependency; no account database or backend included.
+name: ragent-public-auth
+x-auth: &auth
+  image: docker.io/squarezw/ragent-auth@sha256:7e7c69e9ddaa9b3ede580487aec6ef154fb2f830fb62177e8d2e222336d67aa7
+  platform: linux/amd64
+  user: "0:0"
+  init: true
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  entrypoint: [node, /run/auth/runtime.mjs]
+  volumes:
+    - ../.local/auth/runtime.json:/run/auth/runtime.json:ro
+    - ./auth/runtime.mjs:/run/auth/runtime.mjs:ro
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+services:
+  auth-db:
+    image: postgres:16.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_DB: auth_protocol
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    volumes:
+      - auth-protocol:/var/lib/postgresql/data
+      - ../.local/auth/postgres-password:/run/secrets/postgres-password:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U auth -d auth_protocol"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  auth-migrate:
+    <<: *auth
+    command: [migrate]
+    depends_on:
+      auth-db: {condition: service_healthy}
+  auth:
+    <<: *auth
+    restart: unless-stopped
+    depends_on:
+      auth-migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8020/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  auth-proxy:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    depends_on:
+      auth: {condition: service_healthy}
+    ports: ["127.0.0.1:${AUTH_PORT:-8021}:8021"]
+    volumes:
+      - ./auth/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+volumes:
+  auth-protocol:
