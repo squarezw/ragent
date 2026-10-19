@@ -1,5 +1,7 @@
 # RAgent AI Platform
 
+Current version: **0.5.3**. See the [release notes](docs/RELEASE_NOTES.md#053---2026-10-19) for highlights and changes.
+
 An enterprise AI agent platform (智能体中台) built with Next.js. It lets organizations build and operate AI agent applications on top of their own knowledge and business processes — from RAG-powered knowledge bases and intelligent Q&A to visual workflow orchestration, process management, and multi-tenant administration.
 
 ![RAgent screenshot](docs/assets/screenshot03.png)
@@ -13,9 +15,12 @@ An enterprise AI agent platform (智能体中台) built with Next.js. It lets or
 - 🔄 **Workflow Orchestration** — visual workflow editor for multi-step automation
 - ⏰ **Automation** — schedule digital employees to run on a timetable or trigger them from incoming email
 - 📋 **Process Management** — business process trees, document review and revision flows, handbook generation
-- 🧩 **Skills** — package instructions plus the scripts and files an agent needs, review them, and bind them to a digital employee; each user supplies their own credentials
+- 🧩 **Skills** — package instructions, scripts and reference files; sync drafts from GitHub, review and publish them, and bind them to digital employees; each user supplies their own credentials
 - 🧰 **Tools** — MCP server registration and management. Native tools ship with the code and are authorized there, so there is nothing to bind for them
 - 👥 **Multi-tenant Support** — organization management with a complete RBAC permission system
+- 🔐 **Unified Sign-in** — optional OIDC integration with a separately deployed auth service, phone sign-in and registration with a configured backend/SMS provider, and session renewal
+- 💳 **Personal Credits** — allocate tenant credits to individual users and view their available balances
+- 🖼️ **Chat Attachments** — upload images for capable models and revisit uploaded files, including PDF previews, in conversation details
 - 📄 **Document Preview & Editing** — Office file preview (kkFileView) and online editing (OnlyOffice)
 - 📊 **Monitoring** — usage and license status dashboards
 - 🌐 **i18n** — Simplified Chinese and English out of the box
@@ -64,13 +69,14 @@ This repository is the **web frontend**. A full deployment consists of:
 | Service | Role | Configured via |
 |---|---|---|
 | ragent (this repo) | Next.js web app + API routes | — |
-| ragent-service | FastAPI backend (RAG pipeline, LLM calls, skill sandbox) | `EXTERNAL_API_BASE_URL` |
+| ragent-service | FastAPI backend (RAG pipeline, LLM calls, skill sandbox, accounts and identity bridge) | `EXTERNAL_API_BASE_URL` |
+| [ragent-auth](https://github.com/squarezw/ragent-auth) (optional) | Independent OIDC issuer; calls the backend account bridge | `OIDC_ENABLED`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` |
 | PostgreSQL + pgvector | Data and vector storage | `DATABASE_URL` |
 | OnlyOffice Document Server | Online editing, docx→PDF conversion | `ONLYOFFICE_INTERNAL_URL`, `ONLYOFFICE_JWT_SECRET` |
 | kkFileView | File preview | `KKFILEVIEW_BASE_URL` |
 | markdown-to-pdf | PDF report generation | `PDF_SERVICE_URL` |
 
-The auxiliary services are wired together in `docker/docker-compose.yml` (production) and `docker/docker-compose.dev.yml` (development).
+The auxiliary services are wired together in `docker/docker-compose.yml` (production) and `docker/docker-compose.dev.yml` (development). Optional local auth has its own stack in `docker/compose.auth.yml`; it requires an existing backend account bridge and is not started by `ragent-service`.
 
 ## Tech Stack
 
