@@ -170,3 +170,11 @@ scripts/      # Data import / maintenance scripts
 
 squarezw
 www.ragents.net
+
+### Browser login session duration
+
+After a verified OIDC callback and active-account lookup, RAgent issues its own
+seven-day HttpOnly browser session. The short-lived identity/access token is used
+to verify the login and does not shorten that application session. Explicit logout
+and existing account-status checks still apply. Previously issued short sessions
+keep their original expiration; completing sign-in again issues a seven-day session.

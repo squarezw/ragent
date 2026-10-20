@@ -110,11 +110,14 @@ export function openTransaction(
     )
   )
     throw Error("Expired transaction");
-  if (transaction.renewal && (
-    !["silent", "popup"].includes(transaction.renewal.mode) ||
-    !Number.isSafeInteger(transaction.renewal.expectedUserId) || transaction.renewal.expectedUserId <= 0 ||
-    !/^[a-f0-9]{32}$/.test(transaction.renewal.requestId)
-  )) throw Error("Invalid renewal transaction");
+  if (
+    transaction.renewal &&
+    (!["silent", "popup"].includes(transaction.renewal.mode) ||
+      !Number.isSafeInteger(transaction.renewal.expectedUserId) ||
+      transaction.renewal.expectedUserId <= 0 ||
+      !/^[a-f0-9]{32}$/.test(transaction.renewal.requestId))
+  )
+    throw Error("Invalid renewal transaction");
   transaction.returnTo = safeReturnTo(transaction.returnTo);
   return transaction;
 }
@@ -123,8 +126,14 @@ export function localSessionTtl(
   expiresIn: number | undefined,
   now = Math.floor(Date.now() / 1000)
 ): number {
-  if (!Number.isFinite(claims.exp)) throw Error("ID token expiry required");
-  const ttl = Math.floor(Math.min(claims.exp! - now, expiresIn ?? 3600, 3600));
-  if (ttl <= 0) throw Error("Expired identity proof");
-  return ttl;
+  if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp))
+    throw Error("ID token expiry required");
+  if (
+    claims.exp <= now ||
+    (expiresIn !== undefined && (!Number.isFinite(expiresIn) || expiresIn <= 0))
+  )
+    throw Error("Expired identity proof");
+  // A verified OIDC token proves this login; its short lifetime is not the browser session lifetime.
+  // Issue our own seven-day session only after protocol verification and active-account mapping.
+  return 60 * 60 * 24 * 7;
 }
