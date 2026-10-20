@@ -5,7 +5,7 @@ import test from "node:test";
 import ts from "typescript";
 import { PreviewLinkCache } from "../lib/previewLinkCache.ts";
 
-function harness() {
+function harness(initialMimetype = "application/pdf") {
   const slots: any[] = [],
     effects: any[] = [],
     pending: any[] = [],
@@ -19,11 +19,11 @@ function harness() {
     session = 0,
     logout = false;
   const user = { id: 1, tenant_id: 2 };
-  const file = (id: string) => ({
+  const file = (id: string, mimetype = initialMimetype) => ({
     id,
     filename: `${id}.pdf`,
     originalname: `${id}.pdf`,
-    mimetype: "application/pdf",
+    mimetype,
   });
   let props: any = { file: file("a"), open: true, onOpenChange() {} };
   let tree: any;
@@ -170,6 +170,21 @@ function harness() {
       button.props.onClick();
       render();
     },
+    imageFailure() {
+      function visit(node: any): any {
+        if (Array.isArray(node)) return node.map(visit).find(Boolean);
+        if (!node?.props) return;
+        if (node.type === "img") return node;
+        return visit(node.props.children);
+      }
+      const image = visit(tree);
+      assert.ok(image);
+      assert.equal(image.props.referrerPolicy, "no-referrer");
+      return () => {
+        image.props.onError({ currentTarget: { getAttribute: () => image.props.src } });
+        render();
+      };
+    },
     file(id: string) {
       props = { ...props, file: file(id) };
       render();
@@ -266,4 +281,41 @@ test("direct PDF uses proxy token hints; compatibility choice survives refresh a
   h.file("b");
   await h.resolve("https://bucket.example/b.pdf", 600, 0, "/api/file-preview/stream?token=b");
   assert.deepEqual(h.urls(), ["https://bucket.example/b.pdf"]);
+});
+
+
+test("image errors fall back once and keep proxy choice through refresh", async () => {
+  const h = harness("image/png");
+  const proxy = "/api/file-preview/stream?token=image";
+  await h.resolve("https://bucket.example/a.png", 600, 0, proxy);
+  const directFailure = h.imageFailure();
+  directFailure();
+  assert.deepEqual(h.urls(), [proxy]);
+  directFailure();
+  assert.deepEqual(h.urls(), [proxy]);
+  h.refresh();
+  assert.equal(h.calls[1].previousToken, "image");
+  const nextProxy = "/api/file-preview/stream?token=next-image";
+  await h.resolve("https://bucket.example/new.png", 600, 0, nextProxy);
+  assert.deepEqual(h.urls(), [nextProxy]);
+  h.imageFailure()();
+  assert.deepEqual(h.urls(), []);
+});
+
+test("late image errors cannot replace another file or revive closed or logged-out previews", async () => {
+  const h = harness("image/jpeg");
+  await h.resolve("https://bucket.example/a.jpg", 600, 0, "/api/file-preview/stream?token=a");
+  const oldFailure = h.imageFailure();
+  h.file("b");
+  await h.resolve("https://bucket.example/b.jpg", 600, 0, "/api/file-preview/stream?token=b");
+  oldFailure();
+  assert.deepEqual(h.urls(), ["https://bucket.example/b.jpg"]);
+  for (const action of ["close", "logout"]) {
+    const isolated = harness("image/png");
+    await isolated.resolve("https://bucket.example/a.png", 600, 0, "/api/file-preview/stream?token=a");
+    const failure = isolated.imageFailure();
+    if (action === "close") isolated.open(false); else isolated.logout();
+    failure();
+    assert.deepEqual(isolated.urls(), []);
+  }
 });
