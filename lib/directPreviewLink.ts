@@ -32,7 +32,33 @@ export function pdfDisposition(filename: string | null): string {
   return `inline; filename="document.pdf"; filename*=UTF-8''${encoded}`;
 }
 
-export function createDirectPreviewResolver(capacity = 200) {
+export async function inspectDirectPdfResponse(
+  url: string,
+  signal: AbortSignal,
+  request: typeof fetch = fetch
+): Promise<boolean> {
+  const response = await request(url, {
+    headers: { Range: "bytes=0-0" },
+    signal,
+    redirect: "error",
+  });
+  try {
+    return (
+      (response.status === 200 || response.status === 206) &&
+      response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ===
+        "application/pdf" &&
+      /^inline(?:;|$)/i.test(response.headers.get("content-disposition")?.trim() || "") &&
+      response.headers.get("x-cos-force-download")?.toLowerCase() !== "true"
+    );
+  } finally {
+    await response.body?.cancel();
+  }
+}
+
+export function createDirectPreviewResolver(
+  capacity = 200,
+  inspect: (url: string, signal: AbortSignal) => Promise<boolean> = inspectDirectPdfResponse
+) {
   const cache = new Map<string, { url: string; expiresAt: number }>();
   return async (
     proxy: ProxyLink,
@@ -52,6 +78,7 @@ export function createDirectPreviewResolver(capacity = 200) {
     cache.delete(proxy.url);
     try {
       const disposition = pdfDisposition(file.filename);
+      const signal = AbortSignal.timeout(3000);
       const { url } = await sign(
         {
           objectKey: file.objectKey,
@@ -59,7 +86,7 @@ export function createDirectPreviewResolver(capacity = 200) {
           responseContentDisposition: disposition,
           responseContentType: "application/pdf",
         },
-        { signal: AbortSignal.timeout(3000) }
+        { signal }
       );
       const parsed = new URL(url);
       // An older gateway can silently ignore new request fields. Keep proxy delivery in that case.
@@ -80,7 +107,7 @@ export function createDirectPreviewResolver(capacity = 200) {
       const expiresAt = Math.min(now + proxy.expiresIn * 1000, Date.parse(date) + ttl * 1000);
       if (!Number.isFinite(expiresAt)) return proxy;
       const expiresIn = Math.floor((expiresAt - Date.now()) / 1000);
-      if (expiresIn <= 120) return proxy;
+      if (expiresIn <= 120 || !(await inspect(url, signal))) return proxy;
       for (const [key, entry] of cache) if (entry.expiresAt <= now) cache.delete(key);
       cache.set(proxy.url, { url, expiresAt });
       while (cache.size > capacity) {
