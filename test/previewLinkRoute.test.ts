@@ -71,7 +71,9 @@ test("preview renewal authenticates and checks live dataset access before accept
       },
     },
     "@/lib/previewLinkPolicy": { createPreviewLink, previewRevision },
-    "@/lib/directPreviewLink": { resolveDirectPreviewLink: createDirectPreviewResolver() },
+    "@/lib/directPreviewLink": {
+      resolveDirectPreviewLink: createDirectPreviewResolver(200, async () => true),
+    },
     "@/lib/ossClient": {
       ossClient: {
         sign: async (request: any) => {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createDirectPreviewResolver, pdfDisposition } from "../lib/directPreviewLink.ts";
+import {
+  createDirectPreviewResolver,
+  inspectDirectPdfResponse,
+  pdfDisposition,
+} from "../lib/directPreviewLink.ts";
 
 const file = {
   objectKey: "knowledge/test.pdf",
@@ -36,7 +40,7 @@ test("UTF8 filename is encoded as an ASCII inline response header without inject
 });
 
 test("direct PDF signatures remain stable and do not renew their expiration", async () => {
-  const resolve = createDirectPreviewResolver();
+  const resolve = createDirectPreviewResolver(200, async () => true);
   let calls = 0;
   const signer = async (request: Parameters<typeof signed>[0]) => {
     calls++;
@@ -52,7 +56,7 @@ test("direct PDF signatures remain stable and do not renew their expiration", as
 });
 
 test("legacy files and non-PDF files never invoke direct signing", async () => {
-  const resolve = createDirectPreviewResolver();
+  const resolve = createDirectPreviewResolver(200, async () => true);
   const fail = async () => {
     throw new Error("must not sign");
   };
@@ -67,18 +71,20 @@ test("old gateways, signing errors and unsigned/unsafe links retain proxy delive
     "javascript:alert(1)",
   ]) {
     assert.deepEqual(
-      await createDirectPreviewResolver()(proxy, file, async () => ({ url: value })),
+      await createDirectPreviewResolver(200, async () => true)(proxy, file, async () => ({
+        url: value,
+      })),
       proxy
     );
   }
   assert.deepEqual(
-    await createDirectPreviewResolver()(proxy, file, async () => {
+    await createDirectPreviewResolver(200, async () => true)(proxy, file, async () => {
       throw new Error("offline");
     }),
     proxy
   );
   assert.deepEqual(
-    await createDirectPreviewResolver()(proxy, file, async (req) => {
+    await createDirectPreviewResolver(200, async () => true)(proxy, file, async (req) => {
       const result = signed(req);
       const url = new URL(result.url);
       url.searchParams.set("response-content-type", "text/html");
@@ -90,19 +96,23 @@ test("old gateways, signing errors and unsigned/unsafe links retain proxy delive
 
 test("expired, nearly expired and excessively long signatures fall back", async () => {
   for (const ttl of [0, 120, 3600]) {
-    const result = await createDirectPreviewResolver()(proxy, file, async (req) =>
-      signed({ ...req, expiresIn: ttl })
+    const result = await createDirectPreviewResolver(200, async () => true)(
+      proxy,
+      file,
+      async (req) => signed({ ...req, expiresIn: ttl })
     );
     assert.deepEqual(result, proxy);
   }
-  const result = await createDirectPreviewResolver()(proxy, file, async (req) =>
-    signed(req, Date.now() - 3600_000)
+  const result = await createDirectPreviewResolver(200, async () => true)(
+    proxy,
+    file,
+    async (req) => signed(req, Date.now() - 3600_000)
   );
   assert.deepEqual(result, proxy);
 });
 
 test("bounded cache evicts oldest signatures", async () => {
-  const resolve = createDirectPreviewResolver(1);
+  const resolve = createDirectPreviewResolver(1, async () => true);
   let calls = 0;
   const signer = async (req: Parameters<typeof signed>[0]) => {
     calls++;
@@ -115,27 +125,84 @@ test("bounded cache evicts oldest signatures", async () => {
 });
 
 test("malformed signing dates cannot escape as non-finite expiration", async () => {
-  const result = await createDirectPreviewResolver()(proxy, file, async (request) => {
-    const url = new URL(signed(request).url);
-    url.searchParams.set("X-Amz-Date", "20269999T999999Z");
-    return { url: url.toString() };
-  });
+  const result = await createDirectPreviewResolver(200, async () => true)(
+    proxy,
+    file,
+    async (request) => {
+      const url = new URL(signed(request).url);
+      url.searchParams.set("X-Amz-Date", "20269999T999999Z");
+      return { url: url.toString() };
+    }
+  );
   assert.deepEqual(result, proxy);
 });
 
 test("signing timeout aborts the request and keeps proxy delivery", async () => {
-  const result = await createDirectPreviewResolver()(proxy, file, async (_request, options) => {
-    return new Promise((_resolve, reject) => {
-      const keepAlive = setTimeout(() => reject(new Error("deadline not enforced")), 5000);
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(keepAlive);
-          reject(options.signal.reason);
-        },
-        { once: true }
-      );
-    });
-  });
+  const result = await createDirectPreviewResolver(200, async () => true)(
+    proxy,
+    file,
+    async (_request, options) => {
+      return new Promise((_resolve, reject) => {
+        const keepAlive = setTimeout(() => reject(new Error("deadline not enforced")), 5000);
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(keepAlive);
+            reject(options.signal.reason);
+          },
+          { once: true }
+        );
+      });
+    }
+  );
   assert.deepEqual(result, proxy);
+});
+
+test("storage attachment responses retain proxy delivery", async () => {
+  const result = await createDirectPreviewResolver(200, async () => false)(
+    proxy,
+    file,
+    async (request) => signed(request)
+  );
+  assert.deepEqual(result, proxy);
+});
+
+test("response probe checks real headers, requests one byte and cancels response body", async () => {
+  for (const [status, disposition, type, force, expected] of [
+    [206, "inline; filename=example.pdf", "application/pdf", "false", true],
+    [200, "attachment", "application/pdf", "false", false],
+    [206, "inline", "application/pdf", "true", false],
+    [206, "inline", "text/html", "false", false],
+    [403, "inline", "application/pdf", "false", false],
+  ] as const) {
+    let cancelled = false;
+    const request: typeof fetch = async (_url, options) => {
+      assert.equal((options?.headers as Record<string, string>).Range, "bytes=0-0");
+      assert.equal(options?.redirect, "error");
+      return new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        {
+          status,
+          headers: {
+            "Content-Disposition": disposition,
+            "Content-Type": type,
+            "x-cos-force-download": force,
+          },
+        }
+      );
+    };
+    assert.equal(
+      await inspectDirectPdfResponse(
+        "https://offline.invalid/test.pdf",
+        AbortSignal.timeout(1000),
+        request
+      ),
+      expected
+    );
+    assert.equal(cancelled, true);
+  }
 });
