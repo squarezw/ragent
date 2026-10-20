@@ -51,12 +51,15 @@ test("encrypted transaction binds state nonce PKCE return path and expires in fi
   assert.throws(() => openTransaction(cookie.slice(0, -2) + "aa", key, 1010));
   assert.throws(() => openTransaction(cookie, "b".repeat(64), 1010));
 });
-test("local session cannot outlive verified ID token, token lifetime or local maximum", () => {
-  assert.equal(localSessionTtl({ exp: 1300 }, 500, 1000), 300);
-  assert.equal(localSessionTtl({ exp: 1500 }, 90, 1000), 90);
-  assert.equal(localSessionTtl({ exp: 999999 }, 999999, 1000), 3600);
+test("verified short identity proofs establish a full seven-day browser session", () => {
+  assert.equal(localSessionTtl({ exp: 1300 }, 500, 1000), 604800);
+  assert.equal(localSessionTtl({ exp: 1500 }, 90, 1000), 604800);
+  assert.equal(localSessionTtl({ exp: 999999 }, undefined, 1000), 604800);
   assert.throws(() => localSessionTtl({ exp: 999 }, 500, 1000));
+  assert.throws(() => localSessionTtl({ exp: 1000 }, 500, 1000));
   assert.throws(() => localSessionTtl({}, 500, 1000));
+  for (const ttl of [0, -1, NaN, Infinity])
+    assert.throws(() => localSessionTtl({ exp: 1300 }, ttl, 1000));
 });
 
 test("local HTTP requires explicit development opt-in and stays forbidden in production or remote hosts", () => {

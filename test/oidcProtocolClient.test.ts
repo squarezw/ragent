@@ -135,7 +135,7 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
   const success = await attempt("valid");
   assert.equal(success.sub, "stable-uuid");
   assert.equal(success.returnTo, "/chat");
-  assert.ok(success.ttl > 0 && success.ttl <= 200);
+  assert.equal(success.ttl, 604800);
   assert.equal(success.access_token, undefined);
   const forced = await client.startOidc(settings, "/user?signedOut=1&keep=value#section", "", true);
   assert.equal(new URL(forced.redirectTo).searchParams.get("prompt"), "login");
@@ -198,7 +198,15 @@ test("real openid-client requires JWKS signature, issuer/audience/nonce/state an
   const localToken = sessionCookie.split(";")[0].slice("ragent_token=".length);
   const localClaims = jwt.verify(localToken, "local-jwt-fixture-secret");
   assert.equal(localClaims.userId, 7);
-  assert.ok(localClaims.exp - localClaims.iat <= 200);
+  assert.equal(localClaims.exp - localClaims.iat, 604800);
+  const cookieAge = Number(/Max-Age=(\d+)/.exec(sessionCookie)?.[1]);
+  assert.ok(cookieAge > 604790 && cookieAge <= 604800);
+  assert.equal(jwt.verify(localToken, "local-jwt-fixture-secret", {
+    clockTimestamp: localClaims.iat + 604799,
+  }).userId, 7);
+  assert.throws(() => jwt.verify(localToken, "local-jwt-fixture-secret", {
+    clockTimestamp: localClaims.iat + 604800,
+  }), /jwt expired/);
   assert.ok(!JSON.stringify(headers).includes("opaque-not-exposed"));
   for (const invalid of ["signature", "issuer", "audience", "nonce", "expired"])
     await assert.rejects(() => attempt(invalid), invalid);
