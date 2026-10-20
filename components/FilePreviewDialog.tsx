@@ -2,6 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import axios from "@/lib/axios";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { getSessionGeneration, isLogoutPending } from "@/lib/browserAuthMode";
+import { PreviewLinkCache } from "@/lib/previewLinkCache";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState, useRef } from "react";
 import { useTranslations } from "next-intl";
@@ -41,7 +44,20 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
   const [kkLoading, setKkLoading] = useState(false);
   const [kkIframeLoading, setKkIframeLoading] = useState(false);
   const [kkError, setKkError] = useState<string | undefined>(undefined);
-  const [fileInfo, setFileInfo] = useState<any>(file);
+  const { user } = useCurrentUser();
+  const scope = JSON.stringify([user?.id ?? null, user?.tenant_id ?? null, getSessionGeneration()]);
+  const cacheRef = useRef(new PreviewLinkCache());
+  const [authBlocked, setAuthBlocked] = useState(false);
+  const [resolvedFile, setResolvedFile] = useState<{
+    source: typeof file;
+    info: any;
+    scope: string;
+  } | null>(null);
+  const fileInfo =
+    resolvedFile?.source === file && resolvedFile.scope === scope && !authBlocked
+      ? resolvedFile.info
+      : null;
+  const [previewOwner, setPreviewOwner] = useState<any>(null);
   const [pdfUrl, setPdfUrl] = useState<string | undefined>(undefined);
   const [pdfError, setPdfError] = useState<string | undefined>(undefined);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
@@ -52,22 +68,36 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
   const prevImageUrlRef = useRef<string | undefined>(undefined);
   const refreshTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // 获取预览 URL 并设置自动刷新
-  async function fetchPreviewUrl(fileId: string, setter: (url: string) => void) {
-    const { url, expiresIn } = await getPreviewUrl(fileId);
-    setter(url);
-    // 过期前 2 分钟刷新（最少 30 秒）
-    const refreshAfter = Math.max((expiresIn - 120) * 1000, 30000);
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = setTimeout(() => {
-      fetchPreviewUrl(fileId, setter).catch(console.error);
-    }, refreshAfter);
-  }
+  useEffect(() => {
+    const invalidate = () => {
+      cacheRef.current.clear();
+      clearTimeout(refreshTimerRef.current);
+      setAuthBlocked(true);
+    };
+    const restore = () => setAuthBlocked(false);
+    const events = ["auth:logout-start", "auth:logout", "auth:session-expired"];
+    for (const event of events) window.addEventListener(event, invalidate);
+    window.addEventListener("auth:session-restored", restore);
+    window.addEventListener("auth:logout-failed", restore);
+    return () => {
+      for (const event of events) window.removeEventListener(event, invalidate);
+      window.removeEventListener("auth:session-restored", restore);
+      window.removeEventListener("auth:logout-failed", restore);
+      cacheRef.current.clear();
+    };
+  }, []);
 
   // 如果文件信息已完整（有 mimetype 和 originalname），直接使用
   // 如果只有 file_id，通过 API 获取完整信息
   useEffect(() => {
-    if (open && file) {
+    let active = true;
+    const generation = getSessionGeneration();
+    cacheRef.current.setScope(scope);
+    const setFileInfo = (info: any) => {
+      if (active && generation === getSessionGeneration() && !isLogoutPending())
+        setResolvedFile({ source: file, info, scope });
+    };
+    if (open && file && user?.id && !authBlocked && !isLogoutPending()) {
       // 如果文件信息已完整（有 mimetype 和 originalname），直接使用，不查数据库
       if (file.mimetype && file.originalname && file.filename) {
         setFileInfo(file);
@@ -119,10 +149,51 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
     } else if (!open) {
       setFileInfo(null);
     }
-  }, [open, file]);
+    return () => {
+      active = false;
+    };
+  }, [open, file, scope, authBlocked, user?.id]);
 
   useEffect(() => {
-    if (open && fileInfo) {
+    let active = true;
+    const sessionGeneration = getSessionGeneration();
+    const generation = cacheRef.current.setScope(scope);
+    const current = () =>
+      active &&
+      cacheRef.current.isCurrent(generation) &&
+      sessionGeneration === getSessionGeneration() &&
+      !isLogoutPending();
+    // 清理 URL 和定时器（组件卸载或文件切换时）
+    const cleanup = () => {
+      active = false;
+      clearTimeout(refreshTimerRef.current);
+      if (prevPdfUrlRef.current?.startsWith("blob:")) {
+        URL.revokeObjectURL(prevPdfUrlRef.current);
+      }
+      prevPdfUrlRef.current = undefined;
+      if (prevImageUrlRef.current?.startsWith("blob:")) {
+        URL.revokeObjectURL(prevImageUrlRef.current);
+      }
+      prevImageUrlRef.current = undefined;
+    };
+
+    async function fetchPreviewUrl(fileId: string, setter: (url: string) => void) {
+      const requestedAt = Date.now();
+      const { url, expiresIn } = await getPreviewUrl(fileId, cacheRef.current.get(fileId));
+      if (!current()) return;
+      cacheRef.current.put(fileId, url, expiresIn, requestedAt, generation);
+      setter(url);
+      const refreshAfter = Math.max((expiresIn - 120) * 1000 - (Date.now() - requestedAt), 1000);
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        // Keep the currently displayed document on a transient refresh failure.
+        // Reopening still reauthorizes and refreshes the link with the server.
+        fetchPreviewUrl(fileId, setter).catch(() => {});
+      }, refreshAfter);
+    }
+    setPreviewOwner(null);
+    if (open && fileInfo && user?.id && !authBlocked && !isLogoutPending()) {
+      setPreviewOwner(fileInfo);
       // 重置状态
       setTextContent(undefined);
       setDocxHtml(undefined);
@@ -163,24 +234,27 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
             extension: filenameExt || undefined,
           })
           .then((res) => {
+            if (!current()) return;
             const previewUrl = res.data?.previewUrl;
             setKkPreviewUrl(previewUrl);
             setKkIframeLoading(true);
           })
           .catch(() => {
+            if (!current()) return;
             setKkError(t("generatePreviewLinkFailed"));
           })
           .finally(() => {
+            if (!current()) return;
             setKkLoading(false);
           });
-        return;
+        return cleanup;
       }
 
       if (typeof fileInfo.mimetype === "string") {
         // 确保 filename 存在（如果只有 id，filename 应该从 API 获取或使用占位符）
         if (!fileInfo.filename) {
           console.warn("[FilePreviewDialog] filename is missing, cannot preview file");
-          return;
+          return cleanup;
         }
 
         // 处理 PDF 文件 - 使用流式预览 URL（OSS 签名或 token 代理）
@@ -191,6 +265,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           } else if (fileInfo.id) {
             // 通过 stream-url API 获取预览 URL
             fetchPreviewUrl(fileInfo.id, setPdfUrl).catch((error: any) => {
+              if (!current()) return;
               setPdfUrl(undefined);
               setPdfError(error.response?.data?.error || error.message || t("fileNotFound"));
             });
@@ -204,6 +279,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           } else if (fileInfo.id) {
             // 通过 stream-url API 获取预览 URL
             fetchPreviewUrl(fileInfo.id, setImageUrl).catch((error: any) => {
+              if (!current()) return;
               setImageUrl(undefined);
               setImageError(error.response?.data?.error || error.message || t("fileNotFound"));
             });
@@ -217,8 +293,12 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           (fileInfo.filename && fileInfo.filename.toLowerCase().endsWith(".docx"))
         ) {
           convertDocx(fileInfo.id, fileInfo.filename)
-            .then((html) => setDocxHtml(html))
-            .catch(() => setDocxHtml(`<p>${t("documentConversionFailed")}</p>`));
+            .then((html) => {
+              if (current()) setDocxHtml(html);
+            })
+            .catch(() => {
+              if (current()) setDocxHtml(`<p>${t("documentConversionFailed")}</p>`);
+            });
         }
         // 处理 doc 文件
         else if (
@@ -226,8 +306,12 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           (fileInfo.filename && fileInfo.filename.toLowerCase().endsWith(".doc"))
         ) {
           convertDoc(fileInfo.id, fileInfo.filename)
-            .then((text) => setDocText(text))
-            .catch(() => setDocText(t("documentConversionFailed")));
+            .then((text) => {
+              if (current()) setDocText(text);
+            })
+            .catch(() => {
+              if (current()) setDocText(t("documentConversionFailed"));
+            });
         }
         // 处理 Excel 文件
         else if (
@@ -239,8 +323,12 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
               fileInfo.filename.toLowerCase().endsWith(".xlsx")))
         ) {
           convertExcel(fileInfo.id, fileInfo.filename)
-            .then((data) => setExcelData(data))
-            .catch(() => setExcelData({ error: t("excelConversionFailed") }));
+            .then((data) => {
+              if (current()) setExcelData(data);
+            })
+            .catch(() => {
+              if (current()) setExcelData({ error: t("excelConversionFailed") });
+            });
         }
         // 处理文本文件（包括 markdown）
         else if (
@@ -252,25 +340,18 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           const textUrl = fileInfo.sourceUrl || getFileDownloadUrl(fileInfo.id, fileInfo.filename);
           axios
             .get(textUrl)
-            .then((res) => setTextContent(res.data || res))
-            .catch(() => setTextContent(t("loadFailed")));
+            .then((res) => {
+              if (current()) setTextContent(res.data || res);
+            })
+            .catch(() => {
+              if (current()) setTextContent(t("loadFailed"));
+            });
         }
       }
     }
 
-    // 清理 URL 和定时器（组件卸载或文件切换时）
-    return () => {
-      clearTimeout(refreshTimerRef.current);
-      if (prevPdfUrlRef.current?.startsWith("blob:")) {
-        URL.revokeObjectURL(prevPdfUrlRef.current);
-      }
-      prevPdfUrlRef.current = undefined;
-      if (prevImageUrlRef.current?.startsWith("blob:")) {
-        URL.revokeObjectURL(prevImageUrlRef.current);
-      }
-      prevImageUrlRef.current = undefined;
-    };
-  }, [fileInfo, open]);
+    return cleanup;
+  }, [fileInfo, open, scope, authBlocked, user?.id, t]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -349,7 +430,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
             </div>
           </div>
           <div className="mt-4 flex-1 min-h-0 overflow-auto bg-secondary p-2 rounded text-xs">
-            {fileInfo ? (
+            {fileInfo && previewOwner === fileInfo ? (
               <div key={fileInfo.id || "preview-content"} className="w-full h-full">
                 {(fileInfo.sourceUrl || fileInfo.filename) &&
                 (kkPreviewUrl || kkLoading || kkError) &&
