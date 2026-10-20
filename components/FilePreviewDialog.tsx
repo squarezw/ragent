@@ -469,16 +469,6 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
                 ) : fileInfo.mimetype === "application/pdf" ? (
                   pdfUrl ? (
                     <div className="flex h-full flex-col gap-2">
-                      {pdfFallbackUrl && !forcePdfProxyRef.current && (
-                        <div className="flex justify-end">
-                          <Button variant="outline" size="sm" onClick={() => {
-                            forcePdfProxyRef.current = true;
-                            setPdfUrl(pdfFallbackUrl);
-                          }}>
-                            {t("previewCompatibilityMode")}
-                          </Button>
-                        </div>
-                      )}
                       <iframe
                         src={pdfUrl}
                         className="w-full min-h-0 flex-1 border bg-card"
@@ -589,6 +579,15 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
             ) : null}
           </div>
           <div className="flex justify-end gap-2 mt-6">
+            {fileInfo && previewOwner === fileInfo && fileInfo.mimetype === "application/pdf" &&
+              pdfUrl && pdfFallbackUrl && !forcePdfProxyRef.current && (
+                <Button variant="outline" onClick={() => {
+                  forcePdfProxyRef.current = true;
+                  setPdfUrl(pdfFallbackUrl);
+                }}>
+                  {t("previewCompatibilityMode")}
+                </Button>
+              )}
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {t("close")}
             </Button>
