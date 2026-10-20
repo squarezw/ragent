@@ -178,8 +178,11 @@ export async function getFileBlobFromFile(file: FileInfo): Promise<Blob> {
  * @param fileId 文件 ID
  * @returns Promise<{ url: string; expiresIn: number }>
  */
-export async function getPreviewUrl(fileId: string): Promise<{ url: string; expiresIn: number }> {
-  const response = await axios.post("/api/file-preview/stream-url", { fileId });
+export async function getPreviewUrl(
+  fileId: string,
+  previousToken?: string
+): Promise<{ url: string; expiresIn: number }> {
+  const response = await axios.post("/api/file-preview/stream-url", { fileId, previousToken });
   return response.data;
 }
 
