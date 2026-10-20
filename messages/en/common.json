@@ -1,4 +1,5 @@
 {
+  "previewCompatibilityMode": "Preview not loading? Use compatibility mode",
   "loading": "Loading...",
   "save": "Save",
   "cancel": "Cancel",

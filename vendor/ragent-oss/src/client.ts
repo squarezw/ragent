@@ -36,8 +36,8 @@ export class RagentOssClient {
   }
 
   /** Get a signed download URL. */
-  async sign(req: SignRequest): Promise<SignResponse> {
-    return this.post<SignResponse>("/api/sign", req);
+  async sign(req: SignRequest, options?: { signal?: AbortSignal }): Promise<SignResponse> {
+    return this.post<SignResponse>("/api/sign", req, options);
   }
 
   /** Delete an object. */
@@ -108,7 +108,7 @@ export class RagentOssClient {
     return this.handleResponse<T>(res);
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T>(path: string, body: unknown, options?: { signal?: AbortSignal }): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
@@ -118,6 +118,7 @@ export class RagentOssClient {
           "X-API-Key": this.apiKey,
         },
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
     } catch (err) {
       throw new NetworkError(`Request to ${path} failed`, err);

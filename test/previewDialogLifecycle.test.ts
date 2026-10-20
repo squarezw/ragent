@@ -158,6 +158,18 @@ function harness() {
     calls,
     timers,
     urls,
+    compatibility() {
+      function visit(node: any): any {
+        if (Array.isArray(node)) return node.map(visit).find(Boolean);
+        if (!node?.props) return;
+        if (node.type === "button" && node.props.children === "previewCompatibilityMode") return node;
+        return visit(node.props.children);
+      }
+      const button = visit(tree);
+      assert.ok(button);
+      button.props.onClick();
+      render();
+    },
     file(id: string) {
       props = { ...props, file: file(id) };
       render();
@@ -182,9 +194,9 @@ function harness() {
       await new Promise((r) => setImmediate(r));
       render();
     },
-    async resolve(url: string, expiresIn: number, elapsed = 0) {
+    async resolve(url: string, expiresIn: number, elapsed = 0, fallbackUrl?: string) {
       now += elapsed;
-      pending.shift().resolve({ url, expiresIn });
+      pending.shift().resolve({ url, expiresIn, fallbackUrl });
       await new Promise((r) => setImmediate(r));
       render();
     },
@@ -236,4 +248,22 @@ test("transient scheduled refresh failure preserves the displayed document", asy
   h.open(false);
   h.open(true);
   assert.equal(h.calls.length, 3);
+});
+
+
+test("direct PDF uses proxy token hints; compatibility choice survives refresh and resets on file switch", async () => {
+  const h = harness();
+  const fallback = "/api/file-preview/stream?token=first";
+  await h.resolve("https://bucket.example/a.pdf", 600, 0, fallback);
+  assert.deepEqual(h.urls(), ["https://bucket.example/a.pdf"]);
+  h.compatibility();
+  assert.deepEqual(h.urls(), [fallback]);
+  h.refresh();
+  assert.equal(h.calls[1].previousToken, "first");
+  const renewed = "/api/file-preview/stream?token=renewed";
+  await h.resolve("https://bucket.example/a-new.pdf", 600, 0, renewed);
+  assert.deepEqual(h.urls(), [renewed]);
+  h.file("b");
+  await h.resolve("https://bucket.example/b.pdf", 600, 0, "/api/file-preview/stream?token=b");
+  assert.deepEqual(h.urls(), ["https://bucket.example/b.pdf"]);
 });

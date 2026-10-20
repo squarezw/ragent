@@ -181,7 +181,7 @@ export async function getFileBlobFromFile(file: FileInfo): Promise<Blob> {
 export async function getPreviewUrl(
   fileId: string,
   previousToken?: string
-): Promise<{ url: string; expiresIn: number }> {
+): Promise<{ url: string; expiresIn: number; fallbackUrl?: string }> {
   const response = await axios.post("/api/file-preview/stream-url", { fileId, previousToken });
   return response.data;
 }
