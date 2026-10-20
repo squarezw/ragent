@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import jwt from "jsonwebtoken";
+import { createDirectPreviewResolver } from "../lib/directPreviewLink.ts";
 import { createPreviewLink, previewRevision } from "../lib/previewLinkPolicy.ts";
 
 const secret = "offline-preview-route-test-secret";
@@ -35,6 +36,8 @@ test("preview renewal authenticates and checks live dataset access before accept
       filename: "example.pdf",
     },
   ];
+  let signCalls = 0;
+  let signingEnabled = false;
   let queries = 0;
   let releases = 0;
   const module = {
@@ -68,6 +71,28 @@ test("preview renewal authenticates and checks live dataset access before accept
       },
     },
     "@/lib/previewLinkPolicy": { createPreviewLink, previewRevision },
+    "@/lib/directPreviewLink": { resolveDirectPreviewLink: createDirectPreviewResolver() },
+    "@/lib/ossClient": {
+      ossClient: {
+        sign: async (request: any) => {
+          signCalls++;
+          if (!signingEnabled) throw new Error("offline gateway");
+          const url = new URL("https://bucket.example/test.pdf");
+          url.searchParams.set("X-Amz-Signature", "offline");
+          url.searchParams.set(
+            "X-Amz-Date",
+            new Date()
+              .toISOString()
+              .replace(/[-:]/g, "")
+              .replace(/\.\d{3}/, "")
+          );
+          url.searchParams.set("X-Amz-Expires", String(request.expiresIn));
+          url.searchParams.set("response-content-disposition", request.responseContentDisposition);
+          url.searchParams.set("response-content-type", request.responseContentType);
+          return { url: url.toString() };
+        },
+      },
+    },
   };
   const compiled = ts.transpileModule(
     readFileSync(new URL("../pages/api/file-preview/stream-url.ts", import.meta.url), "utf8"),
@@ -157,4 +182,23 @@ test("preview renewal authenticates and checks live dataset access before accept
   assert.notEqual(replaced, switched);
   assert.equal((jwt.verify(replaced, secret) as jwt.JwtPayload).objectKey, "replacement.pdf");
   assert.equal(queries, releases);
+  signingEnabled = true;
+  await module.exports.default(req, res);
+  assert.ok(String(body.url).startsWith("https://"));
+  assert.ok(String(body.fallbackUrl).startsWith("/api/file-preview/stream?token="));
+  const direct = body.url;
+  req.body.previousToken = tokenFrom(String(body.fallbackUrl));
+  const callsBeforeReuse = signCalls;
+  await module.exports.default(req, res);
+  assert.equal(body.url, direct);
+  assert.equal(signCalls, callsBeforeReuse);
+  rows = [];
+  await module.exports.default(req, res);
+  assert.equal(status, 404);
+  assert.equal(body.url, undefined);
+  assert.equal(signCalls, callsBeforeReuse);
+  userId = null;
+  await module.exports.default(req, res);
+  assert.equal(status, 401);
+  assert.equal(signCalls, callsBeforeReuse);
 });

@@ -37,6 +37,9 @@ export interface PresignResponse {
 // ---- Sign ----
 
 export interface SignRequest {
+  /** Signed GET response header overrides; requires gateway support. */
+  responseContentDisposition?: string;
+  responseContentType?: string;
   /** Object key to generate download URL for */
   objectKey: string;
   /** URL expiration in seconds (default: 86400 = 24h) */

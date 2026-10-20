@@ -1,0 +1,98 @@
+/** Server-only, bounded best-effort cache. Call only after live file authorization. */
+interface ProxyLink {
+  url: string;
+  expiresIn: number;
+}
+interface SignRequest {
+  objectKey: string;
+  expiresIn: number;
+  responseContentDisposition: string;
+  responseContentType: string;
+}
+type Signer = (request: SignRequest, options: { signal: AbortSignal }) => Promise<{ url: string }>;
+interface FileMetadata {
+  objectKey?: string;
+  mimetype: string;
+  filename: string | null;
+}
+
+export function pdfDisposition(filename: string | null): string {
+  const name = Array.from(filename || "document.pdf")
+    .slice(0, 80)
+    .map((char) =>
+      char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 || char === "/" || char === "\\"
+        ? "_"
+        : char
+    )
+    .join("");
+  const encoded = encodeURIComponent(name).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `inline; filename="document.pdf"; filename*=UTF-8''${encoded}`;
+}
+
+export function createDirectPreviewResolver(capacity = 200) {
+  const cache = new Map<string, { url: string; expiresAt: number }>();
+  return async (
+    proxy: ProxyLink,
+    file: FileMetadata,
+    sign: Signer,
+    now = Date.now()
+  ): Promise<ProxyLink & { fallbackUrl?: string }> => {
+    if (!file.objectKey || file.mimetype !== "application/pdf") return proxy;
+    const cached = cache.get(proxy.url);
+    if (cached && cached.expiresAt - now > 120_000) {
+      return {
+        url: cached.url,
+        fallbackUrl: proxy.url,
+        expiresIn: Math.min(proxy.expiresIn, Math.floor((cached.expiresAt - now) / 1000)),
+      };
+    }
+    cache.delete(proxy.url);
+    try {
+      const disposition = pdfDisposition(file.filename);
+      const { url } = await sign(
+        {
+          objectKey: file.objectKey,
+          expiresIn: proxy.expiresIn,
+          responseContentDisposition: disposition,
+          responseContentType: "application/pdf",
+        },
+        { signal: AbortSignal.timeout(3000) }
+      );
+      const parsed = new URL(url);
+      // An older gateway can silently ignore new request fields. Keep proxy delivery in that case.
+      if (
+        parsed.protocol !== "https:" ||
+        parsed.username ||
+        parsed.password ||
+        !parsed.searchParams.get("X-Amz-Signature") ||
+        parsed.searchParams.get("response-content-disposition") !== disposition ||
+        parsed.searchParams.get("response-content-type") !== "application/pdf"
+      )
+        return proxy;
+      const signedAt = parsed.searchParams.get("X-Amz-Date") || "";
+      if (!/^\d{8}T\d{6}Z$/.test(signedAt)) return proxy;
+      const date = `${signedAt.slice(0, 4)}-${signedAt.slice(4, 6)}-${signedAt.slice(6, 8)}T${signedAt.slice(9, 11)}:${signedAt.slice(11, 13)}:${signedAt.slice(13, 15)}Z`;
+      const ttl = Number(parsed.searchParams.get("X-Amz-Expires"));
+      if (!Number.isFinite(ttl) || ttl <= 0 || ttl > 1800) return proxy;
+      const expiresAt = Math.min(now + proxy.expiresIn * 1000, Date.parse(date) + ttl * 1000);
+      if (!Number.isFinite(expiresAt)) return proxy;
+      const expiresIn = Math.floor((expiresAt - Date.now()) / 1000);
+      if (expiresIn <= 120) return proxy;
+      for (const [key, entry] of cache) if (entry.expiresAt <= now) cache.delete(key);
+      cache.set(proxy.url, { url, expiresAt });
+      while (cache.size > capacity) {
+        const oldest = cache.keys().next().value;
+        if (oldest === undefined) break;
+        cache.delete(oldest);
+      }
+      return { url, fallbackUrl: proxy.url, expiresIn };
+    } catch {
+      // Signing or encoding failure must not break existing preview delivery.
+      return proxy;
+    }
+  };
+}
+export const resolveDirectPreviewLink = createDirectPreviewResolver();

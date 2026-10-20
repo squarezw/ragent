@@ -59,6 +59,8 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
       : null;
   const [previewOwner, setPreviewOwner] = useState<any>(null);
   const [pdfUrl, setPdfUrl] = useState<string | undefined>(undefined);
+  const [pdfFallbackUrl, setPdfFallbackUrl] = useState<string | undefined>(undefined);
+  const forcePdfProxyRef = useRef(false);
   const [pdfError, setPdfError] = useState<string | undefined>(undefined);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [imageError, setImageError] = useState<string | undefined>(undefined);
@@ -179,10 +181,11 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
 
     async function fetchPreviewUrl(fileId: string, setter: (url: string) => void) {
       const requestedAt = Date.now();
-      const { url, expiresIn } = await getPreviewUrl(fileId, cacheRef.current.get(fileId));
+      const { url, expiresIn, fallbackUrl } = await getPreviewUrl(fileId, cacheRef.current.get(fileId));
       if (!current()) return;
-      cacheRef.current.put(fileId, url, expiresIn, requestedAt, generation);
-      setter(url);
+      cacheRef.current.put(fileId, fallbackUrl || url, expiresIn, requestedAt, generation);
+      if (setter === setPdfUrl) setPdfFallbackUrl(fallbackUrl);
+      setter(setter === setPdfUrl && forcePdfProxyRef.current ? fallbackUrl || url : url);
       const refreshAfter = Math.max((expiresIn - 120) * 1000 - (Date.now() - requestedAt), 1000);
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = setTimeout(() => {
@@ -200,6 +203,8 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
       setDocText(undefined);
       setExcelData(undefined);
       setPdfUrl(undefined);
+      setPdfFallbackUrl(undefined);
+      forcePdfProxyRef.current = false;
       setPdfError(undefined);
       setImageUrl(undefined);
       setImageError(undefined);
@@ -463,11 +468,24 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
                   ) : null
                 ) : fileInfo.mimetype === "application/pdf" ? (
                   pdfUrl ? (
-                    <iframe
-                      src={pdfUrl}
-                      className="w-full h-full border bg-card"
-                      title={t("pdfPreview")}
-                    />
+                    <div className="flex h-full flex-col gap-2">
+                      {pdfFallbackUrl && !forcePdfProxyRef.current && (
+                        <div className="flex justify-end">
+                          <Button variant="outline" size="sm" onClick={() => {
+                            forcePdfProxyRef.current = true;
+                            setPdfUrl(pdfFallbackUrl);
+                          }}>
+                            {t("previewCompatibilityMode")}
+                          </Button>
+                        </div>
+                      )}
+                      <iframe
+                        src={pdfUrl}
+                        className="w-full min-h-0 flex-1 border bg-card"
+                        title={t("pdfPreview")}
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                   ) : pdfError ? (
                     <div className="text-center p-4 text-red-600">
                       <p>

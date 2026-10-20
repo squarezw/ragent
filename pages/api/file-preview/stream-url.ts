@@ -1,5 +1,7 @@
 import { getUserIdFromRequest, requireAuth } from "@/lib/auth";
 import pool from "@/lib/db";
+import { ossClient } from "@/lib/ossClient";
+import { resolveDirectPreviewLink } from "@/lib/directPreviewLink";
 import { createPreviewLink, previewRevision } from "@/lib/previewLinkPolicy";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -63,7 +65,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       req.body?.previousToken,
       PREVIEW_TOKEN_SECRET
     );
-    return res.status(200).json(link);
+    const delivery = await resolveDirectPreviewLink(link, metadata, (request, options) =>
+      ossClient.sign(request, options)
+    );
+    return res.status(200).json(delivery);
   } finally {
     client.release();
   }
