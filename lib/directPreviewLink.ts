@@ -16,8 +16,17 @@ interface FileMetadata {
   filename: string | null;
 }
 
-export function pdfDisposition(filename: string | null): string {
-  const name = Array.from(filename || "document.pdf")
+const previewTypes = new Map([
+  ["application/pdf", "document.pdf"],
+  ["image/png", "image.png"],
+  ["image/jpeg", "image.jpg"],
+  ["image/webp", "image.webp"],
+  ["image/gif", "image.gif"],
+]);
+
+export function previewDisposition(filename: string | null, mimetype = "application/pdf"): string {
+  const fallback = previewTypes.get(mimetype) || "file";
+  const name = Array.from(filename || fallback)
     .slice(0, 80)
     .map((char) =>
       char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 || char === "/" || char === "\\"
@@ -29,14 +38,18 @@ export function pdfDisposition(filename: string | null): string {
     /[!'()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
   );
-  return `inline; filename="document.pdf"; filename*=UTF-8''${encoded}`;
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
-export async function inspectDirectPdfResponse(
+export const pdfDisposition = (filename: string | null) => previewDisposition(filename);
+
+export async function inspectDirectPreviewResponse(
   url: string,
   signal: AbortSignal,
+  mimetype: string,
   request: typeof fetch = fetch
 ): Promise<boolean> {
+  if (!previewTypes.has(mimetype)) return false;
   const response = await request(url, {
     headers: { Range: "bytes=0-0" },
     signal,
@@ -45,8 +58,7 @@ export async function inspectDirectPdfResponse(
   try {
     return (
       (response.status === 200 || response.status === 206) &&
-      response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ===
-        "application/pdf" &&
+      response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() === mimetype &&
       /^inline(?:;|$)/i.test(response.headers.get("content-disposition")?.trim() || "") &&
       response.headers.get("x-cos-force-download")?.toLowerCase() !== "true"
     );
@@ -55,9 +67,19 @@ export async function inspectDirectPdfResponse(
   }
 }
 
+export const inspectDirectPdfResponse = (
+  url: string,
+  signal: AbortSignal,
+  request: typeof fetch = fetch
+) => inspectDirectPreviewResponse(url, signal, "application/pdf", request);
+
 export function createDirectPreviewResolver(
   capacity = 200,
-  inspect: (url: string, signal: AbortSignal) => Promise<boolean> = inspectDirectPdfResponse
+  inspect: (
+    url: string,
+    signal: AbortSignal,
+    mimetype: string
+  ) => Promise<boolean> = inspectDirectPreviewResponse
 ) {
   const cache = new Map<string, { url: string; expiresAt: number }>();
   return async (
@@ -66,7 +88,7 @@ export function createDirectPreviewResolver(
     sign: Signer,
     now = Date.now()
   ): Promise<ProxyLink & { fallbackUrl?: string }> => {
-    if (!file.objectKey || file.mimetype !== "application/pdf") return proxy;
+    if (!file.objectKey || !previewTypes.has(file.mimetype)) return proxy;
     const cached = cache.get(proxy.url);
     if (cached && cached.expiresAt - now > 120_000) {
       return {
@@ -77,14 +99,14 @@ export function createDirectPreviewResolver(
     }
     cache.delete(proxy.url);
     try {
-      const disposition = pdfDisposition(file.filename);
+      const disposition = previewDisposition(file.filename, file.mimetype);
       const signal = AbortSignal.timeout(3000);
       const { url } = await sign(
         {
           objectKey: file.objectKey,
           expiresIn: proxy.expiresIn,
           responseContentDisposition: disposition,
-          responseContentType: "application/pdf",
+          responseContentType: file.mimetype,
         },
         { signal }
       );
@@ -96,7 +118,7 @@ export function createDirectPreviewResolver(
         parsed.password ||
         !parsed.searchParams.get("X-Amz-Signature") ||
         parsed.searchParams.get("response-content-disposition") !== disposition ||
-        parsed.searchParams.get("response-content-type") !== "application/pdf"
+        parsed.searchParams.get("response-content-type") !== file.mimetype
       )
         return proxy;
       const signedAt = parsed.searchParams.get("X-Amz-Date") || "";
@@ -107,7 +129,7 @@ export function createDirectPreviewResolver(
       const expiresAt = Math.min(now + proxy.expiresIn * 1000, Date.parse(date) + ttl * 1000);
       if (!Number.isFinite(expiresAt)) return proxy;
       const expiresIn = Math.floor((expiresAt - Date.now()) / 1000);
-      if (expiresIn <= 120 || !(await inspect(url, signal))) return proxy;
+      if (expiresIn <= 120 || !(await inspect(url, signal, file.mimetype))) return proxy;
       for (const [key, entry] of cache) if (entry.expiresAt <= now) cache.delete(key);
       cache.set(proxy.url, { url, expiresAt });
       while (cache.size > capacity) {

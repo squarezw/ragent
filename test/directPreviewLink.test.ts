@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createDirectPreviewResolver,
+  inspectDirectPreviewResponse,
   inspectDirectPdfResponse,
   pdfDisposition,
 } from "../lib/directPreviewLink.ts";
@@ -177,7 +178,7 @@ test("response probe checks real headers, requests one byte and cancels response
   ] as const) {
     let cancelled = false;
     const request: typeof fetch = async (_url, options) => {
-      assert.equal((options?.headers as Record<string, string>).Range, "bytes=0-0");
+      assert.equal(new Headers(options?.headers).get("Range"), "bytes=0-0");
       assert.equal(options?.redirect, "error");
       return new Response(
         new ReadableStream({
@@ -205,4 +206,82 @@ test("response probe checks real headers, requests one byte and cancels response
     );
     assert.equal(cancelled, true);
   }
+});
+
+test("raster allowlist uses signed matching image types and preserves stable links", async () => {
+  for (const mimetype of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+    let inspections = 0;
+    const resolve = createDirectPreviewResolver(200, async (_url, _signal, type) => {
+      assert.equal(type, mimetype);
+      inspections++;
+      return true;
+    });
+    const image = { ...file, mimetype, filename: "测试图片" };
+    const first = await resolve(proxy, image, async (request) => {
+      assert.equal(request.responseContentType, mimetype);
+      return signed(request);
+    });
+    assert.equal(first.fallbackUrl, proxy.url);
+    assert.equal(new URL(first.url).searchParams.get("response-content-type"), mimetype);
+    const second = await resolve(proxy, image, async () => {
+      throw new Error("must reuse");
+    });
+    assert.equal(second.url, first.url);
+    assert.equal(inspections, 1);
+  }
+});
+
+test("SVG, HTML and unsupported image formats never use direct preview", async () => {
+  for (const mimetype of ["image/svg+xml", "text/html", "image/avif", "image/bmp", "image/tiff"]) {
+    let signed = false;
+    const result = await createDirectPreviewResolver()(proxy, { ...file, mimetype }, async () => {
+      signed = true;
+      throw new Error("must not sign");
+    });
+    assert.deepEqual(result, proxy);
+    assert.equal(signed, false);
+  }
+});
+
+test("raster probe requires exact allowed content type, inline disposition and no forced download", async () => {
+  for (const mimetype of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+    const fake: typeof fetch = async () =>
+      new Response("x", {
+        status: 206,
+        headers: { "Content-Type": mimetype, "Content-Disposition": "inline" },
+      });
+    assert.equal(
+      await inspectDirectPreviewResponse(
+        "https://offline.invalid",
+        AbortSignal.timeout(1000),
+        mimetype,
+        fake
+      ),
+      true
+    );
+    assert.equal(
+      await inspectDirectPreviewResponse(
+        "https://offline.invalid",
+        AbortSignal.timeout(1000),
+        "application/pdf",
+        fake
+      ),
+      false
+    );
+  }
+  let requested = false;
+  const fake: typeof fetch = async () => {
+    requested = true;
+    return new Response("x");
+  };
+  assert.equal(
+    await inspectDirectPreviewResponse(
+      "https://offline.invalid",
+      AbortSignal.timeout(1000),
+      "image/svg+xml",
+      fake
+    ),
+    false
+  );
+  assert.equal(requested, false);
 });

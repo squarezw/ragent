@@ -63,6 +63,9 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
   const forcePdfProxyRef = useRef(false);
   const [pdfError, setPdfError] = useState<string | undefined>(undefined);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const forceImageProxyRef = useRef(false);
+  const imageDeliveryRef = useRef<{ url: string; fallbackUrl?: string } | null>(null);
+  const imageLoadErrorRef = useRef<((failedUrl: string) => void) | undefined>(undefined);
   const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [downloading, setDownloading] = useState(false);
   // 使用 ref 存储之前的 URL，用于清理
@@ -185,7 +188,10 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
       if (!current()) return;
       cacheRef.current.put(fileId, fallbackUrl || url, expiresIn, requestedAt, generation);
       if (setter === setPdfUrl) setPdfFallbackUrl(fallbackUrl);
-      setter(setter === setPdfUrl && forcePdfProxyRef.current ? fallbackUrl || url : url);
+      const forceProxy = setter === setPdfUrl ? forcePdfProxyRef.current : forceImageProxyRef.current;
+      const deliveredUrl = forceProxy ? fallbackUrl || url : url;
+      if (setter === setImageUrl) imageDeliveryRef.current = { url: deliveredUrl, fallbackUrl: forceProxy ? undefined : fallbackUrl };
+      setter(deliveredUrl);
       const refreshAfter = Math.max((expiresIn - 120) * 1000 - (Date.now() - requestedAt), 1000);
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = setTimeout(() => {
@@ -194,6 +200,20 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
         fetchPreviewUrl(fileId, setter).catch(() => {});
       }, refreshAfter);
     }
+    imageLoadErrorRef.current = (failedUrl) => {
+      const delivery = imageDeliveryRef.current;
+      if (!current() || !delivery || delivery.url !== failedUrl) return;
+      const fallback = delivery.fallbackUrl;
+      if (fallback && fallback !== failedUrl && !forceImageProxyRef.current) {
+        forceImageProxyRef.current = true;
+        imageDeliveryRef.current = { url: fallback };
+        setImageUrl(fallback);
+      } else {
+        imageDeliveryRef.current = null;
+        setImageUrl(undefined);
+        setImageError(t("fileNotFound"));
+      }
+    };
     setPreviewOwner(null);
     if (open && fileInfo && user?.id && !authBlocked && !isLogoutPending()) {
       setPreviewOwner(fileInfo);
@@ -207,6 +227,8 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
       forcePdfProxyRef.current = false;
       setPdfError(undefined);
       setImageUrl(undefined);
+      imageDeliveryRef.current = null;
+      forceImageProxyRef.current = false;
       setImageError(undefined);
       setKkPreviewUrl(undefined);
       setKkError(undefined);
@@ -280,6 +302,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
         else if (fileInfo.mimetype.startsWith("image/")) {
           if (fileInfo.sourceUrl) {
             // 外部 sourceUrl 直接使用
+            imageDeliveryRef.current = { url: fileInfo.sourceUrl };
             setImageUrl(fileInfo.sourceUrl);
           } else if (fileInfo.id) {
             // 通过 stream-url API 获取预览 URL
@@ -492,6 +515,8 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
                     <img
                       src={imageUrl}
                       alt={fileInfo.originalname || fileInfo.filename}
+                      referrerPolicy="no-referrer"
+                      onError={(event) => imageLoadErrorRef.current?.(event.currentTarget.getAttribute("src") || "")}
                       className="max-w-full max-h-full mx-auto"
                     />
                   ) : imageError ? (
