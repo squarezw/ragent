@@ -187,5 +187,7 @@
     "tenant": "本租户",
     "public": "公开"
   },
-  "defaultUnavailable": "需为已发布的 Web 聊天员工，且可见范围为本租户或公开；请由有编辑权限的管理员调整。已有默认仍可取消。"
+  "defaultUnavailable": "需为已发布的 Web 聊天员工，且可见范围为本租户或公开；请由有编辑权限的管理员调整。已有默认仍可取消。",
+  "privateEmployee": "私有：仅创建者可见",
+  "privateBadge": "私有"
 }

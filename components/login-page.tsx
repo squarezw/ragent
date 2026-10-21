@@ -373,6 +373,14 @@ export function LoginPage({ onLogin, siteConfig, interactionUid }: LoginPageProp
     </>
   );
 
+  const loginDisabled =
+    isLoading ||
+    (!!interactionUid && !interactionCsrf) ||
+    (credentialMethod === "password"
+      ? !formData.username || !formData.password
+      : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||
+    !formData.agreeTerms;
+
   if (step === 2) {
     return (
       <div className="h-screen w-screen flex bg-gradient-to-br from-primary-50 via-background to-primary-50 overflow-hidden">
@@ -672,7 +680,11 @@ export function LoginPage({ onLogin, siteConfig, interactionUid }: LoginPageProp
                 </TabsList>
 
                 <TabsContent value="password" className="space-y-4">
-                  <div className="space-y-4">
+                  <form className="space-y-4" onSubmit={async (event) => {
+                    event.preventDefault();
+                    if (loginDisabled) return;
+                    await (credentialMethod === "sms" ? handleSMSVerification() : handlePasswordLogin());
+                  }}>
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor={credentialMethod === "password" ? "username" : "loginPhone"}>
                         {credentialMethod === "password" ? t("username") : t("phoneNumber")}
@@ -771,7 +783,7 @@ export function LoginPage({ onLogin, siteConfig, interactionUid }: LoginPageProp
                             </Label>
                           </div>
                           <Link href="/forgot-password">
-                            <Button variant="link" className="text-sm p-0 h-auto">
+                            <Button type="button" variant="link" className="text-sm p-0 h-auto">
                               {t("forgotPassword")}
                             </Button>
                           </Link>
@@ -797,22 +809,13 @@ export function LoginPage({ onLogin, siteConfig, interactionUid }: LoginPageProp
 
                     <Button
                       className="w-full"
-                      onClick={
-                        credentialMethod === "sms" ? handleSMSVerification : handlePasswordLogin
-                      }
-                      disabled={
-                        isLoading ||
-                        (!!interactionUid && !interactionCsrf) ||
-                        (credentialMethod === "password"
-                          ? !formData.username || !formData.password
-                          : !verificationInfo || !/^\d{6}$/.test(formData.smsCode)) ||
-                        !formData.agreeTerms
-                      }
+                      type="submit"
+                      disabled={loginDisabled}
                     >
                       {isLoading ? t("loggingIn") : t("loginButton")}
                     </Button>
                     {loginError && <div className="text-red-600 text-sm mt-2">{loginError}</div>}
-                  </div>
+                  </form>
                 </TabsContent>
 
                 <TabsContent value="register" className="space-y-4">
