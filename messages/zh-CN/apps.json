@@ -30,8 +30,8 @@
   "datasetDimensionWarning": "必须选择同一个知识库训练模型才可以",
   "email": "邮箱",
   "emailPlaceholder": "输入邮箱地址，用于收集反馈（可选）",
-  "setAsDefault": "设置为默认数字员工",
-  "setAsDefaultDesc": "设置为默认数字员工后，在聊天页面中如果用户之前没有选择数字员工，将自动选择此数字员工",
+  "setAsDefault": "设为租户默认",
+  "setAsDefaultDesc": "选择本租户已发布、全租户可用的 Web 聊天员工。没有可用的历史选择时自动选中；默认设置不赋予跨租户访问权限。",
   "deleteConfirm": "确定要删除数字员工 \"{name}\" 吗？",
   "deleteWarning": "此操作无法撤销，请谨慎操作。",
   "confirmDelete": "确认删除",
@@ -178,5 +178,14 @@
   "allTenants": "全部租户",
   "unassignedTenant": "未归属租户",
   "noAppsForTenant": "该租户下没有数字员工",
-  "clearTenantFilter": "清除筛选"
+  "clearTenantFilter": "清除筛选",
+  "tenantDefaultUpdated": "租户默认已更新",
+  "visibilityLabel": "可见范围",
+  "visibilityOptions": {
+    "private": "仅创建者",
+    "dept": "部门",
+    "tenant": "本租户",
+    "public": "公开"
+  },
+  "defaultUnavailable": "需为已发布的 Web 聊天员工，且可见范围为本租户或公开；请由有编辑权限的管理员调整。已有默认仍可取消。"
 }

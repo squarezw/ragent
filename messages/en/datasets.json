@@ -68,5 +68,12 @@
   "promptCategoryOther": "Other",
   "promptCategoryDesc": "Select document type for better segmentation",
   "ocrRecognition": "OCR Recognition",
-  "ocrRecognitionDesc": "Recognize text in images"
+  "ocrRecognitionDesc": "Recognize text in images",
+  "createSuccess": "Knowledge base created.",
+  "createFailure": "Unable to create the knowledge base right now. Try again later or contact an administrator.",
+  "createDepartmentRequired": "Your account needs a department before it can create a knowledge base. Ask your tenant administrator to check and assign one, then try again. Your entries are preserved.",
+  "createSharedPermission": "Tenant administrator permission is required to create organization-wide or public knowledge bases. Choose Personal instead, or ask your tenant administrator for help.",
+  "createOtherTenantDenied": "You cannot create a knowledge base in another tenant. Select your own tenant or ask an administrator to check your account membership.",
+  "createOtherDepartmentDenied": "You can only create knowledge bases in your own department. Select it or ask your tenant administrator to check your department membership.",
+  "createPermissionDenied": "Your account cannot create this knowledge base. Check the visibility, tenant and department, or contact your tenant administrator. Your entries are preserved."
 }
