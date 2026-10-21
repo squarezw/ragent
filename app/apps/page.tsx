@@ -59,7 +59,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { canManageTenantDefault } from "@/lib/tenantDefaultApp";
+import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
@@ -227,6 +227,7 @@ export default function AppsPage() {
     email?: string;
     settings: Record<string, any>;
     is_default?: boolean;
+    visibility: string;
   }>({
     name: "",
     description: "",
@@ -238,6 +239,7 @@ export default function AppsPage() {
     email: "",
     settings: {},
     is_default: false,
+    visibility: "private",
   });
   const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
 
@@ -326,6 +328,7 @@ export default function AppsPage() {
       email: "",
       settings: {},
       is_default: false,
+    visibility: "private",
     });
     setAutoSelectDatasets(true);
     setDialogOpen(true);
@@ -467,6 +470,7 @@ export default function AppsPage() {
       email: app.email || "",
       settings: app.settings || {},
       is_default: app.is_default || false,
+      visibility: app.visibility || "private",
     });
     setAutoSelectDatasets(resolveAutoSelectDatasets(app.settings, datasetIds));
 
@@ -476,6 +480,8 @@ export default function AppsPage() {
   // 提交表单
   const defaultOnlyEditing = !!editingApp && !canEditApp(editingApp, user, isSuperAdmin) &&
     canManageTenantDefault(editingApp, user);
+
+  const defaultCandidate = !!editingApp && isTenantDefaultCandidate({ ...editingApp, ...formData });
 
   const handleSubmit = useCallback(async () => {
     if (!formData.name.trim()) {
@@ -1179,10 +1185,20 @@ export default function AppsPage() {
             </div>
 
             </>}
+            {editingApp && !defaultOnlyEditing && <div className="space-y-2">
+              <Label>{t("visibilityLabel")}</Label>
+              <Select value={formData.visibility} onValueChange={(visibility) => setFormData({ ...formData, visibility })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["private", "dept", "tenant", "public"].map((value) => <SelectItem key={value} value={value}>{t(`visibilityOptions.${value}`)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>}
             {canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="is_default"
+                  disabled={!defaultCandidate && !formData.is_default}
                   checked={formData.is_default || false}
                   onCheckedChange={(checked) =>
                     setFormData({ ...formData, is_default: checked === true })
@@ -1196,6 +1212,7 @@ export default function AppsPage() {
                 </Label>
               </div>
               <p className="text-xs text-muted-foreground ml-6">{t("setAsDefaultDesc")}</p>
+              {!defaultCandidate && <p className="text-xs text-muted-foreground ml-6">{t("defaultUnavailable")}</p>}
             </div>}
 
             {!defaultOnlyEditing && <>

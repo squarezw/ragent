@@ -4,6 +4,7 @@ import {
   appSelectionKey,
   canManageTenantDefault,
   chooseTenantApp,
+  isTenantDefaultCandidate,
   type TenantApp,
 } from "../lib/tenantDefaultApp.ts";
 const own: TenantApp = {
@@ -40,11 +41,15 @@ test("tenant admins manage their own tenant defaults, superadmins manage any ten
   for (const invalid of [
     { status: "draft" },
     { visibility: "private" },
-    { owner_tenant_id: null },
     { app_type: "Custom" },
     { platform: "Wechat" },
   ])
-    assert.equal(canManageTenantDefault({ ...own, is_default: false, ...invalid }, admin), false);
+  {
+    assert.equal(canManageTenantDefault({ ...own, is_default: false, ...invalid }, admin), true);
+    assert.equal(isTenantDefaultCandidate({ ...own, ...invalid }), false);
+  }
+  assert.equal(isTenantDefaultCandidate(own), true);
+  assert.equal(canManageTenantDefault({ ...own, owner_tenant_id: null }, admin), false);
   assert.equal(
     canManageTenantDefault({ ...own, status: "draft" }, admin),
     true,

@@ -179,5 +179,13 @@
   "unassignedTenant": "No tenant",
   "noAppsForTenant": "No digital employees in this tenant",
   "clearTenantFilter": "Clear filter",
-  "tenantDefaultUpdated": "Tenant default updated"
+  "tenantDefaultUpdated": "Tenant default updated",
+  "visibilityLabel": "Visibility",
+  "visibilityOptions": {
+    "private": "Creator only",
+    "dept": "Department",
+    "tenant": "Current tenant",
+    "public": "Public"
+  },
+  "defaultUnavailable": "Requires a published Web chat employee shared with the tenant or publicly. An authorized editor can change these settings. An existing default can still be cleared."
 }

@@ -26,14 +26,12 @@ export function canManageTenantDefault(app: TenantApp | null, user: Actor | null
     user.isSuperAdmin ||
     hasRole(user, "超级管理员") ||
     ((user.isTenantAdmin || hasRole(user, "租户管理员")) && user.tenant_id === app.owner_tenant_id);
-  return (
-    !!admin &&
-    (app.is_default === true ||
-      (app.status === "published" &&
-        app.app_type === "Chat" &&
-        app.platform === "Web" &&
-        ["tenant", "public"].includes(app.visibility || "")))
-  );
+  return !!admin;
+}
+export function isTenantDefaultCandidate(app: TenantApp): boolean {
+  return app.owner_tenant_id != null && app.status === "published" &&
+    app.app_type === "Chat" && app.platform === "Web" &&
+    ["tenant", "public"].includes(app.visibility || "");
 }
 export function appSelectionKey(userId: number, tenantId: number | null | undefined): string {
   return `ragent_selected_app_id:${userId}:${tenantId ?? "none"}`;
