@@ -10,6 +10,7 @@ const { renderToStaticMarkup } = require("react-dom/server");
 function fixture(central: boolean) {
   const submitted: any[] = [];
   const buttons: any[] = [];
+  const forms: any[] = [];
   const assigned: any[] = [];
   let effect: any;
   const module = { exports: {} as any };
@@ -40,7 +41,12 @@ function fixture(central: boolean) {
         return [value, () => {}];
       },
     },
-    "react/jsx-runtime": require("react/jsx-runtime"),
+    "react/jsx-runtime": Object.fromEntries(Object.entries(require("react/jsx-runtime")).map(([key, value]) => [key,
+      typeof value === "function" ? (type: any, props: any, ...args: any[]) => {
+        if (type === "form") forms.push(props);
+        return (value as any)(type, props, ...args);
+      } : value,
+    ])),
     "@/hooks/useSystemSettings": {
       useSystemSettings: () => ({
         loading: false,
@@ -126,7 +132,7 @@ function fixture(central: boolean) {
       ...(central ? { interactionUid: "uid" } : {}),
     })
   );
-  return { html, buttons, submitted, assigned, effect };
+  return { html, buttons, forms, submitted, assigned, effect };
 }
 test("central mode reuses original login form layout and submits issuer interaction instead of local login", async () => {
   const normal = fixture(false);
@@ -143,8 +149,18 @@ test("central mode reuses original login form layout and submits issuer interact
   assert.equal(central.html, normal.html, "central mode must preserve existing visual markup");
   const login = central.buttons.find((b: any) => b.children === "loginButton");
   assert.ok(login);
-  await login.onClick();
+  assert.equal(login.type, "submit");
+  let prevented = false;
+  await central.forms[0].onSubmit({ preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
   assert.equal(central.submitted[0][0], "uid");
   assert.equal(central.submitted[0][2].password, "secret-pass");
   assert.deepEqual(central.assigned, ["/auth/resume"]);
+});
+
+test("legacy login submits through the same native form used by Enter", async () => {
+  const local = fixture(false);
+  await local.forms[0].onSubmit({ preventDefault() {} });
+  assert.equal(local.submitted.length, 1);
+  assert.equal(local.submitted[0][0], "/api/user/login");
 });

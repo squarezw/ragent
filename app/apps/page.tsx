@@ -740,6 +740,15 @@ export default function AppsPage() {
                                   >
                                     {app.name}
                                   </Link>
+                                  {app.visibility === "private" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs bg-muted text-muted-foreground border-border font-medium shrink-0"
+                                      title={t("privateEmployee")}
+                                    >
+                                      {t("privateBadge")}
+                                    </Badge>
+                                  )}
                                   {app.is_default && (
                                     <Badge
                                       variant="outline"
@@ -932,6 +941,15 @@ export default function AppsPage() {
                                 <CardTitle className="text-lg font-bold truncate hover:text-primary transition-colors">
                                   {app.name}
                                 </CardTitle>
+                                {app.visibility === "private" && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs bg-muted text-muted-foreground border-border font-medium shrink-0"
+                                    title={t("privateEmployee")}
+                                  >
+                                    {t("privateBadge")}
+                                  </Badge>
+                                )}
                                 {app.is_default && (
                                   <Badge
                                     variant="outline"
