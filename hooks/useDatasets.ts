@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
@@ -32,6 +33,7 @@ const fetcher = async (url: string) => {
 };
 
 export const useDatasets = () => {
+  const t = useTranslations("datasets");
   const { data, error, isLoading, mutate } = useSWR<Dataset[]>("/api/datasets", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: true,
@@ -58,17 +60,30 @@ export const useDatasets = () => {
       });
 
       if (res.data && res.data.id) {
-        toast.success("知识库创建成功！");
+        toast.success(t("createSuccess"));
         // 重新验证数据
         mutate();
         return res.data;
       } else {
-        toast.error("创建失败");
+        toast.error(t("createFailure"));
         return null;
       }
     } catch (error: any) {
       console.error("Create dataset error:", error);
-      toast.error(error.response?.data?.error || error.response?.data?.message || "创建失败");
+      const data = error.response?.data;
+      const detail = data?.details?.detail ?? data?.detail ?? data?.message ?? data?.error;
+      const permissionMessages: Record<string, string> = {
+        "普通用户只能在自己的部门下创建知识库": "createDepartmentRequired",
+        "只有租户管理员或以上角色可以创建租户级别知识库": "createSharedPermission",
+        "无权在其它租户下创建知识库": "createOtherTenantDenied",
+        "无权在其它租户下创建部门共享的知识库": "createOtherTenantDenied",
+        "无权在其它部门下创建知识库": "createOtherDepartmentDenied",
+        "需要指定部门ID": "createDepartmentRequired",
+      };
+      const key = typeof detail === "string" ? permissionMessages[detail] : undefined;
+      toast.error(key ? t(key) : error.response?.status === 403
+        ? t("createPermissionDenied")
+        : t("createFailure"), { duration: 8000 });
       return null;
     }
   };

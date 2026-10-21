@@ -68,5 +68,12 @@
   "promptCategoryOther": "其它",
   "promptCategoryDesc": "选择文档类型以获得更精准的分段效果",
   "ocrRecognition": "OCR 识别",
-  "ocrRecognitionDesc": "识别图片中的文字内容"
+  "ocrRecognitionDesc": "识别图片中的文字内容",
+  "createSuccess": "知识库创建成功！",
+  "createFailure": "暂时无法创建知识库，请稍后重试。若仍失败，请联系管理员。",
+  "createDepartmentRequired": "当前账号需要关联部门后才能创建知识库。请联系租户管理员检查并分配部门，然后重试；已填写的内容会保留。",
+  "createSharedPermission": "创建组织共享或公开知识库需要租户管理员权限。您可以改为“个人”，或联系租户管理员协助创建。",
+  "createOtherTenantDenied": "您无法在其他租户下创建知识库。请选择自己所属的租户，或联系管理员确认账号归属。",
+  "createOtherDepartmentDenied": "您只能在自己所属的部门下创建知识库。请选择自己的部门，或联系租户管理员确认部门归属。",
+  "createPermissionDenied": "当前账号没有创建此知识库的权限。请检查可见范围及租户、部门选择，或联系租户管理员；已填写的内容会保留。"
 }
