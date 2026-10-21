@@ -30,8 +30,8 @@
   "datasetDimensionWarning": "Must select knowledge bases with the same embedding model",
   "email": "Email",
   "emailPlaceholder": "Enter email for feedback collection (optional)",
-  "setAsDefault": "Set as default digital employee",
-  "setAsDefaultDesc": "When set as default, this digital employee will be automatically selected in chat if no previous selection exists",
+  "setAsDefault": "Set as tenant default",
+  "setAsDefaultDesc": "Choose a published Web chat employee available to its whole tenant. It is selected when no accessible previous selection exists and grants no cross-tenant access.",
   "deleteConfirm": "Are you sure you want to delete digital employee \"{name}\"?",
   "deleteWarning": "This action cannot be undone.",
   "confirmDelete": "Confirm Delete",
@@ -85,7 +85,7 @@
   "selectAppToEmbedPlaceholder": "Select digital employee to embed",
   "embedCodeDesc": "Copy the following code to embed the chatbot into your website:",
   "createdTime": "Created Time",
-  "default": "Default",
+  "default": "Tenant default",
   "add": "Add",
   "creating": "Creating...",
   "operationFailed": "Operation failed",
@@ -178,5 +178,7 @@
   "allTenants": "All tenants",
   "unassignedTenant": "No tenant",
   "noAppsForTenant": "No digital employees in this tenant",
-  "clearTenantFilter": "Clear filter"
+  "clearTenantFilter": "Clear filter",
+  "clearTenantDefault": "Clear tenant default",
+  "tenantDefaultUpdated": "Tenant default updated"
 }

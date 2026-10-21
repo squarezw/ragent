@@ -30,8 +30,8 @@
   "datasetDimensionWarning": "必须选择同一个知识库训练模型才可以",
   "email": "邮箱",
   "emailPlaceholder": "输入邮箱地址，用于收集反馈（可选）",
-  "setAsDefault": "设置为默认数字员工",
-  "setAsDefaultDesc": "设置为默认数字员工后，在聊天页面中如果用户之前没有选择数字员工，将自动选择此数字员工",
+  "setAsDefault": "设为租户默认",
+  "setAsDefaultDesc": "选择本租户已发布、全租户可用的 Web 聊天员工。没有可用的历史选择时自动选中；默认设置不赋予跨租户访问权限。",
   "deleteConfirm": "确定要删除数字员工 \"{name}\" 吗？",
   "deleteWarning": "此操作无法撤销，请谨慎操作。",
   "confirmDelete": "确认删除",
@@ -85,7 +85,7 @@
   "selectAppToEmbedPlaceholder": "选择要集成的数字员工",
   "embedCodeDesc": "复制以下代码嵌入到你的网站，即可集成智能客服机器人：",
   "createdTime": "创建时间",
-  "default": "默认",
+  "default": "租户默认",
   "add": "添加",
   "creating": "创建中...",
   "operationFailed": "操作失败",
@@ -178,5 +178,7 @@
   "allTenants": "全部租户",
   "unassignedTenant": "未归属租户",
   "noAppsForTenant": "该租户下没有数字员工",
-  "clearTenantFilter": "清除筛选"
+  "clearTenantFilter": "清除筛选",
+  "clearTenantDefault": "取消租户默认",
+  "tenantDefaultUpdated": "租户默认已更新"
 }

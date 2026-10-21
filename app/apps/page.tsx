@@ -59,6 +59,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canManageTenantDefault } from "@/lib/tenantDefaultApp";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
@@ -497,6 +498,8 @@ export default function AppsPage() {
         },
       };
 
+      if (!editingApp || !canManageTenantDefault(editingApp, user) ||
+        Boolean(submitData.is_default) === Boolean(editingApp.is_default)) delete submitData.is_default;
       if (editingApp) {
         // 更新
         await axios.put(`/api/v1/apps/${editingApp.id}`, submitData);
@@ -520,7 +523,29 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user]);
+
+  const [defaultBusy, setDefaultBusy] = useState(false);
+  const setTenantDefault = useCallback(async (app: App) => {
+    if (defaultBusy || !canManageTenantDefault(app, user)) return;
+    setDefaultBusy(true);
+    try {
+      await axios.put(`/api/v1/apps/${app.id}`, { is_default: !app.is_default });
+      toast.success(t("tenantDefaultUpdated"));
+      await loadApps();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || t("operationFailed"));
+    } finally { setDefaultBusy(false); }
+  }, [defaultBusy, user, loadApps, t]);
+
+  const tenantDefaultAction = (app: App) => canManageTenantDefault(app, user) ? (
+    <Button variant="outline" size="sm" disabled={defaultBusy} onClick={(event) => {
+      event.stopPropagation();
+      void setTenantDefault(app);
+    }}>
+      {t(app.is_default ? "clearTenantDefault" : "setAsDefault")}
+    </Button>
+  ) : null;
 
   // 提交应用审核（draft/rejected → pending_review；建即 draft，仅 owner 可测）
   const handleSubmitAppReview = useCallback(
@@ -807,6 +832,7 @@ export default function AppsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 )}
+                                {tenantDefaultAction(app)}
                                 {canEditApp(app, user, isSuperAdmin) && (
                                   <>
                                     <TooltipProvider>
@@ -1000,7 +1026,8 @@ export default function AppsPage() {
                                   </Tooltip>
                                 </TooltipProvider>
                               )}
-                              {canEditApp(app, user, isSuperAdmin) && (
+                              {tenantDefaultAction(app)}
+                                {canEditApp(app, user, isSuperAdmin) && (
                                 <>
                                   <TooltipProvider>
                                     <Tooltip>
@@ -1144,7 +1171,7 @@ export default function AppsPage() {
               />
             </div>
 
-            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+            {canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="is_default"
@@ -1161,7 +1188,7 @@ export default function AppsPage() {
                 </Label>
               </div>
               <p className="text-xs text-muted-foreground ml-6">{t("setAsDefaultDesc")}</p>
-            </div>
+            </div>}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
