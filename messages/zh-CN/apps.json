@@ -85,7 +85,7 @@
   "selectAppToEmbedPlaceholder": "选择要集成的数字员工",
   "embedCodeDesc": "复制以下代码嵌入到你的网站，即可集成智能客服机器人：",
   "createdTime": "创建时间",
-  "default": "租户默认",
+  "default": "默认",
   "add": "添加",
   "creating": "创建中...",
   "operationFailed": "操作失败",
@@ -179,6 +179,5 @@
   "unassignedTenant": "未归属租户",
   "noAppsForTenant": "该租户下没有数字员工",
   "clearTenantFilter": "清除筛选",
-  "clearTenantDefault": "取消租户默认",
   "tenantDefaultUpdated": "租户默认已更新"
 }

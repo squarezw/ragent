@@ -85,7 +85,7 @@
   "selectAppToEmbedPlaceholder": "Select digital employee to embed",
   "embedCodeDesc": "Copy the following code to embed the chatbot into your website:",
   "createdTime": "Created Time",
-  "default": "Tenant default",
+  "default": "Default",
   "add": "Add",
   "creating": "Creating...",
   "operationFailed": "Operation failed",
@@ -179,6 +179,5 @@
   "unassignedTenant": "No tenant",
   "noAppsForTenant": "No digital employees in this tenant",
   "clearTenantFilter": "Clear filter",
-  "clearTenantDefault": "Clear tenant default",
   "tenantDefaultUpdated": "Tenant default updated"
 }

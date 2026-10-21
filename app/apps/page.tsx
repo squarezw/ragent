@@ -474,6 +474,9 @@ export default function AppsPage() {
   }, []);
 
   // 提交表单
+  const defaultOnlyEditing = !!editingApp && !canEditApp(editingApp, user, isSuperAdmin) &&
+    canManageTenantDefault(editingApp, user);
+
   const handleSubmit = useCallback(async () => {
     if (!formData.name.trim()) {
       toast.error(tc("required"));
@@ -482,6 +485,13 @@ export default function AppsPage() {
 
     try {
       setSubmitting(true);
+      if (defaultOnlyEditing && editingApp) {
+        await axios.put(`/api/v1/apps/${editingApp.id}`, { is_default: !!formData.is_default });
+        toast.success(t("tenantDefaultUpdated"));
+        setDialogOpen(false);
+        await loadApps();
+        return;
+      }
 
       const workflow = syncFormToWorkflow(
         { ...formData },
@@ -523,29 +533,25 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing]);
 
-  const [defaultBusy, setDefaultBusy] = useState(false);
-  const setTenantDefault = useCallback(async (app: App) => {
-    if (defaultBusy || !canManageTenantDefault(app, user)) return;
-    setDefaultBusy(true);
-    try {
-      await axios.put(`/api/v1/apps/${app.id}`, { is_default: !app.is_default });
-      toast.success(t("tenantDefaultUpdated"));
-      await loadApps();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || t("operationFailed"));
-    } finally { setDefaultBusy(false); }
-  }, [defaultBusy, user, loadApps, t]);
-
-  const tenantDefaultAction = (app: App) => canManageTenantDefault(app, user) ? (
-    <Button variant="outline" size="sm" disabled={defaultBusy} onClick={(event) => {
-      event.stopPropagation();
-      void setTenantDefault(app);
-    }}>
-      {t(app.is_default ? "clearTenantDefault" : "setAsDefault")}
-    </Button>
-  ) : null;
+  // Tenant admins may open a default-only editor without gaining configuration/delete rights.
+  const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
+    canManageTenantDefault(app, user) ? (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={(event) => {
+              event.stopPropagation();
+              handleEdit(app);
+            }} className="h-8 w-8" aria-label={tc("edit")}>
+              <Edit className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{tc("edit")}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : null;
 
   // 提交应用审核（draft/rejected → pending_review；建即 draft，仅 owner 可测）
   const handleSubmitAppReview = useCallback(
@@ -832,7 +838,7 @@ export default function AppsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 )}
-                                {tenantDefaultAction(app)}
+                                {defaultOnlyEditAction(app)}
                                 {canEditApp(app, user, isSuperAdmin) && (
                                   <>
                                     <TooltipProvider>
@@ -1026,7 +1032,7 @@ export default function AppsPage() {
                                   </Tooltip>
                                 </TooltipProvider>
                               )}
-                              {tenantDefaultAction(app)}
+                              {defaultOnlyEditAction(app)}
                                 {canEditApp(app, user, isSuperAdmin) && (
                                 <>
                                   <TooltipProvider>
@@ -1115,12 +1121,13 @@ export default function AppsPage() {
                   {editingApp ? t("editApp") : t("createApp")}
                 </DialogTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {editingApp ? t("modifyAppConfig") : t("createNewApp")}
+                  {defaultOnlyEditing ? t("setAsDefaultDesc") : editingApp ? t("modifyAppConfig") : t("createNewApp")}
                 </p>
               </div>
             </div>
           </DialogHeader>
           <div className="space-y-6 py-6">
+            {!defaultOnlyEditing && <>
             <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-semibold">
                 {t("appNameRequired")}
@@ -1171,6 +1178,7 @@ export default function AppsPage() {
               />
             </div>
 
+            </>}
             {canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -1190,6 +1198,7 @@ export default function AppsPage() {
               <p className="text-xs text-muted-foreground ml-6">{t("setAsDefaultDesc")}</p>
             </div>}
 
+            {!defaultOnlyEditing && <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">{t("appType")}</Label>
@@ -1498,6 +1507,7 @@ export default function AppsPage() {
                   </TooltipProvider>
                 )}
             </div>
+            </>}
           </div>
           <DialogFooter className="pt-4 border-t gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
