@@ -1,39 +1,45 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getUserIdFromRequest } from "@/lib/auth";
-import { signChatUploadReceipt } from "@/lib/chatUploadReceipt";
-import { requireEnv } from "@/lib/env";
-import { ossClient } from "@/lib/ossClient";
+import { getTokenFromRequest, getUserIdFromRequest } from "@/lib/auth";
 
+// Keep the browser endpoint compatible; upload authorization lives in ragent-service.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const userId = getUserIdFromRequest(req);
-  if (!userId) {
+  const token = getTokenFromRequest(req);
+  if (!userId || !token) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { filename, contentType, category } = req.body;
-
+  const { filename, contentType, category } = req.body || {};
   if (!filename || !contentType || !category) {
     return res.status(400).json({
       error: "Missing required fields: filename, contentType, category",
     });
   }
 
+  const apiBase = (process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010").replace(/\/$/, "");
   try {
-    const result = await ossClient.presign({ filename, contentType, category });
-    const uploadReceipt = category === "attachments"
-      ? signChatUploadReceipt(userId, result.objectKey, contentType, requireEnv("JWT_SECRET"))
-      : undefined;
-    return res.status(200).json({ ...result, ...(uploadReceipt ? { uploadReceipt } : {}) });
-  } catch (error: any) {
-    console.error("[OSS Presign] Error:", {
-      message: error.message,
-      code: error.code || error.cause?.code,
-      cause: error.cause?.message,
+    const response = await fetch(`${apiBase}/api/v1/files/presign`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ filename, contentType, category }),
+      signal: AbortSignal.timeout(30000),
     });
-    return res.status(500).json({ error: error.message || "Presign failed" });
+    const result = await response.json();
+    if (!response.ok) {
+      const error = typeof result.detail === "string"
+        ? result.detail
+        : "Upload authorization failed";
+      return res.status(response.status).json({ error });
+    }
+    return res.status(200).json(result);
+  } catch {
+    return res.status(502).json({ error: "Upload authorization service unavailable" });
   }
 }
