@@ -31,6 +31,8 @@ instance.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // Closing a view or replacing a request is normal cancellation, not an API failure.
+    if (axios.isCancel(error) || error?.code === "ERR_CANCELED") return Promise.reject(error);
     if (error instanceof SessionRenewalError) return Promise.reject(error);
     if (typeof window !== "undefined" && error.response?.status === 401 && isCookieAuthMode() && getAuthenticatedSession()) {
       const config = error.config;

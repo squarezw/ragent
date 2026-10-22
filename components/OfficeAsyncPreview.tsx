@@ -35,6 +35,7 @@ export function OfficeAsyncPreview({
           method,
           data: method === "post" ? { retry } : undefined,
           signal: controller.signal,
+          suppressErrorToast: true,
         });
         if (!active) return;
         const next = result.data;
