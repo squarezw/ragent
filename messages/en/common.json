@@ -124,5 +124,8 @@
   "platformTitle": "RAgent AI Platform",
   "platformDescription": "RAgent AI Platform",
   "view": "View",
-  "back": "Back"
+  "back": "Back",
+  "officePreviewPreparing": "Preparing the preview in the background. You can close this window and return later.",
+  "officePreviewFailed": "The preview is not ready. Retry or use compatibility mode.",
+  "officePreviewRetry": "Retry preview"
 }

@@ -1,12 +1,13 @@
 "use client";
 
+import { OfficeAsyncPreview } from "@/components/OfficeAsyncPreview";
 import { Button } from "@/components/ui/button";
 import axios from "@/lib/axios";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { getSessionGeneration, isLogoutPending } from "@/lib/browserAuthMode";
 import { PreviewLinkCache } from "@/lib/previewLinkCache";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import ReactMarkdown from "react-markdown";
 import { Download, Link } from "lucide-react";
@@ -36,6 +37,8 @@ export interface FilePreviewDialogProps {
 
 export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FilePreviewDialogProps) {
   const t = useTranslations("common");
+  const [officeCompatibility, setOfficeCompatibility] = useState<object | null>(null);
+  const useOfficeCompatibility = useCallback(() => setOfficeCompatibility(file), [file]);
   const [textContent, setTextContent] = useState<string | undefined>(undefined);
   const [docxHtml, setDocxHtml] = useState<string | undefined>(undefined);
   const [docText, setDocText] = useState<string | undefined>(undefined);
@@ -184,13 +187,21 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
 
     async function fetchPreviewUrl(fileId: string, setter: (url: string) => void) {
       const requestedAt = Date.now();
-      const { url, expiresIn, fallbackUrl } = await getPreviewUrl(fileId, cacheRef.current.get(fileId));
+      const { url, expiresIn, fallbackUrl } = await getPreviewUrl(
+        fileId,
+        cacheRef.current.get(fileId)
+      );
       if (!current()) return;
       cacheRef.current.put(fileId, fallbackUrl || url, expiresIn, requestedAt, generation);
       if (setter === setPdfUrl) setPdfFallbackUrl(fallbackUrl);
-      const forceProxy = setter === setPdfUrl ? forcePdfProxyRef.current : forceImageProxyRef.current;
+      const forceProxy =
+        setter === setPdfUrl ? forcePdfProxyRef.current : forceImageProxyRef.current;
       const deliveredUrl = forceProxy ? fallbackUrl || url : url;
-      if (setter === setImageUrl) imageDeliveryRef.current = { url: deliveredUrl, fallbackUrl: forceProxy ? undefined : fallbackUrl };
+      if (setter === setImageUrl)
+        imageDeliveryRef.current = {
+          url: deliveredUrl,
+          fallbackUrl: forceProxy ? undefined : fallbackUrl,
+        };
       setter(deliveredUrl);
       const refreshAfter = Math.max((expiresIn - 120) * 1000 - (Date.now() - requestedAt), 1000);
       clearTimeout(refreshTimerRef.current);
@@ -244,6 +255,16 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
       // 只有 Office 文档才走 kkFileView
       // 避免 PDF 和图片也走 kkFileView 导致变慢
       const isOffice = isOfficeDocument(fileInfo);
+
+      // Background Office previews own conversion; never start a competing legacy conversion.
+      if (
+        isOffice &&
+        !fileInfo.sourceUrl &&
+        /^[1-9]\d*$/.test(String(fileInfo.id)) &&
+        officeCompatibility !== file
+      ) {
+        return cleanup;
+      }
 
       // 如果有文件 URL 且是 Office 文档，优先使用 kkFileView 预览
       if (fileUrl && isOffice) {
@@ -379,7 +400,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
     }
 
     return cleanup;
-  }, [fileInfo, open, scope, authBlocked, user?.id, t]);
+  }, [fileInfo, open, scope, authBlocked, user?.id, t, officeCompatibility, file]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -460,9 +481,18 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
           <div className="mt-4 flex-1 min-h-0 overflow-auto bg-secondary p-2 rounded text-xs">
             {fileInfo && previewOwner === fileInfo ? (
               <div key={fileInfo.id || "preview-content"} className="w-full h-full">
-                {(fileInfo.sourceUrl || fileInfo.filename) &&
-                (kkPreviewUrl || kkLoading || kkError) &&
-                isOfficeDocument(fileInfo) ? (
+                {isOfficeDocument(fileInfo) &&
+                !fileInfo.sourceUrl &&
+                /^[1-9]\d*$/.test(String(fileInfo.id)) &&
+                officeCompatibility !== file ? (
+                  <OfficeAsyncPreview
+                    key={`${scope}:${fileInfo.id}`}
+                    fileId={String(fileInfo.id)}
+                    onCompatibility={useOfficeCompatibility}
+                  />
+                ) : (fileInfo.sourceUrl || fileInfo.filename) &&
+                  (kkPreviewUrl || kkLoading || kkError) &&
+                  isOfficeDocument(fileInfo) ? (
                   kkLoading ? (
                     <div className="flex h-full items-center justify-center text-muted-foreground">
                       {t("openingPreview")}
@@ -516,7 +546,9 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
                       src={imageUrl}
                       alt={fileInfo.originalname || fileInfo.filename}
                       referrerPolicy="no-referrer"
-                      onError={(event) => imageLoadErrorRef.current?.(event.currentTarget.getAttribute("src") || "")}
+                      onError={(event) =>
+                        imageLoadErrorRef.current?.(event.currentTarget.getAttribute("src") || "")
+                      }
                       className="max-w-full max-h-full mx-auto"
                     />
                   ) : imageError ? (
@@ -604,12 +636,19 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
             ) : null}
           </div>
           <div className="flex justify-end gap-2 mt-6">
-            {fileInfo && previewOwner === fileInfo && fileInfo.mimetype === "application/pdf" &&
-              pdfUrl && pdfFallbackUrl && !forcePdfProxyRef.current && (
-                <Button variant="outline" onClick={() => {
-                  forcePdfProxyRef.current = true;
-                  setPdfUrl(pdfFallbackUrl);
-                }}>
+            {fileInfo &&
+              previewOwner === fileInfo &&
+              fileInfo.mimetype === "application/pdf" &&
+              pdfUrl &&
+              pdfFallbackUrl &&
+              !forcePdfProxyRef.current && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    forcePdfProxyRef.current = true;
+                    setPdfUrl(pdfFallbackUrl);
+                  }}
+                >
                   {t("previewCompatibilityMode")}
                 </Button>
               )}
