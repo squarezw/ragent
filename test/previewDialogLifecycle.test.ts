@@ -42,6 +42,13 @@ function harness(initialMimetype = "application/pdf") {
         },
       ];
     },
+    useCallback(callback: any, deps: any[]) {
+      const index = cursor++;
+      const prev = slots[index];
+      if (!prev || deps.some((value, i) => !Object.is(value, prev.deps[i])))
+        slots[index] = { callback, deps };
+      return slots[index].callback;
+    },
     useRef(initial: any) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = { current: initial };
@@ -65,6 +72,7 @@ function harness(initialMimetype = "application/pdf") {
     react: hooks,
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "@/components/ui/button": { Button: "button" },
+    "@/components/OfficeAsyncPreview": { OfficeAsyncPreview: "office-preview" },
     "@radix-ui/react-dialog": {},
     "next-intl": { useTranslations: () => translate },
     "react-markdown": {},
@@ -162,7 +170,8 @@ function harness(initialMimetype = "application/pdf") {
       function visit(node: any): any {
         if (Array.isArray(node)) return node.map(visit).find(Boolean);
         if (!node?.props) return;
-        if (node.type === "button" && node.props.children === "previewCompatibilityMode") return node;
+        if (node.type === "button" && node.props.children === "previewCompatibilityMode")
+          return node;
         return visit(node.props.children);
       }
       const button = visit(tree);
@@ -265,7 +274,6 @@ test("transient scheduled refresh failure preserves the displayed document", asy
   assert.equal(h.calls.length, 3);
 });
 
-
 test("direct PDF uses proxy token hints; compatibility choice survives refresh and resets on file switch", async () => {
   const h = harness();
   const fallback = "/api/file-preview/stream?token=first";
@@ -282,7 +290,6 @@ test("direct PDF uses proxy token hints; compatibility choice survives refresh a
   await h.resolve("https://bucket.example/b.pdf", 600, 0, "/api/file-preview/stream?token=b");
   assert.deepEqual(h.urls(), ["https://bucket.example/b.pdf"]);
 });
-
 
 test("image errors fall back once and keep proxy choice through refresh", async () => {
   const h = harness("image/png");
@@ -312,9 +319,15 @@ test("late image errors cannot replace another file or revive closed or logged-o
   assert.deepEqual(h.urls(), ["https://bucket.example/b.jpg"]);
   for (const action of ["close", "logout"]) {
     const isolated = harness("image/png");
-    await isolated.resolve("https://bucket.example/a.png", 600, 0, "/api/file-preview/stream?token=a");
+    await isolated.resolve(
+      "https://bucket.example/a.png",
+      600,
+      0,
+      "/api/file-preview/stream?token=a"
+    );
     const failure = isolated.imageFailure();
-    if (action === "close") isolated.open(false); else isolated.logout();
+    if (action === "close") isolated.open(false);
+    else isolated.logout();
     failure();
     assert.deepEqual(isolated.urls(), []);
   }

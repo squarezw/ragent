@@ -155,6 +155,10 @@ test("proxy forwards only the authenticated original-file JWT and preserves back
   assert.equal(status, 401);
   assert.equal(calls.length, 1);
   authenticated = true;
+  req.query.fileId = "2147483648";
+  await module.exports.default(req, res);
+  assert.equal(status, 400);
+  assert.equal(calls.length, 1);
   req.query.fileId = "process-document-4";
   await module.exports.default(req, res);
   assert.equal(status, 400);

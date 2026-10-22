@@ -12,7 +12,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   if (!requireAuth(req, res)) return;
   const id = req.query.fileId;
-  if (typeof id !== "string" || !/^[1-9]\d*$/.test(id)) {
+  if (
+    typeof id !== "string" ||
+    !/^[1-9]\d*$/.test(id) ||
+    !Number.isSafeInteger(Number(id)) ||
+    Number(id) > 2147483647
+  ) {
     return res.status(400).json({ error: "invalid_file_id" });
   }
   try {
