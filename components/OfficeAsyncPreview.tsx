@@ -6,7 +6,7 @@ import axios from "@/lib/axios";
 import { Button } from "@/components/ui/button";
 
 interface OfficeState {
-  status: "pending" | "running" | "ready" | "failed";
+  status: "pending" | "running" | "ready" | "failed" | "denied" | "missing";
   url?: string;
   expiresIn?: number;
   retryAfter?: number;
@@ -27,7 +27,8 @@ export function OfficeAsyncPreview({
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     setState({ status: "pending" });
-    async function request(method: "get" | "post", retry = false) {
+    async function request(method: "get" | "post", retry = false, revisionRetry = false) {
+      if (!active) return;
       try {
         const result = await axios.request({
           url: `/api/file-preview/office?fileId=${encodeURIComponent(fileId)}`,
@@ -42,6 +43,17 @@ export function OfficeAsyncPreview({
           return;
         }
         if (next.status === "ready" && typeof next.url === "string") {
+          let parsed: URL;
+          try {
+            parsed = new URL(next.url);
+          } catch {
+            setState({ status: "failed" });
+            return;
+          }
+          if (parsed.protocol !== "https:") {
+            setState({ status: "failed" });
+            return;
+          }
           setState(next);
           timer = setTimeout(
             () => void request("get"),
@@ -59,7 +71,10 @@ export function OfficeAsyncPreview({
       } catch (error) {
         if (!active) return;
         const status = (error as { response?: { status?: number } }).response?.status;
-        if (status === 404 || status === 422) onCompatibility();
+        if (status === 401 || status === 403) setState({ status: "denied" });
+        else if (status === 404) setState({ status: "missing" });
+        else if (status === 422) onCompatibility();
+        else if (status === 409 && !revisionRetry) await request("post", false, true);
         else setState({ status: "failed" });
       }
     }
@@ -82,7 +97,15 @@ export function OfficeAsyncPreview({
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
-          {t(state.status === "failed" ? "officePreviewFailed" : "officePreviewPreparing")}
+          {t(
+            state.status === "denied"
+              ? "officePreviewDenied"
+              : state.status === "missing"
+                ? "officePreviewMissing"
+                : state.status === "failed"
+                  ? "officePreviewFailed"
+                  : "officePreviewPreparing"
+          )}
         </div>
       )}
       <div className="flex justify-end gap-2">
@@ -91,9 +114,11 @@ export function OfficeAsyncPreview({
             {t("officePreviewRetry")}
           </Button>
         )}
-        <Button variant="outline" onClick={onCompatibility}>
-          {t("previewCompatibilityMode")}
-        </Button>
+        {state.status !== "denied" && state.status !== "missing" && (
+          <Button variant="outline" onClick={onCompatibility}>
+            {t("previewCompatibilityMode")}
+          </Button>
+        )}
       </div>
     </div>
   );

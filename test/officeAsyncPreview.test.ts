@@ -59,6 +59,7 @@ test("actual Office component queues once, polls, displays ready, refreshes and 
     module,
     exports: module.exports,
     require: (name: string) => imports[name],
+    URL,
     AbortController,
     setTimeout: (fn: any) => {
       timer = fn;
@@ -158,4 +159,107 @@ test("proxy forwards only the authenticated original-file JWT and preserves back
   await module.exports.default(req, res);
   assert.equal(status, 400);
   assert.equal(calls.length, 1);
+});
+
+test("Office component blocks denied/deleted fallback, handles revision changes and ignores stale responses", async () => {
+  let effect: any;
+  let state: any;
+  let index = 0;
+  let fallback = 0;
+  let timer: any;
+  let calls = 0;
+  let answers: any[] = [];
+  const module = { exports: {} as any };
+  const imports: Record<string, any> = {
+    react: {
+      useState: (initial: any) =>
+        index++ === 0
+          ? [
+              state || initial,
+              (value: any) => {
+                state = value;
+              },
+            ]
+          : [0, () => {}],
+      useEffect: (fn: any) => {
+        effect = fn;
+      },
+    },
+    "react/jsx-runtime": {
+      jsx: (type: any, props: any) => ({ type, props }),
+      jsxs: (type: any, props: any) => ({ type, props }),
+    },
+    "next-intl": { useTranslations: () => (key: string) => key },
+    "@/components/ui/button": { Button: "button" },
+    "@/lib/axios": {
+      default: {
+        request: async () => {
+          calls++;
+          const answer = answers.shift();
+          if (answer?.response) throw answer;
+          return { data: await answer };
+        },
+      },
+    },
+  };
+  runInNewContext(compile("../components/OfficeAsyncPreview.tsx"), {
+    module,
+    exports: module.exports,
+    require: (name: string) => imports[name],
+    URL,
+    AbortController,
+    setTimeout: (fn: any) => {
+      timer = fn;
+      return 1;
+    },
+    clearTimeout: () => {
+      timer = undefined;
+    },
+  });
+  const render = () => {
+    index = 0;
+    return module.exports.OfficeAsyncPreview({ fileId: "1", onCompatibility: () => fallback++ });
+  };
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  for (const status of [401, 403, 404]) {
+    answers = [{ response: { status } }];
+    render();
+    const cleanup = effect();
+    await settle();
+    assert.equal(state.status, status === 404 ? "missing" : "denied");
+    const tree = render();
+    assert.deepEqual(Array.from(tree.props.children[1].props.children), [false, false]);
+    assert.equal(fallback, 0);
+    cleanup();
+  }
+  answers = [{ response: { status: 409 } }, { status: "pending" }];
+  render();
+  let cleanup = effect();
+  await settle();
+  assert.equal(state.status, "pending");
+  const staleTimer = timer;
+  const callsBefore = calls;
+  cleanup();
+  staleTimer();
+  await settle();
+  assert.equal(calls, callsBefore);
+  let resolveOld: any;
+  answers = [
+    new Promise((resolve) => {
+      resolveOld = resolve;
+    }),
+  ];
+  render();
+  cleanup = effect();
+  cleanup();
+  state = { status: "pending" };
+  resolveOld({ status: "ready", url: "https://offline.invalid/stale.pdf" });
+  await settle();
+  assert.equal(state.status, "pending");
+  answers = [{ status: "ready", url: "javascript:alert(1)" }];
+  render();
+  cleanup = effect();
+  await settle();
+  assert.equal(state.status, "failed");
+  cleanup();
 });
