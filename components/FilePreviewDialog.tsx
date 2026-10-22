@@ -71,6 +71,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
   const imageLoadErrorRef = useRef<((failedUrl: string) => void) | undefined>(undefined);
   const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [downloading, setDownloading] = useState(false);
+  const [officeActionsContainer, setOfficeActionsContainer] = useState<HTMLDivElement | null>(null);
   // 使用 ref 存储之前的 URL，用于清理
   const prevPdfUrlRef = useRef<string | undefined>(undefined);
   const prevImageUrlRef = useRef<string | undefined>(undefined);
@@ -489,6 +490,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
                     key={`${scope}:${fileInfo.id}`}
                     fileId={String(fileInfo.id)}
                     onCompatibility={useOfficeCompatibility}
+                    actionsContainer={officeActionsContainer}
                   />
                 ) : (fileInfo.sourceUrl || fileInfo.filename) &&
                   (kkPreviewUrl || kkLoading || kkError) &&
@@ -636,6 +638,7 @@ export function FilePreviewDialog({ file, open, onOpenChange, datasetId }: FileP
             ) : null}
           </div>
           <div className="flex justify-end gap-2 mt-6">
+            <div ref={setOfficeActionsContainer} className="contents" />
             {fileInfo &&
               previewOwner === fileInfo &&
               fileInfo.mimetype === "application/pdf" &&

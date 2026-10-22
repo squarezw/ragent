@@ -37,6 +37,12 @@ test("actual Office component queues once, polls, displays ready, refreshes and 
         effect = fn;
       },
     },
+    "react-dom": {
+      createPortal: (children: any, container: any) => ({
+        type: "portal",
+        props: { children, container },
+      }),
+    },
     "react/jsx-runtime": {
       jsx: (type: any, props: any) => ({ type, props }),
       jsxs: (type: any, props: any) => ({ type, props }),
@@ -69,9 +75,13 @@ test("actual Office component queues once, polls, displays ready, refreshes and 
       timer = undefined;
     },
   });
-  const render = (id = "1") => {
+  const render = (id = "1", actionsContainer?: object) => {
     stateIndex = 0;
-    return module.exports.OfficeAsyncPreview({ fileId: id, onCompatibility: () => fallback++ });
+    return module.exports.OfficeAsyncPreview({
+      fileId: id,
+      onCompatibility: () => fallback++,
+      actionsContainer,
+    });
   };
   const settle = () => new Promise((resolve) => setImmediate(resolve));
   render();
@@ -88,6 +98,14 @@ test("actual Office component queues once, polls, displays ready, refreshes and 
   assert.equal(state.status, "ready");
   const tree = render();
   assert.equal(tree.props.children[0].props.src, "https://offline.invalid/preview.pdf");
+  const footer = { role: "dialog-footer" };
+  const footerTree = render("1", footer);
+  assert.equal(footerTree.props.children[1].type, "portal");
+  assert.equal(
+    footerTree.props.children[1].props.container,
+    footer,
+    "Office actions render in the shared footer, outside preview content"
+  );
   assert.equal(fallback, 0);
   assert.equal(typeof timer, "function");
   if (typeof cleanup === "function") cleanup();
@@ -188,6 +206,12 @@ test("Office component blocks denied/deleted fallback, handles revision changes 
       useEffect: (fn: any) => {
         effect = fn;
       },
+    },
+    "react-dom": {
+      createPortal: (children: any, container: any) => ({
+        type: "portal",
+        props: { children, container },
+      }),
     },
     "react/jsx-runtime": {
       jsx: (type: any, props: any) => ({ type, props }),

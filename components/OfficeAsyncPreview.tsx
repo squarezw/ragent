@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,11 @@ interface OfficeState {
 export function OfficeAsyncPreview({
   fileId,
   onCompatibility,
+  actionsContainer,
 }: {
   fileId: string;
   onCompatibility: () => void;
+  actionsContainer?: HTMLElement | null;
 }) {
   const t = useTranslations("common");
   const [state, setState] = useState<OfficeState>({ status: "pending" });
@@ -87,6 +90,21 @@ export function OfficeAsyncPreview({
     };
   }, [fileId, attempt, onCompatibility]);
 
+  const actions = (
+    <div className="flex justify-end gap-2">
+      {state.status === "failed" && (
+        <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+          {t("officePreviewRetry")}
+        </Button>
+      )}
+      {state.status !== "denied" && state.status !== "missing" && (
+        <Button variant="outline" onClick={onCompatibility}>
+          {t("previewCompatibilityMode")}
+        </Button>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex h-full flex-col gap-3">
       {state.status === "ready" && state.url ? (
@@ -109,18 +127,11 @@ export function OfficeAsyncPreview({
           )}
         </div>
       )}
-      <div className="flex justify-end gap-2">
-        {state.status === "failed" && (
-          <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
-            {t("officePreviewRetry")}
-          </Button>
-        )}
-        {state.status !== "denied" && state.status !== "missing" && (
-          <Button variant="outline" onClick={onCompatibility}>
-            {t("previewCompatibilityMode")}
-          </Button>
-        )}
-      </div>
+      {actionsContainer
+        ? createPortal(actions, actionsContainer)
+        : actionsContainer === undefined
+          ? actions
+          : null}
     </div>
   );
 }
