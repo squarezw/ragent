@@ -124,5 +124,10 @@
   "platformTitle": "RAgent 智能体中台",
   "platformDescription": "RAgent 智能体中台",
   "view": "查看",
-  "back": "返回"
+  "back": "返回",
+  "officePreviewPreparing": "正在后台准备预览，可关闭窗口后稍后再看。",
+  "officePreviewFailed": "预览暂时未准备好，请重试或使用兼容模式。",
+  "officePreviewRetry": "重新准备预览",
+  "officePreviewDenied": "会话已失效或没有文件访问权限，请重新登录或联系管理员。",
+  "officePreviewMissing": "文件已不存在，无法预览。"
 }

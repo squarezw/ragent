@@ -124,5 +124,10 @@
   "platformTitle": "RAgent AI Platform",
   "platformDescription": "RAgent AI Platform",
   "view": "View",
-  "back": "Back"
+  "back": "Back",
+  "officePreviewPreparing": "Preparing the preview in the background. You can close this window and return later.",
+  "officePreviewFailed": "The preview is not ready. Retry or use compatibility mode.",
+  "officePreviewRetry": "Retry preview",
+  "officePreviewDenied": "Your session expired or you do not have access to this file. Sign in again or contact an administrator.",
+  "officePreviewMissing": "The file is no longer available for preview."
 }
