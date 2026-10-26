@@ -189,5 +189,9 @@
   },
   "defaultUnavailable": "Requires a published Web chat employee shared with the tenant or publicly. An authorized editor can change these settings. An existing default can still be cleared.",
   "privateEmployee": "Private: visible only to the creator",
-  "privateBadge": "Private"
+  "privateBadge": "Private",
+  "createTenantLabel": "Tenant *",
+  "createTenantPlaceholder": "Select a tenant",
+  "createTenantRequired": "Select a tenant before creating the digital employee.",
+  "crossTenantWechatBinding": "Create the employee first, then configure the WeChat binding within its tenant."
 }

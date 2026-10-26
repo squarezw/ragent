@@ -60,6 +60,7 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
+import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
@@ -99,6 +100,8 @@ interface App {
 const canSubmitAppReview = (app: App) => app.status === "draft" || app.status === "rejected";
 
 interface Dataset {
+  visibility?: string;
+  owner_tenant_id?: number | null;
   id: string;
   name: string;
   dimension?: number;
@@ -139,6 +142,7 @@ export default function AppsPage() {
   const [apps, setApps] = useState<App[]>([]);
   /** 超管的租户筛选。"all" = 不筛。 */
   const [tenantFilter, setTenantFilter] = useState<string>("all");
+  const [createTenantId, setCreateTenantId] = useState("");
   const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
 
   /**
@@ -203,6 +207,24 @@ export default function AppsPage() {
 
   const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
   const [autoSelectDatasets, setAutoSelectDatasets] = useState(true);
+
+  const createDatasets = datasetsForCreateTenant(datasets, isSuperAdmin, !!editingApp, createTenantId);
+  const canSelectWechatBinding = !!editingApp || !isSuperAdmin ||
+    (!!createTenantId && Number(createTenantId) === user?.tenant_id);
+  const handleCreateTenantChange = (tenantId: string) => {
+    setCreateTenantId(tenantId);
+    setFormData(previous => clearTenantBindings(previous));
+    setAutoSelectDatasets(true);
+  };
+  const tenantSelector = isSuperAdmin && !editingApp ? (
+    <div className="space-y-2">
+      <Label htmlFor="create-tenant">{t("createTenantLabel")}</Label>
+      <Select value={createTenantId} onValueChange={handleCreateTenantChange}>
+        <SelectTrigger id="create-tenant"><SelectValue placeholder={t("createTenantPlaceholder")} /></SelectTrigger>
+        <SelectContent>{tenants.map(tenant => <SelectItem key={tenant.id} value={String(tenant.id)}>{tenant.name}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+  ) : null;
 
   // 自动选择第一个应用作为默认嵌入对象
   useEffect(() => {
@@ -317,6 +339,7 @@ export default function AppsPage() {
   // 打开创建对话框
   const handleCreate = useCallback(() => {
     setEditingApp(null);
+    setCreateTenantId(user?.tenant_id ? String(user.tenant_id) : "");
     setFormData({
       name: "",
       description: "",
@@ -332,16 +355,19 @@ export default function AppsPage() {
     });
     setAutoSelectDatasets(true);
     setDialogOpen(true);
-  }, []);
+  }, [user?.tenant_id]);
 
   // 打开模板选择对话框
   const handleCreateFromTemplate = useCallback(() => {
+    setEditingApp(null);
+    setCreateTenantId(user?.tenant_id ? String(user.tenant_id) : "");
     setTemplateDialogOpen(true);
     setSelectedTemplate(null); // 重置选择状态
-  }, []);
+  }, [user?.tenant_id]);
 
   // 创建质量分类智能体
   const handleCreateQualityAgent = useCallback(async () => {
+    if (isSuperAdmin && !createTenantId) { toast.error(t("createTenantRequired")); return; }
     try {
       setCreatingFromTemplate(true);
 
@@ -351,7 +377,7 @@ export default function AppsPage() {
         app_type: "Chat" as const,
         platform: "Web" as const,
         ai_model: DEFAULT_LLM_MODEL_CODE,
-            dataset_ids: ["quality_knowledge_base"], // 使用质量知识库
+            dataset_ids: createDatasets.filter(dataset => dataset.id === "quality_knowledge_base").map(dataset => dataset.id),
         settings: {
           workflow: {
             nodes: [
@@ -431,7 +457,7 @@ export default function AppsPage() {
         },
       };
 
-      await axios.post("/api/v1/apps", qualityAgentData);
+      await axios.post("/api/v1/apps", { ...qualityAgentData, ...createTenantFields(isSuperAdmin, createTenantId) });
       toast.success(t("qualityAgentCreated"));
       setTemplateDialogOpen(false);
       setSelectedTemplate(null);
@@ -441,7 +467,7 @@ export default function AppsPage() {
     } finally {
       setCreatingFromTemplate(false);
     }
-  }, [loadApps]);
+  }, [loadApps, isSuperAdmin, createTenantId, createDatasets, t]);
 
   // 选择模板
   const handleSelectTemplate = useCallback((templateId: string) => {
@@ -484,6 +510,7 @@ export default function AppsPage() {
   const defaultCandidate = !!editingApp && isTenantDefaultCandidate({ ...editingApp, ...formData });
 
   const handleSubmit = useCallback(async () => {
+    if (!editingApp && isSuperAdmin && !createTenantId) { toast.error(t("createTenantRequired")); return; }
     if (!formData.name.trim()) {
       toast.error(tc("required"));
       return;
@@ -522,7 +549,7 @@ export default function AppsPage() {
         toast.success(t("appUpdated"));
       } else {
         // 创建
-        await axios.post("/api/v1/apps", submitData);
+        await axios.post("/api/v1/apps", { ...submitData, ...createTenantFields(isSuperAdmin, createTenantId) });
         toast.success(t("appCreated"));
       }
       setDialogOpen(false);
@@ -539,7 +566,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -1152,6 +1179,7 @@ export default function AppsPage() {
           </DialogHeader>
           <div className="space-y-6 py-6">
             {!defaultOnlyEditing && <>
+            {tenantSelector}
             <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-semibold">
                 {t("appNameRequired")}
@@ -1335,7 +1363,7 @@ export default function AppsPage() {
             )}
 
             {/* 微信应用选择（仅当平台为微信时显示） */}
-            {formData.platform === "Wechat" && (
+            {formData.platform === "Wechat" && canSelectWechatBinding && (
               <div className="grid grid-cols-2 gap-4 p-4 rounded-lg border bg-muted/30">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">{t("wechatApp")}</Label>
@@ -1408,6 +1436,8 @@ export default function AppsPage() {
               </div>
             )}
 
+            {formData.platform === "Wechat" && !canSelectWechatBinding && <p className="text-sm text-muted-foreground">{t("crossTenantWechatBinding")}</p>}
+
             {/*
               角色设定单独一行：它是这个数字员工的说明书入口，和上面几个下拉不是
               一类东西，挤在同一行会被当成"又一个选项"。
@@ -1461,7 +1491,7 @@ export default function AppsPage() {
                 {!autoSelectDatasets && (
                   <TooltipProvider>
                     <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2 bg-background">
-                      {datasets.length === 0 ? (
+                      {createDatasets.length === 0 ? (
                         <p className="text-sm text-muted-foreground">{t("noAvailableDatasets")}</p>
                       ) : (
                         (() => {
@@ -1480,7 +1510,7 @@ export default function AppsPage() {
                               ? selectedDimensions[0]
                               : undefined;
 
-                          return datasets.map((dataset) => {
+                          return createDatasets.map((dataset) => {
                             // 判断是否应该禁用：如果已选知识库有 dimension，且当前知识库的 dimension 不同，则禁用
                             const isDisabled =
                               selectedDimension !== undefined &&
@@ -1650,6 +1680,7 @@ export default function AppsPage() {
             <p className="text-sm text-muted-foreground">{t("selectTemplateDesc")}</p>
           </DialogHeader>
           <div className="space-y-6 py-4">
+            {tenantSelector}
             <div className="grid gap-6">
               <Card
                 className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:border-primary ${
