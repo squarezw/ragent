@@ -97,6 +97,9 @@ export default function ProcessDetailPanel({
   const [filePreviewFile, setFilePreviewFile] = useState<Record<string, any> | null>(null);
   const [reviewDoc, setReviewDoc] = useState<RelatedDoc | null>(null);
   const [deleteDoc, setDeleteDoc] = useState<RelatedDoc | null>(null);
+  const [offlineDoc, setOfflineDoc] = useState<RelatedDoc | null>(null);
+  const [isOfflining, setIsOfflining] = useState(false);
+  const offliningRef = useRef(false);
   const [discardDoc, setDiscardDoc] = useState<RelatedDoc | null>(null);
   const [deleteSession, setDeleteSession] = useState<HandbookSession | null>(null);
   const [docs, setDocs] = useState<RelatedDoc[]>([]);
@@ -316,13 +319,20 @@ export default function ProcessDetailPanel({
     setReviewDoc(doc);
   };
 
-  const handleOffline = async (doc: RelatedDoc) => {
+  const confirmOfflineDoc = async () => {
+    if (!offlineDoc || offliningRef.current) return;
+    offliningRef.current = true;
+    setIsOfflining(true);
     try {
-      await updateDocumentStatus(doc.id, "offline");
-      toast.success(`${doc.name} ${t("detail.offline")}`);
+      await updateDocumentStatus(offlineDoc.id, "offline");
+      toast.success(`${offlineDoc.name} ${t("detail.offline")}`);
+      setOfflineDoc(null);
       refreshDocs();
     } catch {
       toast.error(t("toast.operationFailed"));
+    } finally {
+      offliningRef.current = false;
+      setIsOfflining(false);
     }
   };
 
@@ -748,7 +758,7 @@ export default function ProcessDetailPanel({
                                 ],
                                 approved: [
                                   { ...editEntry, onClick: () => handleEditApproved(doc) },
-                                  { key: "offline", label: t("detail.offline"), color: "text-amber-500", onClick: () => handleOffline(doc) },
+                                  { key: "offline", label: t("detail.offline"), color: "text-amber-500", onClick: () => setOfflineDoc(doc) },
                                 ],
                                 offline: [
                                   { key: "delete", label: t("detail.deleteDoc"), color: "text-destructive", onClick: () => handleDeleteDoc(doc), show: canDeleteDoc(doc) },
@@ -818,6 +828,39 @@ export default function ProcessDetailPanel({
         initialDocNumber={reviewDoc?.docNumber ?? ""}
         onSuccess={refreshDocs}
       />
+
+      {/* Offline Confirmation Dialog */}
+      <AlertDialog
+        open={!!offlineDoc}
+        onOpenChange={(open) => {
+          if (!open && !offliningRef.current) setOfflineDoc(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("dialog.confirmOffline")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("dialog.offlineDocMsg")}
+              {offlineDoc && (
+                <span className="font-medium text-foreground"> &laquo;{offlineDoc.name}&raquo;</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isOfflining}>{t("dialog.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isOfflining}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmOfflineDoc();
+              }}
+            >
+              {isOfflining && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t("dialog.confirmOfflineBtn")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog
