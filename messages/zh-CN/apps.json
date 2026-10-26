@@ -189,5 +189,9 @@
   },
   "defaultUnavailable": "需为已发布的 Web 聊天员工，且可见范围为本租户或公开；请由有编辑权限的管理员调整。已有默认仍可取消。",
   "privateEmployee": "私有：仅创建者可见",
-  "privateBadge": "私有"
+  "privateBadge": "私有",
+  "createTenantLabel": "所属租户 *",
+  "createTenantPlaceholder": "请选择租户",
+  "createTenantRequired": "请先选择数字员工所属租户。",
+  "crossTenantWechatBinding": "请先创建数字员工，再在所属租户内配置微信绑定。"
 }
