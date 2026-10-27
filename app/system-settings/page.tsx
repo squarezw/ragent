@@ -394,8 +394,8 @@ export default function SystemSettingsPage() {
           <Settings className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>
-        <GithubOAuthSection />
         <TenantModelsManager />
+        <GithubOAuthSection defaultOpen={false} />
       </div>
     );
   }
@@ -407,9 +407,7 @@ export default function SystemSettingsPage() {
         <h1 className="text-xl font-semibold">{t("title")}</h1>
       </div>
 
-      <TenantModelsManager />
-      <div className="columns-1 md:columns-2 gap-4 space-y-4">
-        <GithubOAuthSection />
+      <div className="space-y-3">
 
         {/* 平台设置 */}
         <Card className="break-inside-avoid">
@@ -1008,6 +1006,8 @@ export default function SystemSettingsPage() {
               {themeLoading ? t("saving") : t("saveConfig")}
             </Button>
         </CollapsibleCard>
+        <TenantModelsManager />
+        <GithubOAuthSection defaultOpen={false} />
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——

@@ -146,10 +146,10 @@ export function TenantModelsManager() {
   };
   return (
     <Card className="break-inside-avoid">
-      <CardHeader>
-        <CardTitle>{t("tenantModelsTitle")}</CardTitle>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{t("tenantModelsTitle")}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3 pt-0">
         <p className="text-sm text-muted-foreground">{t("tenantModelsDescription")}</p>
         {superAdmin && (
           <label className="block space-y-1">
