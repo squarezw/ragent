@@ -145,7 +145,7 @@ export function TenantModelsManager() {
     }
   };
   return (
-    <Card>
+    <Card className="break-inside-avoid">
       <CardHeader>
         <CardTitle>{t("tenantModelsTitle")}</CardTitle>
       </CardHeader>
@@ -169,6 +169,19 @@ export function TenantModelsManager() {
             </select>
           </label>
         )}
+
+        {!draft && (
+          <Button
+            disabled={busy || !tenantId}
+            onClick={() => {
+              setEditing(null);
+              setDraft(emptyDraft());
+            }}
+          >
+            {t("tenantModelsAdd")}
+          </Button>
+        )}
+
         {error && (
           <p role="alert" className="text-destructive">
             {error}
@@ -206,17 +219,6 @@ export function TenantModelsManager() {
                 </div>
               </div>
             ))}
-            {!draft && (
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  setEditing(null);
-                  setDraft(emptyDraft());
-                }}
-              >
-                {t("tenantModelsAdd")}
-              </Button>
-            )}
           </>
         )}
         {draft && (

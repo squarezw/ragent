@@ -407,9 +407,9 @@ export default function SystemSettingsPage() {
         <h1 className="text-xl font-semibold">{t("title")}</h1>
       </div>
 
+      <TenantModelsManager />
       <div className="columns-1 md:columns-2 gap-4 space-y-4">
         <GithubOAuthSection />
-        <TenantModelsManager />
 
         {/* 平台设置 */}
         <Card className="break-inside-avoid">
