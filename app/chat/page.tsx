@@ -346,6 +346,8 @@ export default function ChatPage() {
           const notice = insufficient ? t("insufficientBalance")
             : creditBusy ? t("creditAccountBusy")
             : creditReconciliation ? t("creditReconciliationRequired")
+            : error?.code === "MODEL_ENDPOINT_UNREACHABLE" ? t("modelEndpointUnreachable")
+            : error?.code === "MODEL_RESPONSE_TIMEOUT" ? t("modelResponseTimeout")
             : error?.code === "MODEL_STREAM_INTERRUPTED" ? t("streamInterrupted")
             : error?.code === "CHAT_STREAM_FAILED" ? t("streamFailed")
             : t("errorOccurred", { message: error.message });

@@ -134,5 +134,7 @@
   "creditAccountBusy": "你的个人积分账户已有对话正在进行，请等待该对话结束后再试。",
   "creditReconciliationRequired": "上一次对话的积分结算尚未确认，请联系管理员核对后恢复使用。",
   "streamInterrupted": "回答中断，已保留收到的内容。为避免重复执行操作，系统未自动重试。",
-  "streamFailed": "本次回答未能完成，请稍后重试。"
+  "streamFailed": "本次回答未能完成，请稍后重试。",
+  "modelEndpointUnreachable": "无法连接租户模型站点，请联系租户管理员检查服务地址和网络。",
+  "modelResponseTimeout": "租户模型响应超时，请稍后重试或联系租户管理员。"
 }
