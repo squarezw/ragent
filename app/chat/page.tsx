@@ -226,6 +226,9 @@ export default function ChatPage() {
     if (loading || loadingHistorySession || (!input.trim() && attachments.length === 0)) return;
     const version = conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
+    // Per-request accumulation also sees chunks queued before React commits state.
+    let partialAnswer = "";
+    let terminal = false;
 
     const userDisplayContent = input.trim();
 
@@ -272,8 +275,9 @@ export default function ChatPage() {
 
       const result = await askStream(userDisplayContent, datasetIdsForSession, params, {
         onChunk: (chunk: string) => {
-          if (!isCurrent()) return;
-          setStreamingMessage((prev) => prev + chunk);
+          if (!isCurrent() || terminal) return;
+          partialAnswer += chunk;
+          setStreamingMessage(partialAnswer);
         },
         onWorkflowRunStarted: (runId, kind) => {
           if (!isCurrent()) return;
@@ -306,7 +310,8 @@ export default function ChatPage() {
           }
         },
         onComplete: (result: any) => {
-          if (!isCurrent()) return;
+          if (!isCurrent() || terminal) return;
+          terminal = true;
           const { answer, detail_id, reference, segment_ids, usage } = result;
           setMessages((msgs) => [
             ...msgs,
@@ -326,7 +331,8 @@ export default function ChatPage() {
           abortControllerRef.current = null;
         },
         onError: (error: any) => {
-          if (!isCurrent()) return;
+          if (!isCurrent() || terminal) return;
+          terminal = true;
           // 余额不足不是故障，是一个用户自己能解决的状态。套上「抱歉，发生了错误」
           // 会把「去充值」读成「系统坏了」—— 用户会去找运维，而不是找管理员充值。
           const insufficient = error?.code === "insufficient_balance";
@@ -337,21 +343,22 @@ export default function ChatPage() {
           // 用户和排查的人都会被它误导。
           if (insufficient || creditBusy || creditReconciliation) console.info("[Chat] credit request stopped", error?.code);
           else console.error("Stream error:", error);
+          const notice = insufficient ? t("insufficientBalance")
+            : creditBusy ? t("creditAccountBusy")
+            : creditReconciliation ? t("creditReconciliationRequired")
+            : error?.code === "MODEL_STREAM_INTERRUPTED" ? t("streamInterrupted")
+            : error?.code === "CHAT_STREAM_FAILED" ? t("streamFailed")
+            : t("errorOccurred", { message: error.message });
           setMessages((msgs) => [
             ...msgs,
             {
               role: "assistant",
               // 余额不足这条**不插值后端文案**：后端不知道用户选的哪种语言，
               // 拼进来就会在中文界面里出现英文（或反过来）。界面自己完整表达。
-              content: insufficient
-                ? t("insufficientBalance")
-                : creditBusy
-                  ? t("creditAccountBusy")
-                  : creditReconciliation
-                    ? t("creditReconciliationRequired")
-                    : t("errorOccurred", { message: error.message }),
+              content: partialAnswer ? `${partialAnswer}\n\n${notice}` : notice,
               segment_ids: [],
-              detail_id: undefined,
+              detail_id: Number.isSafeInteger(error?.detail_id) && error.detail_id > 0
+                ? error.detail_id : undefined,
             },
           ]);
           setIsStreaming(false);
@@ -370,13 +377,16 @@ export default function ChatPage() {
         abortControllerRef.current = result.abort;
       }
     } catch (error: any) {
-      if (!isCurrent()) return;
+      if (!isCurrent() || terminal) return;
+      terminal = true;
       console.error("Send error:", error);
       setMessages((msgs) => [
         ...msgs,
         {
           role: "assistant",
-          content: t("errorOccurred", { message: error.message }),
+          content: partialAnswer
+            ? `${partialAnswer}\n\n${t("streamInterrupted")}`
+            : t("errorOccurred", { message: error.message }),
           segment_ids: [],
           detail_id: undefined,
         },

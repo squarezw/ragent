@@ -132,5 +132,7 @@
   "dxfParse": "正在处理图纸",
   "dxfOmitted": "部分剖面填充无法显示。",
   "creditAccountBusy": "你的个人积分账户已有对话正在进行，请等待该对话结束后再试。",
-  "creditReconciliationRequired": "上一次对话的积分结算尚未确认，请联系管理员核对后恢复使用。"
+  "creditReconciliationRequired": "上一次对话的积分结算尚未确认，请联系管理员核对后恢复使用。",
+  "streamInterrupted": "回答中断，已保留收到的内容。为避免重复执行操作，系统未自动重试。",
+  "streamFailed": "本次回答未能完成，请稍后重试。"
 }
