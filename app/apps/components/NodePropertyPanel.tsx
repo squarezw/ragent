@@ -193,7 +193,6 @@ export default function NodePropertyPanel({
           <>
             <div className="space-y-2">
               <Label className="text-xs">{t("aiModel")}</Label>
-              {!modelAccess.includeCustom && <p className="text-xs text-muted-foreground">{t("customModelOwnerMismatch")}</p>}
               <Select
                 value={localData.aiModel || DEFAULT_LLM_MODEL_CODE}
                 onValueChange={(value) => handleDataChange("aiModel", value)}

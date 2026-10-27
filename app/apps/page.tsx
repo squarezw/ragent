@@ -1332,7 +1332,6 @@ export default function AppsPage() {
               {formData.app_type === "Chat" && (
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">{t("aiModel")}</Label>
-                {editingApp && !modelAccess.includeCustom && <p className="text-xs text-muted-foreground">{t("customModelOwnerMismatch")}</p>}
                   <Select
                     value={formData.ai_model}
                     onValueChange={(value) => setFormData({ ...formData, ai_model: value })}
