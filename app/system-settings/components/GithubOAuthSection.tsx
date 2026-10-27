@@ -8,7 +8,7 @@ import { Github } from "lucide-react";
 import axios from "@/lib/axios";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "./CollapsibleCard";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -24,7 +24,7 @@ async function loadConfig(url: string): Promise<OAuthConfig> {
   return res.data as OAuthConfig;
 }
 
-export default function GithubOAuthSection() {
+export default function GithubOAuthSection({ defaultOpen = true }: { defaultOpen?: boolean } = {}) {
   const t = useTranslations("systemSettings");
   const config = useSWR("/api/v1/github/oauth/config", loadConfig, { revalidateOnFocus: false });
   const [clientId, setClientId] = useState("");
@@ -59,58 +59,54 @@ export default function GithubOAuthSection() {
   };
 
   return (
-    <Card className="break-inside-avoid">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Github className="h-4 w-4" />
-          {t("githubOAuthTitle")}
-        </CardTitle>
-        <CardDescription className="text-xs text-muted-foreground">
-          {t("githubOAuthDesc")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="github_client_id" className="text-xs">
-            {t("githubClientId")}
-          </Label>
-          <Input
-            id="github_client_id"
-            value={clientId}
-            onChange={(event) => setClientId(event.target.value)}
-            placeholder="Ov23..."
-            autoComplete="off"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="github_client_secret" className="text-xs">
-            {t("githubClientSecret")}
-          </Label>
-          <Input
-            id="github_client_secret"
-            type="password"
-            value={clientSecret}
-            onChange={(event) => setClientSecret(event.target.value)}
-            placeholder={config.data?.has_secret ? t("githubSecretKept") : t("githubSecretPlaceholder")}
-            autoComplete="new-password"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="github_redirect_uri" className="text-xs">
-            {t("githubRedirectUri")}
-          </Label>
-          <Input
-            id="github_redirect_uri"
-            value={redirectUri}
-            onChange={(event) => setRedirectUri(event.target.value)}
-            placeholder="http://localhost:3000/github/connected"
-          />
-          <p className="text-xs text-muted-foreground">{t("githubRedirectHelp")}</p>
-        </div>
-        <Button onClick={save} disabled={saving || !clientId.trim()} size="sm">
-          {saving ? t("saving") : t("saveSettings")}
-        </Button>
-      </CardContent>
-    </Card>
+    <CollapsibleCard
+      icon={<Github className="h-4 w-4" />}
+      title={t("githubOAuthTitle")}
+      description={t("githubOAuthDesc")}
+      defaultOpen={defaultOpen}
+    >
+      <div className="space-y-2">
+        <Label htmlFor="github_client_id" className="text-xs">
+          {t("githubClientId")}
+        </Label>
+        <Input
+          id="github_client_id"
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+          placeholder="Ov23..."
+          autoComplete="off"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="github_client_secret" className="text-xs">
+          {t("githubClientSecret")}
+        </Label>
+        <Input
+          id="github_client_secret"
+          type="password"
+          value={clientSecret}
+          onChange={(event) => setClientSecret(event.target.value)}
+          placeholder={
+            config.data?.has_secret ? t("githubSecretKept") : t("githubSecretPlaceholder")
+          }
+          autoComplete="new-password"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="github_redirect_uri" className="text-xs">
+          {t("githubRedirectUri")}
+        </Label>
+        <Input
+          id="github_redirect_uri"
+          value={redirectUri}
+          onChange={(event) => setRedirectUri(event.target.value)}
+          placeholder="http://localhost:3000/github/connected"
+        />
+        <p className="text-xs text-muted-foreground">{t("githubRedirectHelp")}</p>
+      </div>
+      <Button onClick={save} disabled={saving || !clientId.trim()} size="sm">
+        {saving ? t("saving") : t("saveSettings")}
+      </Button>
+    </CollapsibleCard>
   );
 }

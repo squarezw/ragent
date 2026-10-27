@@ -60,6 +60,8 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
+import { modelCatalogAccess } from "@/lib/tenantModels";
+import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
 import { editTenantFields, datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
@@ -67,7 +69,7 @@ import WorkflowEditor from "./components/WorkflowEditor";
 import { syncFormToWorkflow } from "@/lib/workflowUtils";
 import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { WorkflowConfig } from "@/types/workflow";
-import { DEFAULT_LLM_MODEL_CODE, type LlmModelOption } from "@/lib/llmModels";
+import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
 // 类型定义
 interface App {
@@ -276,7 +278,11 @@ export default function AppsPage() {
   const previewDatasets = editingApp && isSuperAdmin
     ? datasetsForEditTenant(datasets, formData.dataset_ids, editTenantId, tenantChanged)
     : createDatasets;
-  const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
+  const modelOwnerTenantId = editingApp
+    ? (isSuperAdmin ? Number(editTenantId) || null : editingApp.owner_tenant_id)
+    : (isSuperAdmin ? Number(createTenantId) || null : user?.tenant_id);
+  const modelAccess = modelCatalogAccess(user?.tenant_id, isSuperAdmin, modelOwnerTenantId);
+  const llmModels = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
 
   // 定义加载函数（必须在 useEffect 之前）
   const loadApps = useCallback(async () => {
@@ -300,15 +306,6 @@ export default function AppsPage() {
     }
   }, []);
 
-  const loadLlmModels = useCallback(async () => {
-    try {
-      const response = await axios.get("/api/v1/llm-models");
-      setLlmModels(response.data?.items || []);
-    } catch {
-      setLlmModels([]);
-    }
-  }, []);
-
   const loadWechatAgents = useCallback(async () => {
     try {
       setLoadingWechatAgents(true);
@@ -329,7 +326,7 @@ export default function AppsPage() {
     dataLoadedRef.current = true;
 
     // 并行加载所有数据
-    Promise.all([loadApps(), loadDatasets(), loadLlmModels()]).catch(() => {
+    Promise.all([loadApps(), loadDatasets()]).catch(() => {
       dataLoadedRef.current = false;
     });
 
@@ -525,6 +522,9 @@ export default function AppsPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!editingApp && isSuperAdmin && !createTenantId) { toast.error(t("createTenantRequired")); return; }
+    if (!defaultOnlyEditing && formData.ai_model.startsWith("custom-") && (!modelAccess.includeCustom || !llmModels.some(model => model.code === formData.ai_model))) {
+      toast.error(t("modelUnavailable")); return;
+    }
     if (!formData.name.trim()) {
       toast.error(tc("required"));
       return;
@@ -584,7 +584,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, t, tc]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -1340,6 +1340,7 @@ export default function AppsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {formData.ai_model.startsWith("custom-") && !llmModels.some(model => model.code === formData.ai_model) && <SelectItem disabled value={formData.ai_model}>{t("modelUnavailable")}</SelectItem>}
                       {llmModels.length === 0 ? (
                         <SelectItem value={DEFAULT_LLM_MODEL_CODE}>
                           DeepSeek Flash
@@ -1643,6 +1644,7 @@ export default function AppsPage() {
 
       {/* 工作流编辑器 */}
       <WorkflowEditor
+        ownerTenantId={workflowApp?.owner_tenant_id}
         open={workflowDialogOpen}
         onOpenChange={setWorkflowDialogOpen}
         app={workflowApp}

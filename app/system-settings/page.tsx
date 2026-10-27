@@ -1,4 +1,5 @@
 "use client";
+import { TenantModelsManager } from "@/components/TenantModelsManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,7 @@ interface SystemSettings {
 
 export default function SystemSettingsPage() {
   const { user, loading: userLoading } = useCurrentUser();
+  const isSuperAdmin = checkSuperAdmin(user);
   const { mutate } = useSWRConfig();
   const t = useTranslations("systemSettings");
   const tc = useTranslations("common");
@@ -160,13 +162,16 @@ export default function SystemSettingsPage() {
   });
 
   // 加载系统设置（平台名称、Logo等）
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在组件挂载时加载
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reload privileged settings only when administrator access changes.
   useEffect(() => {
+    if (userLoading || !isSuperAdmin) return;
+    let active = true;
     const loadSystemSettings = async () => {
       try {
         const response = await axios.get("/api/system", {
           params: { full_data: true },
         });
+        if (!active) return;
         if (response.data) {
           setSystemSettings({
             platform_name: response.data.platform_name || "",
@@ -192,6 +197,7 @@ export default function SystemSettingsPage() {
           }
         }
       } catch (error: any) {
+        if (!active) return;
         // 忽略 404 错误，可能是首次设置
         if (error.response?.status !== 404) {
           console.error("加载系统设置失败:", error);
@@ -199,8 +205,9 @@ export default function SystemSettingsPage() {
         }
       }
     };
-    loadSystemSettings();
-  }, []);
+    void loadSystemSettings();
+    return () => { active = false; };
+  }, [userLoading, isSuperAdmin]);
 
   // 保存 SMTP 配置
   const handleSaveSmtp = async () => {
@@ -380,14 +387,15 @@ export default function SystemSettingsPage() {
   }
 
   if (!user) return null;
-  if (!checkSuperAdmin(user)) {
+  if (!isSuperAdmin) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-4">
           <Settings className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>
-        <GithubOAuthSection />
+        <TenantModelsManager />
+        <GithubOAuthSection defaultOpen={false} />
       </div>
     );
   }
@@ -399,9 +407,8 @@ export default function SystemSettingsPage() {
         <h1 className="text-xl font-semibold">{t("title")}</h1>
       </div>
 
-      <div className="columns-1 md:columns-2 gap-4 space-y-4">
-        <GithubOAuthSection />
-
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
         {/* 平台设置 */}
         <Card className="break-inside-avoid">
           <CardHeader className="pb-3">
@@ -526,6 +533,7 @@ export default function SystemSettingsPage() {
           </CardContent>
         </Card>
 
+        <div className="min-w-0 space-y-3">
         {/* SMTP 邮箱配置 */}
         <CollapsibleCard
           icon={<Mail className="h-4 w-4" />}
@@ -999,6 +1007,10 @@ export default function SystemSettingsPage() {
               {themeLoading ? t("saving") : t("saveConfig")}
             </Button>
         </CollapsibleCard>
+        <GithubOAuthSection defaultOpen={false} />
+        </div>
+        </div>
+        <TenantModelsManager />
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——

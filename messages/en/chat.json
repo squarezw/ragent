@@ -134,5 +134,7 @@
   "creditAccountBusy": "Your personal credit account already has a conversation in progress. Wait for it to finish, then try again.",
   "creditReconciliationRequired": "The previous conversation’s credit settlement is not confirmed. Contact an administrator to reconcile it and restore access.",
   "streamInterrupted": "The response was interrupted. The received text has been kept. It was not automatically retried to avoid repeating actions.",
-  "streamFailed": "The response could not be completed. Please try again later."
+  "streamFailed": "The response could not be completed. Please try again later.",
+  "modelEndpointUnreachable": "Unable to connect to the tenant model service. Ask your tenant administrator to check the service address and network.",
+  "modelResponseTimeout": "The tenant model response timed out. Try again later or contact your tenant administrator."
 }

@@ -127,3 +127,19 @@ test("existing billing errors retain their localized business messages", async (
     assert.equal(h.messages[1].content, expected);
   }
 });
+
+test("tenant model network and response timeout codes are localized without losing partial output", async () => {
+  for (const [code, expected] of [
+    ["MODEL_ENDPOINT_UNREACHABLE", "modelEndpointUnreachable"],
+    ["MODEL_RESPONSE_TIMEOUT", "modelResponseTimeout"],
+  ]) {
+    for (const partial of ["", "received content"]) {
+      const h = await start();
+      if (partial) h.callbacks.onChunk(partial);
+      h.callbacks.onError({ code, message: "raw socket error to internal endpoint" });
+      assert.equal(h.messages[1].content, partial ? `${partial}\n\n${expected}` : expected);
+      assert.equal(h.requests, 1);
+      assert.equal(h.streaming, "");
+    }
+  }
+});

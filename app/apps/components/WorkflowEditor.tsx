@@ -37,6 +37,10 @@ import NodePalette from "./NodePalette";
 import NodePropertyPanel from "./NodePropertyPanel";
 
 import { WorkflowConfig, WorkflowNode, AppWithWorkflow } from "@/types/workflow";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { modelCatalogAccess } from "@/lib/tenantModels";
+import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
 import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 import {
   generateDefaultWorkflow,
@@ -65,6 +69,7 @@ interface WorkflowEditorProps {
   datasets: { id: string; name: string }[];
   onSave: (workflow: WorkflowConfig) => Promise<void>;
   isSuperAdmin?: boolean;
+  ownerTenantId?: number | null;
 }
 
 export default function WorkflowEditor({
@@ -74,8 +79,12 @@ export default function WorkflowEditor({
   datasets,
   onSave,
   isSuperAdmin = false,
+  ownerTenantId,
 }: WorkflowEditorProps) {
   const t = useTranslations("workflow");
+  const { user } = useCurrentUser();
+  const modelAccess = modelCatalogAccess(user?.tenant_id, checkSuperAdmin(user), ownerTenantId);
+  const modelOptions = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
   const tc = useTranslations("common");
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -183,6 +192,9 @@ export default function WorkflowEditor({
 
   // 保存工作流
   const handleSave = useCallback(async () => {
+    if (nodes.some(node => node.type === "aiNode" && node.data?.aiModel?.startsWith("custom-") && (!modelAccess.includeCustom || !modelOptions.some(model => model.code === node.data.aiModel)))) {
+      toast.error(t("modelUnavailable")); return;
+    }
     const workflow: WorkflowConfig = {
       nodes: nodes as WorkflowNode[],
       edges: edges.map((e) => ({
@@ -217,7 +229,7 @@ export default function WorkflowEditor({
     } finally {
       setSaving(false);
     }
-  }, [nodes, edges, onSave, onOpenChange, t]);
+  }, [nodes, edges, onSave, onOpenChange, t, modelOptions, modelAccess.includeCustom]);
 
   // 键盘快捷键
   useEffect(() => {
@@ -334,6 +346,7 @@ export default function WorkflowEditor({
 
           {/* 节点属性面板 */}
           <NodePropertyPanel
+            ownerTenantId={ownerTenantId}
             selectedNode={selectedNode}
             datasets={datasets}
             onUpdate={onNodeUpdate}

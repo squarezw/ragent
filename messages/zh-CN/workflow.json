@@ -163,5 +163,7 @@
   "generateDailyFailed": "生成日报失败",
   "generateWeeklyFailed": "生成周报失败",
   "loadReportListFailed": "加载报告列表失败",
-  "noReports": "暂无报告"
+  "noReports": "暂无报告",
+  "modelUnavailable": "模型在当前租户不可用，请重新选择。",
+  "customModelOwnerMismatch": "此数字员工不属于您当前租户，仅可选择平台模型。如需使用本租户模型，请新建本租户数字员工，或联系超级管理员调整归属。"
 }

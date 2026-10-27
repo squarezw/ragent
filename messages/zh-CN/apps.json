@@ -194,5 +194,7 @@
   "createTenantPlaceholder": "请选择租户",
   "createTenantRequired": "请先选择数字员工所属租户。",
   "crossTenantWechatBinding": "请先创建数字员工，再在所属租户内配置微信绑定。",
-  "editTenantMigrationNotice": "保存租户变更后会解除原部门归属和租户默认设置。历史记录、作者及访问权限不会自动转交。现有关联资源会保留，不兼容的绑定需先处理才能保存。"
+  "editTenantMigrationNotice": "保存租户变更后会解除原部门归属和租户默认设置。历史记录、作者及访问权限不会自动转交。现有关联资源会保留，不兼容的绑定需先处理才能保存。",
+  "modelUnavailable": "模型在当前租户不可用，请重新选择。",
+  "customModelOwnerMismatch": "此数字员工不属于您当前租户，仅可选择平台模型。如需使用本租户模型，请新建本租户数字员工，或联系超级管理员调整归属。"
 }

@@ -163,5 +163,7 @@
   "generateDailyFailed": "Failed to generate daily report",
   "generateWeeklyFailed": "Failed to generate weekly report",
   "loadReportListFailed": "Failed to load report list",
-  "noReports": "No reports"
+  "noReports": "No reports",
+  "modelUnavailable": "This model is unavailable in the selected tenant. Choose another model.",
+  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models."
 }
