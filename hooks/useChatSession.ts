@@ -432,6 +432,8 @@ export function useChatSession() {
                         // 「发生了错误」，没人会注意到。
                         const code = (parsed as { code?: string })?.code;
                         if (code) (err as Error & { code?: string }).code = code;
+                        if (Number.isSafeInteger(parsed.detail_id) && parsed.detail_id > 0)
+                          (err as Error & { detail_id?: number }).detail_id = parsed.detail_id;
                         callbacks?.onError(err);
                       }
                       return;
