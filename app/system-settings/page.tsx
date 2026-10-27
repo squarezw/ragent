@@ -408,7 +408,7 @@ export default function SystemSettingsPage() {
       </div>
 
       <div className="space-y-3">
-
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
         {/* 平台设置 */}
         <Card className="break-inside-avoid">
           <CardHeader className="pb-3">
@@ -533,6 +533,7 @@ export default function SystemSettingsPage() {
           </CardContent>
         </Card>
 
+        <div className="min-w-0 space-y-3">
         {/* SMTP 邮箱配置 */}
         <CollapsibleCard
           icon={<Mail className="h-4 w-4" />}
@@ -1006,6 +1007,8 @@ export default function SystemSettingsPage() {
               {themeLoading ? t("saving") : t("saveConfig")}
             </Button>
         </CollapsibleCard>
+        </div>
+        </div>
         <TenantModelsManager />
         <GithubOAuthSection defaultOpen={false} />
       </div>
