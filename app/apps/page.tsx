@@ -60,6 +60,7 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
+import { editTenantFields, datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
@@ -143,6 +144,7 @@ export default function AppsPage() {
   /** 超管的租户筛选。"all" = 不筛。 */
   const [tenantFilter, setTenantFilter] = useState<string>("all");
   const [createTenantId, setCreateTenantId] = useState("");
+  const [editTenantId, setEditTenantId] = useState("");
   const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
 
   /**
@@ -208,18 +210,26 @@ export default function AppsPage() {
   const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
   const [autoSelectDatasets, setAutoSelectDatasets] = useState(true);
 
+  const tenantChanged = !!editingApp && isSuperAdmin &&
+    Number(editTenantId || 0) !== Number(editingApp.owner_tenant_id || 0);
   const createDatasets = datasetsForCreateTenant(datasets, isSuperAdmin, !!editingApp, createTenantId);
   const canSelectWechatBinding = !!editingApp || !isSuperAdmin ||
     (!!createTenantId && Number(createTenantId) === user?.tenant_id);
   const handleCreateTenantChange = (tenantId: string) => {
-    setCreateTenantId(tenantId);
-    setFormData(previous => clearTenantBindings(previous));
-    setAutoSelectDatasets(true);
+    if (editingApp) {
+      setEditTenantId(tenantId);
+      // Preserve bindings and the user's default choice when switching back.
+      // A saved migration omits is_default; the backend clears the old default.
+    } else {
+      setCreateTenantId(tenantId);
+      setFormData(previous => clearTenantBindings(previous));
+      setAutoSelectDatasets(true);
+    }
   };
-  const tenantSelector = isSuperAdmin && !editingApp ? (
+  const tenantSelector = isSuperAdmin && (!editingApp || canEditApp(editingApp, user, isSuperAdmin)) ? (
     <div className="space-y-2">
       <Label htmlFor="create-tenant">{t("createTenantLabel")}</Label>
-      <Select value={createTenantId} onValueChange={handleCreateTenantChange}>
+      <Select value={editingApp ? editTenantId : createTenantId} onValueChange={handleCreateTenantChange}>
         <SelectTrigger id="create-tenant"><SelectValue placeholder={t("createTenantPlaceholder")} /></SelectTrigger>
         <SelectContent>{tenants.map(tenant => <SelectItem key={tenant.id} value={String(tenant.id)}>{tenant.name}</SelectItem>)}</SelectContent>
       </Select>
@@ -263,6 +273,9 @@ export default function AppsPage() {
     is_default: false,
     visibility: "private",
   });
+  const previewDatasets = editingApp && isSuperAdmin
+    ? datasetsForEditTenant(datasets, formData.dataset_ids, editTenantId, tenantChanged)
+    : createDatasets;
   const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
 
   // 定义加载函数（必须在 useEffect 之前）
@@ -484,6 +497,7 @@ export default function AppsPage() {
   // 打开编辑对话框
   const handleEdit = useCallback((app: App) => {
     setEditingApp(app);
+    setEditTenantId(app.owner_tenant_id ? String(app.owner_tenant_id) : "");
     const datasetIds = app.dataset_ids || [];
     setFormData({
       name: app.name,
@@ -528,7 +542,7 @@ export default function AppsPage() {
 
       const workflow = syncFormToWorkflow(
         { ...formData },
-        editingApp?.settings?.workflow,
+        editingApp ? formData.settings?.workflow : undefined,
         datasets
       );
       const submitData = {
@@ -545,7 +559,11 @@ export default function AppsPage() {
         Boolean(submitData.is_default) === Boolean(editingApp.is_default)) delete submitData.is_default;
       if (editingApp) {
         // 更新
-        await axios.put(`/api/v1/apps/${editingApp.id}`, submitData);
+        if (tenantChanged) delete submitData.is_default;
+        await axios.put(`/api/v1/apps/${editingApp.id}`, {
+          ...submitData,
+          ...editTenantFields(isSuperAdmin, editingApp.owner_tenant_id, editTenantId),
+        });
         toast.success(t("appUpdated"));
       } else {
         // 创建
@@ -566,7 +584,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, t, tc]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -1180,6 +1198,7 @@ export default function AppsPage() {
           <div className="space-y-6 py-6">
             {!defaultOnlyEditing && <>
             {tenantSelector}
+            {tenantChanged && <p className="text-sm text-muted-foreground">{t("editTenantMigrationNotice")}</p>}
             <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-semibold">
                 {t("appNameRequired")}
@@ -1240,7 +1259,7 @@ export default function AppsPage() {
                 </SelectContent>
               </Select>
             </div>}
-            {canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+            {!tenantChanged && canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="is_default"
@@ -1491,7 +1510,7 @@ export default function AppsPage() {
                 {!autoSelectDatasets && (
                   <TooltipProvider>
                     <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2 bg-background">
-                      {createDatasets.length === 0 ? (
+                      {previewDatasets.length === 0 ? (
                         <p className="text-sm text-muted-foreground">{t("noAvailableDatasets")}</p>
                       ) : (
                         (() => {
@@ -1510,7 +1529,7 @@ export default function AppsPage() {
                               ? selectedDimensions[0]
                               : undefined;
 
-                          return createDatasets.map((dataset) => {
+                          return previewDatasets.map((dataset) => {
                             // 判断是否应该禁用：如果已选知识库有 dimension，且当前知识库的 dimension 不同，则禁用
                             const isDisabled =
                               selectedDimension !== undefined &&

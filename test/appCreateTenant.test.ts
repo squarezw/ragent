@@ -1,3 +1,4 @@
+import { editTenantFields } from "../lib/appEditTenant.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -42,9 +43,9 @@ test("changing creation tenant clears resource bindings while preserving other i
   assert.deepEqual(previous.dataset_ids, ["tenant1"]);
 });
 
-test("normal and template creation include validated tenant; edit does not send ownership", () => {
+test("normal and template creation validate tenant; edits use explicit change detection", () => {
   const page = readFileSync(new URL("../app/apps/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /tenantSelector = isSuperAdmin && !editingApp/);
+  assert.match(page, /tenantSelector = isSuperAdmin && \(!editingApp \|\| canEditApp/);
   assert.match(page, /setCreateTenantId\(user\?\.tenant_id \? String\(user.tenant_id\) : ""\)/);
   assert.match(
     page,
@@ -54,11 +55,16 @@ test("normal and template creation include validated tenant; edit does not send 
     page,
     /axios\.post\("\/api\/v1\/apps", \{ \.\.\.qualityAgentData, \.\.\.createTenantFields\(isSuperAdmin, createTenantId\) \}\)/
   );
-  assert.match(page, /axios\.put\(`\/api\/v1\/apps\/\$\{editingApp.id\}`, submitData\)/);
+  assert.match(page, /editTenantFields\(isSuperAdmin, editingApp.owner_tenant_id, editTenantId\)/);
 });
 
 // Execute the page's actual submission callback, rather than a second payload implementation.
-async function submitFromPage(isSuperAdmin: boolean, tenantId: string, editing = false) {
+export async function submitFromPage(
+  isSuperAdmin: boolean,
+  tenantId: string,
+  editing = false,
+  options: { originalTenant?: number | null; defaultOnly?: boolean; fail?: boolean } = {}
+) {
   const ts = (await import("typescript")).default;
   const vm = await import("node:vm");
   const source = ts.createSourceFile(
@@ -84,6 +90,8 @@ async function submitFromPage(isSuperAdmin: boolean, tenantId: string, editing =
   assert.ok(callback);
   const calls: { method: string; payload: Record<string, unknown> }[] = [];
   const errors: string[] = [];
+  let closed = false;
+  const workflowInputs: unknown[] = [];
   const module = { exports: null as unknown };
   const result = ts.transpileModule(`module.exports = ${callback};`, {
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
@@ -92,17 +100,40 @@ async function submitFromPage(isSuperAdmin: boolean, tenantId: string, editing =
     module,
     isSuperAdmin,
     createTenantId: tenantId,
-    editingApp: editing ? { id: 9, settings: {} } : null,
-    formData: { name: "Employee", settings: {}, dataset_ids: [], is_default: false },
+    editTenantId: tenantId,
+    tenantChanged:
+      editing &&
+      isSuperAdmin &&
+      Number(tenantId || 0) !==
+        Number(options.originalTenant === undefined ? 8 : options.originalTenant || 0),
+    editingApp: editing
+      ? {
+          id: 9,
+          owner_tenant_id: options.originalTenant === undefined ? 8 : options.originalTenant,
+          settings: { workflow: { source: "original" } },
+        }
+      : null,
+    formData: {
+      name: "Employee",
+      settings: { workflow: { source: "form" } },
+      dataset_ids: [],
+      is_default: false,
+    },
     autoSelectDatasets: true,
     datasets: [],
-    defaultOnlyEditing: false,
+    defaultOnlyEditing: options.defaultOnly || false,
     user: { id: 2 },
     createTenantFields,
-    syncFormToWorkflow: () => ({ nodes: [] }),
+    editTenantFields,
+    syncFormToWorkflow: (_form: unknown, workflow: unknown) => {
+      workflowInputs.push(workflow);
+      return { nodes: [] };
+    },
     canManageTenantDefault: () => false,
     setSubmitting() {},
-    setDialogOpen() {},
+    setDialogOpen(open: boolean) {
+      closed = !open;
+    },
     loadApps() {},
     t: (key: string) => key,
     tc: (key: string) => key,
@@ -110,12 +141,14 @@ async function submitFromPage(isSuperAdmin: boolean, tenantId: string, editing =
     axios: {
       post: async (_url: string, payload: Record<string, unknown>) =>
         calls.push({ method: "POST", payload }),
-      put: async (_url: string, payload: Record<string, unknown>) =>
-        calls.push({ method: "PUT", payload }),
+      put: async (_url: string, payload: Record<string, unknown>) => {
+        calls.push({ method: "PUT", payload });
+        if (options.fail) throw { response: { data: { detail: "Incompatible dataset binding" } } };
+      },
     },
   });
   await (module.exports as () => Promise<void>)();
-  return { calls, errors };
+  return { calls, errors, closed, workflowInputs };
 }
 
 test("real creation callback includes chosen tenant only for superadmins and requires a choice", async () => {
