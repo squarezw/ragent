@@ -4,7 +4,12 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { modelPayload, modelCatalogUrl, type ModelDraft } from "../lib/tenantModels.ts";
+import {
+  modelPayload,
+  modelCatalogUrl,
+  modelCatalogAccess,
+  type ModelDraft,
+} from "../lib/tenantModels.ts";
 import { checkSuperAdmin, checkTenantAdmin } from "../lib/clientPermissions.ts";
 
 const draft: ModelDraft = {
@@ -212,5 +217,39 @@ test("actual catalog hook refreshes tenant scope and ignores a late previous ten
   listeners.get("ragent:models-updated")?.();
   assert.equal(pending.length, 3);
   assert.equal(pending[2].url, "/api/v1/llm-models?owner_tenant_id=2");
+  assert.deepEqual(Array.from(module.exports.useTenantModelCatalog(1, false)), []);
+  assert.equal(pending[3].url, "/api/v1/llm-models?include_custom=false");
+  pending[3].resolve({ data: { items: [{ code: "builtin" }, { code: "custom-wrong-tenant" }] } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    module.exports.useTenantModelCatalog(1, false).map((item: any) => item.code),
+    ["builtin"]
+  );
   cleanup?.();
+});
+
+test("tenant 2 creator editing tenant 1 gets only platform catalog; superadmin keeps explicit owner scope", () => {
+  assert.deepEqual(modelCatalogAccess(2, false, 1), { tenantId: null, includeCustom: false });
+  assert.deepEqual(modelCatalogAccess(2, false, null), { tenantId: null, includeCustom: false });
+  assert.deepEqual(modelCatalogAccess(2, false, 2), { tenantId: 2, includeCustom: true });
+  assert.deepEqual(modelCatalogAccess(2, true, 1), { tenantId: 1, includeCustom: true });
+  assert.equal(modelCatalogUrl(null, false), "/api/v1/llm-models?include_custom=false");
+});
+
+test("actual cross-tenant app edit permits platform model but rejects viewer-tenant custom model even if catalog is stale", async () => {
+  const denied = await submitFromPage(false, "1", true, {
+    originalTenant: 1,
+    includeCustom: false,
+    modelCode: "custom-tenant2",
+    models: [{ code: "custom-tenant2" }],
+  });
+  assert.equal(denied.calls.length, 0);
+  assert.deepEqual(denied.errors, ["modelUnavailable"]);
+  const platform = await submitFromPage(false, "1", true, {
+    originalTenant: 1,
+    includeCustom: false,
+    modelCode: "deepseek-flash",
+  });
+  assert.equal(platform.calls[0].payload.ai_model, "deepseek-flash");
+  assert.equal("owner_tenant_id" in platform.calls[0].payload, false);
 });

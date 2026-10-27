@@ -68,6 +68,7 @@ export async function submitFromPage(
     defaultOnly?: boolean;
     fail?: boolean;
     modelCode?: string;
+    includeCustom?: boolean;
     models?: { code: string }[];
   } = {}
 ) {
@@ -129,6 +130,7 @@ export async function submitFromPage(
     autoSelectDatasets: true,
     datasets: [],
     llmModels: options.models || [],
+    modelAccess: { includeCustom: options.includeCustom ?? true },
     defaultOnlyEditing: options.defaultOnly || false,
     user: { id: 2 },
     createTenantFields,

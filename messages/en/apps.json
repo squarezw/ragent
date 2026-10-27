@@ -195,5 +195,6 @@
   "createTenantRequired": "Select a tenant before creating the digital employee.",
   "crossTenantWechatBinding": "Create the employee first, then configure the WeChat binding within its tenant.",
   "editTenantMigrationNotice": "Saving a tenant change clears the previous department and tenant default. Historical records, authorship and permissions are not automatically transferred. Existing resource bindings are retained; incompatible bindings must be resolved before saving.",
-  "modelUnavailable": "This model is unavailable in the selected tenant. Choose another model."
+  "modelUnavailable": "This model is unavailable in the selected tenant. Choose another model.",
+  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models."
 }

@@ -39,6 +39,17 @@ export function modelPayload(draft: ModelDraft, editing: boolean, tenantId?: num
     payload.api_key = draft.api_key.trim();
   return payload;
 }
-export function modelCatalogUrl(tenantId?: number | null) {
+export function modelCatalogAccess(
+  viewerTenantId: number | null | undefined,
+  superAdmin: boolean,
+  ownerTenantId: number | null | undefined
+) {
+  const owner = Number(ownerTenantId);
+  return Number.isSafeInteger(owner) && owner > 0 && (superAdmin || owner === viewerTenantId)
+    ? { tenantId: owner, includeCustom: true }
+    : { tenantId: null, includeCustom: false };
+}
+export function modelCatalogUrl(tenantId?: number | null, includeCustom = true) {
+  if (!includeCustom) return "/api/v1/llm-models?include_custom=false";
   return `/api/v1/llm-models${tenantId ? `?owner_tenant_id=${tenantId}` : ""}`;
 }

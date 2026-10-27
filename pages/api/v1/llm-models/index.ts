@@ -7,6 +7,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return proxySkillsApi(req, res, {
     path: "/api/v1/llm-models/",
     allow: ["GET"],
-    passQuery: ["owner_tenant_id"],
+    passQuery: ["owner_tenant_id", "include_custom"],
   });
 }

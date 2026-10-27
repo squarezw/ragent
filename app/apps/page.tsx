@@ -60,6 +60,7 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
+import { modelCatalogAccess } from "@/lib/tenantModels";
 import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
 import { editTenantFields, datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
@@ -277,8 +278,11 @@ export default function AppsPage() {
   const previewDatasets = editingApp && isSuperAdmin
     ? datasetsForEditTenant(datasets, formData.dataset_ids, editTenantId, tenantChanged)
     : createDatasets;
-  const modelTenantId = isSuperAdmin ? Number((editingApp ? editTenantId : createTenantId) || 0) || null : user?.tenant_id;
-  const llmModels = useTenantModelCatalog(modelTenantId);
+  const modelOwnerTenantId = editingApp
+    ? (isSuperAdmin ? Number(editTenantId) || null : editingApp.owner_tenant_id)
+    : (isSuperAdmin ? Number(createTenantId) || null : user?.tenant_id);
+  const modelAccess = modelCatalogAccess(user?.tenant_id, isSuperAdmin, modelOwnerTenantId);
+  const llmModels = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
 
   // 定义加载函数（必须在 useEffect 之前）
   const loadApps = useCallback(async () => {
@@ -518,7 +522,7 @@ export default function AppsPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!editingApp && isSuperAdmin && !createTenantId) { toast.error(t("createTenantRequired")); return; }
-    if (!defaultOnlyEditing && formData.ai_model.startsWith("custom-") && !llmModels.some(model => model.code === formData.ai_model)) {
+    if (!defaultOnlyEditing && formData.ai_model.startsWith("custom-") && (!modelAccess.includeCustom || !llmModels.some(model => model.code === formData.ai_model))) {
       toast.error(t("modelUnavailable")); return;
     }
     if (!formData.name.trim()) {
@@ -580,7 +584,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, t, tc]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -1328,6 +1332,7 @@ export default function AppsPage() {
               {formData.app_type === "Chat" && (
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold">{t("aiModel")}</Label>
+                {editingApp && !modelAccess.includeCustom && <p className="text-xs text-muted-foreground">{t("customModelOwnerMismatch")}</p>}
                   <Select
                     value={formData.ai_model}
                     onValueChange={(value) => setFormData({ ...formData, ai_model: value })}

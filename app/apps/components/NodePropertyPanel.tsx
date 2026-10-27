@@ -16,6 +16,9 @@ import { X } from "lucide-react";
 import { WorkflowNode } from "@/types/workflow";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "next-intl";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { modelCatalogAccess } from "@/lib/tenantModels";
 import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
 import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
@@ -62,7 +65,9 @@ export default function NodePropertyPanel({
 }: NodePropertyPanelProps) {
   const t = useTranslations("workflow");
   const [localData, setLocalData] = useState<any>(null);
-  const llmModels = useTenantModelCatalog(ownerTenantId);
+  const { user } = useCurrentUser();
+  const modelAccess = modelCatalogAccess(user?.tenant_id, checkSuperAdmin(user), ownerTenantId);
+  const llmModels = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 当选中节点变化时，更新本地数据
@@ -188,6 +193,7 @@ export default function NodePropertyPanel({
           <>
             <div className="space-y-2">
               <Label className="text-xs">{t("aiModel")}</Label>
+              {!modelAccess.includeCustom && <p className="text-xs text-muted-foreground">{t("customModelOwnerMismatch")}</p>}
               <Select
                 value={localData.aiModel || DEFAULT_LLM_MODEL_CODE}
                 onValueChange={(value) => handleDataChange("aiModel", value)}
