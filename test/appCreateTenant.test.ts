@@ -63,7 +63,13 @@ export async function submitFromPage(
   isSuperAdmin: boolean,
   tenantId: string,
   editing = false,
-  options: { originalTenant?: number | null; defaultOnly?: boolean; fail?: boolean } = {}
+  options: {
+    originalTenant?: number | null;
+    defaultOnly?: boolean;
+    fail?: boolean;
+    modelCode?: string;
+    models?: { code: string }[];
+  } = {}
 ) {
   const ts = (await import("typescript")).default;
   const vm = await import("node:vm");
@@ -115,12 +121,14 @@ export async function submitFromPage(
       : null,
     formData: {
       name: "Employee",
+      ai_model: options.modelCode || "deepseek-flash",
       settings: { workflow: { source: "form" } },
       dataset_ids: [],
       is_default: false,
     },
     autoSelectDatasets: true,
     datasets: [],
+    llmModels: options.models || [],
     defaultOnlyEditing: options.defaultOnly || false,
     user: { id: 2 },
     createTenantFields,

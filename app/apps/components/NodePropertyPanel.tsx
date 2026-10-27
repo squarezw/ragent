@@ -16,10 +16,11 @@ import { X } from "lucide-react";
 import { WorkflowNode } from "@/types/workflow";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "next-intl";
-import axios from "@/lib/axios";
-import { DEFAULT_LLM_MODEL_CODE, type LlmModelOption } from "@/lib/llmModels";
+import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
+import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
 interface NodePropertyPanelProps {
+  ownerTenantId?: number | null;
   selectedNode: WorkflowNode | null;
   datasets: Array<{ id: string; name: string }>;
   onUpdate: (node: WorkflowNode) => void;
@@ -54,13 +55,14 @@ const nodeDefaultNameKeys: Record<string, string> = {
 
 export default function NodePropertyPanel({
   selectedNode,
+  ownerTenantId,
   datasets,
   onUpdate,
   onClose,
 }: NodePropertyPanelProps) {
   const t = useTranslations("workflow");
   const [localData, setLocalData] = useState<any>(null);
-  const [llmModels, setLlmModels] = useState<LlmModelOption[]>([]);
+  const llmModels = useTenantModelCatalog(ownerTenantId);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 当选中节点变化时，更新本地数据
@@ -70,20 +72,7 @@ export default function NodePropertyPanel({
     }
   }, [selectedNode]);
 
-  useEffect(() => {
-    let cancelled = false;
-    axios
-      .get("/api/v1/llm-models")
-      .then((response) => {
-        if (!cancelled) setLlmModels(response.data?.items || []);
-      })
-      .catch(() => {
-        if (!cancelled) setLlmModels([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+
 
   // 清理定时器
   useEffect(() => {
@@ -207,6 +196,7 @@ export default function NodePropertyPanel({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {localData.aiModel?.startsWith("custom-") && !llmModels.some(model => model.code === localData.aiModel) && <SelectItem disabled value={localData.aiModel}>{t("modelUnavailable")}</SelectItem>}
                   {llmModels.length === 0 ? (
                     <SelectItem value={DEFAULT_LLM_MODEL_CODE}>DeepSeek Flash</SelectItem>
                   ) : (
