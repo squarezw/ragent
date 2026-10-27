@@ -1007,10 +1007,10 @@ export default function SystemSettingsPage() {
               {themeLoading ? t("saving") : t("saveConfig")}
             </Button>
         </CollapsibleCard>
+        <GithubOAuthSection defaultOpen={false} />
         </div>
         </div>
         <TenantModelsManager />
-        <GithubOAuthSection defaultOpen={false} />
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——
