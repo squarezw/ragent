@@ -91,5 +91,6 @@
   "creditTenantPoolTotal": "Remaining tenant pool credits ({count} tenants)",
   "creditLifecycleBlocked": "This user has an unsettled personal balance or an active request and cannot be deleted or moved to another tenant.",
   "creditBalanceColumn": "Credit balance",
-  "creditSharedLabel": "shared"
+  "creditSharedLabel": "shared",
+  "pendingTenant": "Awaiting tenant assignment"
 }

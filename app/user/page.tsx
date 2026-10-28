@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useSWRConfig } from "swr";
+import { PENDING_TENANT_COUNT_KEY } from "@/hooks/usePendingTenantCount";
 import { useDebounce } from "use-debounce";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -52,6 +54,7 @@ interface User {
   tenant_id?: number;
   dept_id?: number;
   status: string;
+  pending_tenant?: boolean;
   created_at: string;
   tenant_name?: string;
   dept_name?: string;
@@ -226,6 +229,8 @@ export default function UserPage() {
     return [];
   };
 
+  const { mutate } = useSWRConfig();
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
@@ -376,6 +381,7 @@ export default function UserPage() {
       });
       setShowDialog(false);
       await fetchUsers();
+      void mutate(PENDING_TENANT_COUNT_KEY);
     } catch (error: unknown) {
       const data = (error as { response?: { data?: { code?: string } } })?.response?.data;
       if (data?.code === "USER_CREDIT_LIFECYCLE_BLOCKED") {
@@ -477,6 +483,7 @@ export default function UserPage() {
 
       setShowDialog(false);
       fetchUsers();
+      void mutate(PENDING_TENANT_COUNT_KEY);
     } catch (error: any) {
       if (error.response?.data?.code === "USER_CREDIT_LIFECYCLE_BLOCKED") {
         setError(t("creditLifecycleBlocked"));
@@ -682,7 +689,9 @@ export default function UserPage() {
                     </TableCell>
                     {isSuperAdmin && (
                       <TableCell>
-                        {user.tenant_name ? (
+                        {user.pending_tenant ? (
+                          <Badge variant="secondary">{t("pendingTenant")}</Badge>
+                        ) : user.tenant_name ? (
                           <div className="flex items-center gap-1">
                             <Building2 className="h-3 w-3" />
                             <span
