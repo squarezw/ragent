@@ -76,10 +76,6 @@ export default function AppSidebar() {
   const isTenantAdmin = checkTenantAdmin(user);
   const isDeptAdmin = user?.isDeptAdmin || false;
   const canManageOperation = isSuperAdmin || isTenantAdmin || isDeptAdmin;
-  // 工具管理单独一条，不复用 canManageOperation —— 那一条含部门管理员，
-  // 而后端 _require_tool_manager 只放超管与租户管理员。跟着它会让部门管理员
-  // 看得到入口、点进去每个操作都 403。判据两边必须逐字对齐。
-  const canManageTools = isSuperAdmin || isTenantAdmin;
   const canManageOrg = user?.canManageOrg || false;
   const canManageStaff = user?.canManageStaff || false;
 
@@ -125,7 +121,8 @@ export default function AppSidebar() {
           icon: Sparkles,
           path: "/skills",
         },
-        { title: t("toolsManagement"), icon: Wrench, path: "/tools", visible: canManageTools },
+        // 所有用户可浏览工具；写权限仍由工具页和后端管理员校验控制。
+        { title: t("toolsManagement"), icon: Wrench, path: "/tools" },
         {
           title: t("skuManagement"),
           icon: Package,

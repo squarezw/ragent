@@ -75,12 +75,15 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
     executions,
     total,
     loading: executionsLoading,
-  } = useToolExecutions({
-    tool_id: toolId,
-    status: statusFilter,
-    page,
-    page_size: 20,
-  });
+  } = useToolExecutions(
+    {
+      tool_id: toolId,
+      status: statusFilter,
+      page,
+      page_size: 20,
+    },
+    user?.id
+  );
 
   const getStatusColor = (status: string) => {
     return status === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800";
@@ -477,6 +480,15 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
               </SelectContent>
             </Select>
           </div>
+          <p className="text-sm text-muted-foreground">
+            {t(
+              isSuperAdmin
+                ? "executionScopeAll"
+                : checkTenantAdmin(user) && user?.tenant_id
+                  ? "executionScopeTenant"
+                  : "executionScopeSelf"
+            )}
+          </p>
         </CardHeader>
         <CardContent>
           {executionsLoading ? (

@@ -140,5 +140,8 @@
   "testNotApplicable": "\"{name}\" does not open a connection — nothing to test",
   "creator": "Created by",
   "creatorUnknown": "Not recorded",
-  "creatorDeleted": "User deleted"
+  "creatorDeleted": "User deleted",
+  "executionScopeAll": "Showing platform-wide execution records and statistics.",
+  "executionScopeTenant": "Showing execution records and statistics for users in your tenant only.",
+  "executionScopeSelf": "Showing your own execution records and statistics only."
 }

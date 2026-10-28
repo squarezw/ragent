@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import { getUserIdFromRequest } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/permissions";
+import { getTokenFromRequest, getUserIdFromRequest } from "@/lib/auth";
 
 const BACKEND_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
@@ -16,24 +15,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ detail: "Unauthorized" });
     }
 
-    // 检查是否为超级管理员
-    const isSuperAdminUser = await isSuperAdmin(userId);
-    if (!isSuperAdminUser) {
-      return res.status(403).json({ error: "只有超级管理员才能绑定工具" });
-    }
+    // 应用写权限由后端 require_app_owner_or_super 统一校验，
+    // 普通创建者可管理自己应用的工具；不可只按平台角色拦截。
 
-    // 从请求头中获取 Authorization token
-    const authHeader = req.headers.authorization;
+    // 使用与身份验证相同的 token，兼容统一登录的 HttpOnly cookie。
+    const token = getTokenFromRequest(req);
+    const authHeader = token ? `Bearer ${token}` : undefined;
     const apiKey = req.headers["x-api-key"];
 
     const headers: any = {
       "Content-Type": "application/json",
     };
 
-    if (apiKey) {
-      headers["X-API-Key"] = apiKey;
-    } else if (authHeader) {
+    if (authHeader) {
       headers.Authorization = authHeader;
+    } else if (apiKey) {
+      headers["X-API-Key"] = apiKey;
     } else {
       return res.status(401).json({ detail: "Authorization header required" });
     }

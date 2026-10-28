@@ -61,15 +61,18 @@ const fetcher = async (url: string) => {
 };
 
 // 查询工具执行记录
-export const useToolExecutions = (params?: {
-  tool_id?: number;
-  app_id?: number;
-  status?: "success" | "failed";
-  start_date?: string;
-  end_date?: string;
-  page?: number;
-  page_size?: number;
-}) => {
+export const useToolExecutions = (
+  params?: {
+    tool_id?: number;
+    app_id?: number;
+    status?: "success" | "failed";
+    start_date?: string;
+    end_date?: string;
+    page?: number;
+    page_size?: number;
+  },
+  viewerId?: number | null
+) => {
   const queryParams = new URLSearchParams();
   if (params?.tool_id) queryParams.append("tool_id", String(params.tool_id));
   if (params?.app_id) queryParams.append("app_id", String(params.app_id));
@@ -81,11 +84,15 @@ export const useToolExecutions = (params?: {
 
   const url = `/api/tools/executions${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
 
-  const { data, error, isLoading, mutate } = useSWR<ToolExecutionsResponse>(url, fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    dedupingInterval: 5000,
-  });
+  const { data, error, isLoading, mutate } = useSWR<ToolExecutionsResponse>(
+    viewerId ? [url, viewerId] : null,
+    ([requestUrl]: [string, number]) => fetcher(requestUrl),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 5000,
+    }
+  );
 
   return {
     executions: data?.executions || [],
