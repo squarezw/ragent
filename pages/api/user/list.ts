@@ -1,5 +1,6 @@
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
+import { PENDING_TENANT_SQL } from "@/lib/pendingTenant";
 import { buildVisibilityScope } from "@/lib/visibilityScope";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -72,6 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       query = `
         SELECT u.id, u.username, u.nickname, u.email, u.phone, u.tenant_id, u.dept_id,
                u.status, u.created_at, u.wechat_id,
+               ${scope.tier === "super" ? PENDING_TENANT_SQL : "false"} AS pending_tenant,
                t.name as tenant_name, d.name as dept_name,
                ARRAY_AGG(r.name) as roles
         FROM users u
@@ -82,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ${whereClause}
         GROUP BY u.id, u.username, u.nickname, u.email, u.tenant_id, u.dept_id, 
                  u.status, u.created_at, u.wechat_id, t.name, d.name
-        ORDER BY u.id ASC
+        ORDER BY ${scope.tier === "super" ? "pending_tenant DESC," : ""} u.id ASC
       `;
 
       const result = await client.query(query, params);

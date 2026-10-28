@@ -29,5 +29,8 @@
   "billingRates": "Billing rates",
   "pendingTenantTitle": "Waiting for tenant assignment",
   "pendingTenantDescription": "Please ask an administrator to assign a tenant. Your conversation history and account settings remain available.",
-  "refreshTenantStatus": "Refresh access"
+  "refreshTenantStatus": "Refresh access",
+  "notifications": "Notifications",
+  "pendingTenantCount": "Awaiting tenant assignment ({count})",
+  "pendingTenantUnavailable": "Tenant assignments (unavailable)"
 }

@@ -91,5 +91,7 @@
   "creditTenantPoolTotal": "租户池剩余积分（{count} 个租户）",
   "creditLifecycleBlocked": "该用户有未结清的个人积分或正在进行的请求，暂不能删除或更换租户",
   "creditBalanceColumn": "积分余额",
-  "creditSharedLabel": "共享"
+  "creditSharedLabel": "共享",
+  "pendingTenant": "待分配租户",
+  "joinedAt": "加入时间"
 }

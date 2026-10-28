@@ -29,5 +29,8 @@
   "billingRates": "计费系数",
   "pendingTenantTitle": "等待管理员分配租户",
   "pendingTenantDescription": "请联系管理员分配租户。您仍可管理自己的会话和个人设置。",
-  "refreshTenantStatus": "刷新访问权限"
+  "refreshTenantStatus": "刷新访问权限",
+  "notifications": "提醒",
+  "pendingTenantCount": "待分配租户 {count} 人",
+  "pendingTenantUnavailable": "待分配租户（暂时无法加载）"
 }
