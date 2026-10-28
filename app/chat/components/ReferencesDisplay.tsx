@@ -1,3 +1,4 @@
+import { uniqueFileReferences } from "@/lib/fileReferences";
 import { useTranslations } from "next-intl";
 import { FileSpreadsheet, FileText, FileType } from "lucide-react";
 
@@ -22,8 +23,20 @@ interface ReferencesDisplayProps {
   messageIndex: number;
   reference?:
     | string
-    | { id?: number; originalname: string; filename?: string; path?: string | null; mimetype?: string }
-    | { id?: number; originalname: string; filename?: string; path?: string | null; mimetype?: string }[];
+    | {
+        id?: number;
+        originalname: string;
+        filename?: string;
+        path?: string | null;
+        mimetype?: string;
+      }
+    | {
+        id?: number;
+        originalname: string;
+        filename?: string;
+        path?: string | null;
+        mimetype?: string;
+      }[];
   segmentIds?: number[];
   segmentsLoading: { [key: number]: boolean };
   onOpenReferencesDialog: (messageIndex: number, segmentIds: number[]) => void;
@@ -41,12 +54,13 @@ export default function ReferencesDisplay({
   const t = useTranslations("chat");
   if (!reference && !segmentIds) return null;
 
-  const references =
+  const references = uniqueFileReferences(
     reference && typeof reference === "object" && reference !== null
       ? Array.isArray(reference)
         ? reference
         : [reference]
-      : [];
+      : []
+  );
 
   const isLoading = segmentsLoading[messageIndex];
 
@@ -61,7 +75,7 @@ export default function ReferencesDisplay({
           <div className="flex flex-wrap gap-2">
             {references.map((refObj, index) => (
               <div
-                key={index}
+                key={refObj.id ?? refObj.path ?? refObj.filename ?? `unidentified-${index}`}
                 className="flex items-center bg-background border border-border rounded-lg overflow-hidden"
               >
                 <div className="w-5 h-full bg-muted flex items-center justify-center flex-shrink-0">
