@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
-import { getUserIdFromRequest } from "@/lib/auth";
+import { getTokenFromRequest, getUserIdFromRequest } from "@/lib/auth";
 
 const BACKEND_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
@@ -16,17 +16,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 从请求头中获取 Authorization token
-    const authHeader = req.headers.authorization;
+    const token = getTokenFromRequest(req);
+    const authHeader = token ? `Bearer ${token}` : undefined;
     const apiKey = req.headers["x-api-key"];
 
     const headers: any = {
       "Content-Type": "application/json",
     };
 
-    if (apiKey) {
-      headers["X-API-Key"] = apiKey;
-    } else if (authHeader) {
+    if (authHeader) {
       headers.Authorization = authHeader;
+    } else if (apiKey) {
+      headers["X-API-Key"] = apiKey;
     } else {
       return res.status(401).json({ detail: "Authorization header required" });
     }

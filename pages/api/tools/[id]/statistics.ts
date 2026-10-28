@@ -1,24 +1,28 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
+import { getTokenFromRequest, getUserIdFromRequest } from "@/lib/auth";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8010";
+const BACKEND_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, query } = req;
   const { id, app_id, start_date, end_date } = query;
 
   try {
-    const token = req.cookies.ragent_token;
+    if (!getUserIdFromRequest(req)) {
+      return res.status(401).json({ detail: "Unauthorized" });
+    }
+    const token = getTokenFromRequest(req);
     const apiKey = req.headers["x-api-key"];
 
     const headers: any = {
       "Content-Type": "application/json",
     };
 
-    if (apiKey) {
-      headers["X-API-Key"] = apiKey;
-    } else if (token) {
+    if (token) {
       headers.Authorization = `Bearer ${token}`;
+    } else if (apiKey) {
+      headers["X-API-Key"] = apiKey;
     }
 
     switch (method) {

@@ -140,5 +140,8 @@
   "testNotApplicable": "「{name}」不建立连接，无需测试",
   "creator": "创建人",
   "creatorUnknown": "未记录",
-  "creatorDeleted": "用户已注销"
+  "creatorDeleted": "用户已注销",
+  "executionScopeAll": "当前展示全平台调用记录及统计。",
+  "executionScopeTenant": "当前仅展示本租户用户的调用记录及统计。",
+  "executionScopeSelf": "当前仅展示你本人的调用记录及统计。"
 }
