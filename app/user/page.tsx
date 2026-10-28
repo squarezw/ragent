@@ -108,6 +108,7 @@ const createEmptyUser = (currentUser: any, normalUserLabel: string) => {
 export default function UserPage() {
   const t = useTranslations("user");
   const tc = useTranslations("common");
+  const locale = useLocale();
   const { user, loading: userLoading } = useCurrentUser();
   const [users, setUsers] = useState<User[]>([]);
   const creditBalances = useUserCreditBalances(users.map((item) => item.id));
@@ -230,6 +231,7 @@ export default function UserPage() {
   };
 
   const { mutate } = useSWRConfig();
+  const joinedAt = editing && form.created_at ? new Date(form.created_at) : null;
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -794,9 +796,26 @@ export default function UserPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/30 z-50" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-6 shadow-lg">
-            <Dialog.Title className="text-lg font-bold mb-4">
-              {editing ? t("editUser") : t("addUser")}
-            </Dialog.Title>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+              <Dialog.Title className="text-lg font-bold">
+                {editing ? t("editUser") : t("addUser")}
+              </Dialog.Title>
+              {joinedAt && !Number.isNaN(joinedAt.getTime()) && (
+                <div className="ml-auto text-right text-xs leading-5 text-muted-foreground">
+                  <span className="block">{t("joinedAt")}</span>
+                  <time dateTime={joinedAt.toISOString()}>
+                    {new Intl.DateTimeFormat(locale, {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).format(joinedAt)}
+                  </time>
+                </div>
+              )}
+            </div>
             {/* 防止浏览器自动填充的假输入框 */}
             <input
               type="text"
