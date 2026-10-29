@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import DatasetSelectorDropdown from "./DatasetSelectorDropdown";
-import type { Attachment } from "../hooks/useFileAttachments";
+import type { Attachment, PendingAttachment } from "../hooks/useFileAttachments";
 import { ATTACHMENT_ACCEPT } from "@/lib/chatAttachments";
+import { pasteChatAttachments } from "../clipboardAttachments";
 
 interface App {
   id: number;
@@ -42,6 +43,7 @@ interface ChatInputCompositeProps {
   loading: boolean;
   isStreaming: boolean;
   attachments: Attachment[];
+  pendingAttachments: PendingAttachment[];
   uploading: boolean;
   onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onFileDrop: (files: File[]) => void;
@@ -95,6 +97,7 @@ export default function ChatInputComposite({
   loading,
   isStreaming,
   attachments,
+  pendingAttachments,
   uploading,
   onFileSelect,
   onFileDrop,
@@ -173,11 +176,11 @@ export default function ChatInputComposite({
         } else {
           // Enter: send message
           e.preventDefault();
-          onSend();
+          if (!uploading) onSend();
         }
       }
     },
-    [onSend]
+    [onSend, uploading]
   );
 
   // Auto-resize textarea
@@ -222,9 +225,24 @@ export default function ChatInputComposite({
         </div>
       )}
       {/* File previews */}
-      {attachments.length > 0 && (
+      {(attachments.length > 0 || pendingAttachments.length > 0) && (
         <div className="px-4 pt-3 pb-2 border-b border-border">
           <div className="flex flex-wrap gap-2">
+            {pendingAttachments.map((attachment) => (
+              <div
+                key={`upload-${attachment.id}`}
+                className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 text-sm"
+                role="status"
+                aria-label={`${attachment.filename}: ${t("uploadAttachment")}`}
+              >
+                {getFileIcon(attachment.type)}
+                <span className="max-w-[150px] truncate">{attachment.filename}</span>
+                <Loader2
+                  className="w-3.5 h-3.5 animate-spin text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </div>
+            ))}
             {attachments.map((attachment, index) => (
               <div
                 key={index}
@@ -252,6 +270,7 @@ export default function ChatInputComposite({
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={(event) => pasteChatAttachments(event, onFileDrop, onInputChange)}
           placeholder={placeholder || t("inputPlaceholder")}
           disabled={loading || isStreaming}
           className="min-h-[44px] max-h-[120px] resize-none overflow-y-auto border-0 shadow-none focus-visible:ring-0 p-0 text-base"
@@ -400,7 +419,7 @@ export default function ChatInputComposite({
         ) : input.trim() ? (
           <Button
             onClick={onSend}
-            disabled={loading}
+            disabled={loading || uploading}
             variant="default"
             size="icon"
             className="h-8 w-8 rounded-full"
@@ -413,7 +432,7 @@ export default function ChatInputComposite({
               <TooltipTrigger asChild>
                 <Button
                   onClick={onMicClick}
-                  disabled={loading}
+                  disabled={loading || uploading}
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-full"
@@ -429,7 +448,7 @@ export default function ChatInputComposite({
         ) : (
           <Button
             onClick={onSend}
-            disabled={loading || !canSend}
+            disabled={loading || uploading || !canSend}
             variant="default"
             size="icon"
             className="h-8 w-8 rounded-full"
