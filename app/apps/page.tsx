@@ -59,7 +59,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
+import { appSelectionKey, canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
 import { modelCatalogAccess } from "@/lib/tenantModels";
 import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
 import { editTenantFields, datasetsForEditTenant } from "@/lib/appEditTenant";
@@ -126,14 +126,6 @@ const platformIcons: Record<string, any> = {
   Android: Smartphone,
 };
 
-// 展示方式与平台标签一律中性灰（Badge 的 secondary）。
-//
-// 原先每个取值一种颜色：紫、绿、黄、蓝、翠、橙……一屏卡片下来像调色板，而这些
-// 颜色不承载任何含义——"聊天"是紫的、"Web"也是紫的，读者得先学会一套配色表才
-// 知道颜色没在说话。真正需要抢眼的是异常状态（草稿/待审/驳回，见 reviewStatus），
-// 颜色留给它们才有对比度。详情页那两个标签一直是中性的 outline，这里跟它对齐。
-
-
 export default function AppsPage() {
   const router = useRouter();
   const { user } = useCurrentUser();
@@ -141,6 +133,14 @@ export default function AppsPage() {
   const t = useTranslations("apps");
   const tc = useTranslations("common");
   const ts = useTranslations("skills");
+
+  const startChat = (app: App) => {
+    if (!user?.id || app.app_type !== "Chat") return;
+    const key = appSelectionKey(user.id, user.tenant_id);
+    localStorage.setItem(key, String(app.id));
+    localStorage.setItem(`${key}:optional_datasets`, "[]");
+    router.push("/chat");
+  };
 
   const [apps, setApps] = useState<App[]>([]);
   /** 超管的租户筛选。"all" = 不筛。 */
@@ -959,9 +959,8 @@ export default function AppsPage() {
                   </Table>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {renderApps.map((app) => {
-                    const PlatformIcon = platformIcons[app.platform] || Globe;
                     const isDefault = app.is_default;
                     const header = groupHeaders?.get(app.id);
                     const card = (
@@ -971,7 +970,7 @@ export default function AppsPage() {
                         className={`hover:shadow-lg transition-all duration-200 border-2 cursor-pointer flex flex-col h-full ${
                           isDefault
                             ? "bg-primary/5 border-primary/40 hover:border-primary/60"
-                            : "hover:border-primary/20"
+                            : "opacity-60 hover:opacity-100 focus-within:opacity-100 hover:border-primary/20"
                         }`}
                       >
                         <CardHeader className="pb-3">
@@ -1013,24 +1012,17 @@ export default function AppsPage() {
                           </div>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow">
-                          <div className="flex flex-wrap gap-2 mb-4">
-                            {(() => {
-                              const badge = appStatusBadge(app.status);
-                              return badge ? (
+                          {(() => {
+                            const badge = appStatusBadge(app.status);
+                            return badge ? (
+                              <div className="mb-4">
                                 <Badge variant={badge.variant} className={badge.className}>
                                   {ts(badge.labelKey)}
                                 </Badge>
-                              ) : null;
-                            })()}
-                            <Badge variant="secondary" className="font-medium">
-                              {presentationModeLabel(app.app_type, t)}
-                            </Badge>
-                            <Badge variant="secondary" className="font-medium">
-                              <PlatformIcon className="h-3 w-3 mr-1" />
-                              {app.platform}
-                            </Badge>
-                          </div>
-                          <div className="text-sm">
+                              </div>
+                            ) : null;
+                          })()}
+                          <div className="text-sm pb-4">
                             <div className="flex items-center gap-4">
                               {/* 数据集为 0 不显示。
                                   空 `dataset_ids` 加上自动选择开关（settings.auto_select_datasets，
@@ -1058,9 +1050,24 @@ export default function AppsPage() {
                             </div>
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t mt-auto">
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(app.updated_at || app.created_at).toLocaleDateString()}
-                            </span>
+                            <div>
+                              {app.app_type === "Chat" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={t("startChat")}
+                                  title={t("startChat")}
+                                  disabled={!user?.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    startChat(app);
+                                  }}
+                                  className="h-8 w-8"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                             <div className="flex gap-1">
                               <TooltipProvider>
                                 <Tooltip>
@@ -1177,6 +1184,11 @@ export default function AppsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-4 border-b">
+            {editingApp && (
+              <p className="self-end pr-6 text-xs text-muted-foreground" title={t("lastUpdated")}>
+                {t("lastUpdated")}: {new Date(editingApp.updated_at || editingApp.created_at).toLocaleString()}
+              </p>
+            )}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 {editingApp ? (
