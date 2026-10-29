@@ -1,4 +1,6 @@
 {
+  "startChat": "Start chat",
+  "lastUpdated": "Last updated",
   "title": "Digital Employees",
   "description": "Manage digital employees built from workflows and knowledge bases, deploy to different platforms",
   "createApp": "Create",

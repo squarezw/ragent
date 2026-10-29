@@ -1,4 +1,6 @@
 {
+  "startChat": "开始聊天",
+  "lastUpdated": "更新时间",
   "title": "数字员工",
   "description": "管理工作流和知识库组合而成的数字员工，部署到不同平台",
   "createApp": "创建数字员工",
