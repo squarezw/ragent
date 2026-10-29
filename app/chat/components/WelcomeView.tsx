@@ -7,7 +7,7 @@ import { useTimeGreeting } from "@/hooks/useTimeGreeting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ChatInputComposite from "./ChatInputComposite";
 import AppShortcuts from "./AppShortcuts";
-import type { Attachment } from "../hooks/useFileAttachments";
+import type { Attachment, PendingAttachment } from "../hooks/useFileAttachments";
 
 interface App {
   id: number;
@@ -33,6 +33,7 @@ interface WelcomeViewProps {
 
   // File handling
   attachments: Attachment[];
+  pendingAttachments: PendingAttachment[];
   uploading: boolean;
   onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onFileDrop: (files: File[]) => void;
@@ -71,6 +72,7 @@ export default function WelcomeView({
   loading,
   isStreaming,
   attachments,
+  pendingAttachments,
   uploading,
   onFileSelect,
   onFileDrop,
@@ -127,6 +129,7 @@ export default function WelcomeView({
             loading={loading}
             isStreaming={isStreaming}
             attachments={attachments}
+            pendingAttachments={pendingAttachments}
             uploading={uploading}
             onFileSelect={onFileSelect}
             onFileDrop={onFileDrop}

@@ -26,15 +26,25 @@ export interface Attachment {
   uploadReceipt?: string;
 }
 
+export interface PendingAttachment {
+  id: number;
+  filename: string;
+  type: string;
+}
+
 export function useFileAttachments() {
   const t = useTranslations("chat");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const uploadingCountRef = useRef(0);
+  const uploadIdRef = useRef(0);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
 
   const handleFileUpload = async (file: File) => {
+    const id = ++uploadIdRef.current;
+    setPendingAttachments((prev) => [...prev, { id, filename: file.name, type: file.type }]);
     uploadingCountRef.current += 1;
     setUploading(true);
     try {
@@ -84,6 +94,7 @@ export function useFileAttachments() {
         `${t("fileUploadFailed", { name: file.name })}: ${error.response?.data?.error || error.message}`
       );
     } finally {
+      setPendingAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
       uploadingCountRef.current -= 1;
       if (uploadingCountRef.current === 0) {
         setUploading(false);
@@ -196,6 +207,7 @@ export function useFileAttachments() {
 
   return {
     attachments,
+    pendingAttachments,
     setAttachments,
     uploading,
     fileInputRef,

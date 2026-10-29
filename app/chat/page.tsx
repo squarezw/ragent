@@ -97,6 +97,7 @@ export default function ChatPage() {
   // Custom hooks
   const {
     attachments,
+    pendingAttachments,
     setAttachments,
     uploading,
     fileInputRef,
@@ -223,7 +224,13 @@ export default function ChatPage() {
   }, [startNewConversation]);
 
   const handleSend = async () => {
-    if (loading || loadingHistorySession || (!input.trim() && attachments.length === 0)) return;
+    if (
+      loading ||
+      uploading ||
+      loadingHistorySession ||
+      (!input.trim() && attachments.length === 0)
+    )
+      return;
     const version = conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
     // Per-request accumulation also sees chunks queued before React commits state.
@@ -530,6 +537,7 @@ export default function ChatPage() {
     loading,
     isStreaming,
     attachments,
+    pendingAttachments,
     uploading,
     onFileSelect: handleFileSelect,
     onFileDrop: handleFileDrop,
