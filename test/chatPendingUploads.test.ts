@@ -64,6 +64,7 @@ function harness() {
     "@/lib/sessionAttachments": { sessionAttachmentMime: () => "image/png" },
     "@/lib/chatAttachments": { isAllowedAttachment: () => true },
     "@/lib/chatResourcePreview": {},
+    "@/lib/chatAttachmentPreview": {},
   };
   runInNewContext(
     ts.transpileModule(
