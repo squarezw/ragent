@@ -1,10 +1,11 @@
-import { isChatDownloadOnly, downloadChatLink } from "@/lib/chatResourcePreview";
+import { downloadChatLink } from "@/lib/chatResourcePreview";
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { isCookieAuthMode } from "@/lib/browserAuthMode";
 import { uploadFile, getFileUrl } from "@/lib/ossUpload";
 import { sessionAttachmentMime } from "@/lib/sessionAttachments";
+import { chatAttachmentPreview } from "@/lib/chatAttachmentPreview";
 import { isAllowedAttachment } from "@/lib/chatAttachments";
 
 export interface Attachment {
@@ -142,67 +143,13 @@ export function useFileAttachments() {
   };
 
   const handlePreviewAttachment = (attachment: Attachment) => {
-    if (isChatDownloadOnly(attachment.filename, attachment.type)) {
-      const url =
-        attachment.url || (attachment.objectKey ? getFileUrl(attachment.objectKey) : undefined);
-      if (url) downloadChatLink(url, attachment.filename);
-      return;
+    const target = chatAttachmentPreview(attachment);
+    if (!target) return;
+    if (target.kind === "download") {
+      downloadChatLink(target.url, target.filename);
+    } else {
+      setPreviewFile(target.file);
     }
-    const getMimetypeFromType = (type: string): string => {
-      if (type.includes("PDF") || type === t("pdfDocument")) {
-        return "application/pdf";
-      }
-      if (type.includes("Word") || type === t("wordDocument")) {
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      }
-      if (type.includes("Excel") || type === t("excelSpreadsheet")) {
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      }
-      if (type.includes("文本") || type === t("textFile")) {
-        return "text/plain";
-      }
-      const lowerFilename = attachment.filename.toLowerCase();
-      if (lowerFilename.endsWith(".pdf")) return "application/pdf";
-      if (lowerFilename.endsWith(".docx"))
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      if (lowerFilename.endsWith(".doc")) return "application/msword";
-      if (lowerFilename.endsWith(".xlsx"))
-        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      if (lowerFilename.endsWith(".xls")) return "application/vnd.ms-excel";
-      if (lowerFilename.endsWith(".txt")) return "text/plain";
-      if (lowerFilename.endsWith(".ai")) return "application/postscript";
-      if (lowerFilename.endsWith(".dwg")) return "application/dwg";
-      if (lowerFilename.endsWith(".dxf")) return "application/dxf";
-      // 图片也要走扩展名兜底：部分浏览器/系统对图片给不出 MIME，
-      // 落到 octet-stream 就会被判成不支持而传不上来。
-      if (lowerFilename.endsWith(".png")) return "image/png";
-      if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) return "image/jpeg";
-      if (lowerFilename.endsWith(".gif")) return "image/gif";
-      if (lowerFilename.endsWith(".bmp")) return "image/bmp";
-      if (lowerFilename.endsWith(".tif") || lowerFilename.endsWith(".tiff")) return "image/tiff";
-      if (lowerFilename.endsWith(".webp")) return "image/webp";
-      return "application/octet-stream";
-    };
-
-    let serverFilename = attachment.filename;
-
-    if (attachment.url) {
-      let urlPath = attachment.url;
-      urlPath = urlPath.replace(/^\/+(api\/)?uploads\/+/, "");
-      if (urlPath) {
-        serverFilename = urlPath.split("/").pop() || attachment.filename;
-      }
-    }
-
-    const fileForPreview = {
-      filename: serverFilename,
-      originalname: attachment.filename,
-      mimetype: getMimetypeFromType(attachment.type),
-      path: attachment.url || undefined,
-      sourceUrl: attachment.url || undefined,
-    };
-
-    setPreviewFile(fileForPreview);
   };
 
   return {
