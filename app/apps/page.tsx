@@ -135,7 +135,7 @@ export default function AppsPage() {
   const ts = useTranslations("skills");
 
   const startChat = (app: App) => {
-    if (!user?.id || app.app_type !== "Chat") return;
+    if (!user?.id || app.app_type !== "Chat" || app.platform === "Plugin") return;
     const key = appSelectionKey(user.id, user.tenant_id);
     localStorage.setItem(key, String(app.id));
     localStorage.setItem(`${key}:optional_datasets`, "[]");
@@ -1051,7 +1051,7 @@ export default function AppsPage() {
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t mt-auto">
                             <div>
-                              {app.app_type === "Chat" && (
+                              {app.app_type === "Chat" && app.platform !== "Plugin" && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
