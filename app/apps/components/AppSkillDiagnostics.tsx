@@ -92,7 +92,7 @@ function BlockedSkill({
   return (
     <section className="rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{item.reason === "workspace_unavailable" ? t("workspaceUnavailableSkill") : item.display_name || item.skill_name}</span>
+        <span className="font-medium break-all">{item.display_name || item.skill_name || `${t("workspaceUnavailableSkill")} (#${item.skill_id})`}</span>
         {item.reason !== "workspace_unavailable" && <span className="font-mono text-xs text-muted-foreground break-all">{item.skill_name}</span>}
         <Badge
           variant="outline"

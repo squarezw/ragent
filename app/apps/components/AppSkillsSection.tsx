@@ -123,7 +123,7 @@ export default function AppSkillsSection({
                         className="font-medium hover:underline text-left disabled:no-underline disabled:text-muted-foreground"
                         onClick={() => router.push(`/skills/${info.skillId}`)}
                       >
-                        {row.available === false ? t("workspaceUnavailableSkill") : info.displayName || info.name}
+                        {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
                       {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
                       {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
