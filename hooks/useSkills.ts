@@ -118,13 +118,15 @@ export const useSkills = (query?: string, filters?: SkillListFilters) => {
 };
 
 // 单个 Skill 详情 + 草稿保存 / 发布
-export const useSkill = (skillId: number | null) => {
+export const useSkill = (skillId: number | null, accessScope: string | null = "legacy") => {
   const t = useTranslations("skills");
   const invalidateDiagnostics = useInvalidateAppSkillDiagnostics();
   const url = skillId ? `/api/v1/skills/${skillId}` : null;
 
-  const { data, error, isLoading, mutate } = useSWR<Skill>(url, fetcher, {
+  const key = url && accessScope ? [url, accessScope] as const : null;
+  const { data, error, isLoading, mutate } = useSWR<Skill>(key, ([url]: readonly [string, string]) => fetcher(url), {
     revalidateOnFocus: false,
+    keepPreviousData: false,
   });
 
   const saveDraft = async (payload: SkillPayload): Promise<Skill | null> => {
@@ -194,7 +196,7 @@ export const useSkill = (skillId: number | null) => {
 
   // 草稿 vs 已发布对照
   const fetchDiff = async (): Promise<SkillDiff | null> => {
-    if (!skillId) return null;
+    if (!key || data?.can_view_content !== true) return null;
     try {
       const res = await axios.get(`/api/v1/skills/${skillId}/diff`);
       const data = res.data as Partial<SkillDiff> | undefined;
@@ -206,7 +208,7 @@ export const useSkill = (skillId: number | null) => {
   };
 
   const exportMarkdown = async (): Promise<string | null> => {
-    if (!skillId) return null;
+    if (!key || data?.can_view_content !== true) return null;
     try {
       const res = await axios.get(`/api/v1/skills/${skillId}/export`, {
         responseType: "text",
@@ -220,7 +222,7 @@ export const useSkill = (skillId: number | null) => {
   };
 
   return {
-    skill: data,
+    skill: key ? data : undefined,
     loading: isLoading,
     error,
     saveDraft,

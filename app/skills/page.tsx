@@ -258,8 +258,8 @@ export default function SkillsPage() {
                       return (
                         <TableRow
                           key={skill.id}
-                          className={canEdit ? "cursor-pointer" : ""}
-                          onClick={canEdit ? () => router.push(`/skills/${skill.id}`) : undefined}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/skills/${skill.id}`)}
                         >
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
@@ -325,27 +325,23 @@ export default function SkillsPage() {
                           </TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-2">
-                              {/* 没有写权限的人：编辑/删除藏掉，**查看也一并藏掉**——跨租户的
-                              公开技能在列表里只展示一行，既不能改也不能点进去看详情。
-                              操作列空白，而不是放一个「查看」按钮骗人能进去。 */}
-                              {canEdit && (
-                                <>
+                              {/* Shared users open the safe summary and their own variable settings. */}
+                              <>
                                   <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => router.push(`/skills/${skill.id}`)}
                                   >
-                                    {tc("edit")}
+                                    {canEdit && skill.can_view_content === true ? tc("edit") : tc("view")}
                                   </Button>
-                                  {canDelete && <Button
+                                  {canEdit && canDelete && <Button
                                     variant="destructive"
                                     size="sm"
                                     onClick={() => handleDelete(skill)}
                                   >
                                     {tc("delete")}
                                   </Button>}
-                                </>
-                              )}
+                              </>
                             </div>
                           </TableCell>
                         </TableRow>
