@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant, workspaceHeaders } from "@/lib/workspaceTenant";
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import axios from "@/lib/axios";
@@ -13,6 +14,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     const { query, limit = 20, embedding_status, model } = req.body;
 
@@ -24,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const embeddingModel = model || "aliyun-v4";
 
     // 获取查询文本的embedding
-    const embedding = await getQueryEmbedding(query, embeddingModel);
+    const embedding = await getQueryEmbedding(query, embeddingModel, req);
     if (!embedding) {
       return res.status(500).json({ error: "Failed to get query embedding" });
     }
@@ -55,6 +58,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const queryParams = [vectorString];
     let paramIndex = 2;
+    if (workspace.enabled) {
+      searchQuery += ` AND p.owner_tenant_id = $${paramIndex++}`;
+      queryParams.push(String(workspace.tenantId));
+    }
 
     // 添加embedding_status过滤
     if (embedding_status && embedding_status !== "all") {
@@ -109,7 +116,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 // 获取查询文本的embedding
 async function getQueryEmbedding(
   text: string,
-  model: "openai" | "e5" | "aliyun" | "aliyun-v4"
+  model: "openai" | "e5" | "aliyun" | "aliyun-v4",
+  req: NextApiRequest
 ): Promise<number[] | null> {
   try {
     const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
@@ -126,6 +134,7 @@ async function getQueryEmbedding(
       },
       {
         timeout: 30000,
+        headers: { ...workspaceHeaders(req), ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}) },
       }
     );
 

@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -23,6 +24,8 @@ const emptyDraft = (): ModelDraft => ({
 
 export function TenantModelsManager() {
   const { user } = useCurrentUser();
+  const workspace = useWorkspace();
+  const operationTenantId = workspace.enabled ? workspace.tenant?.id : user?.tenant_id;
   const t = useTranslations("settings");
   const superAdmin = checkSuperAdmin(user);
   const allowed = superAdmin || checkTenantAdmin(user);
@@ -35,10 +38,10 @@ export function TenantModelsManager() {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   useEffect(() => {
-    setTenantId(user?.tenant_id ? String(user.tenant_id) : "");
+    setTenantId(operationTenantId ? String(operationTenantId) : "");
     setDraft(null);
     setModels([]);
-    if (!user?.id || !allowed || !superAdmin) return;
+    if (!user?.id || !allowed || !superAdmin || workspace.enabled) return;
     let active = true;
     axios
       .get("/api/organization/tenants")
@@ -51,7 +54,7 @@ export function TenantModelsManager() {
     return () => {
       active = false;
     };
-  }, [user?.id, user?.tenant_id, allowed, superAdmin]);
+  }, [user?.id, operationTenantId, allowed, superAdmin, workspace.enabled]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision intentionally reloads after a successful mutation.
   useEffect(() => {
     setModels([]);
@@ -145,13 +148,13 @@ export function TenantModelsManager() {
     }
   };
   return (
-    <Card className="break-inside-avoid">
+    <Card className="break-inside-avoid" data-workspace-dirty={draft ? "true" : undefined}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">{t("tenantModelsTitle")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         <p className="text-sm text-muted-foreground">{t("tenantModelsDescription")}</p>
-        {superAdmin && (
+        {superAdmin && !workspace.enabled && (
           <label className="block space-y-1">
             <span>{t("tenantModelsTenant")}</span>
             <select

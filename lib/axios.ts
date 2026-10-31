@@ -7,7 +7,11 @@ import { clearChatSelectionCache, clearSwrCache } from "./authUtils";
 
 import { isCookieAuthMode } from "./browserAuthMode";
 
+import { beginWorkspaceRequest, getWorkspaceSnapshot } from "./workspaceBrowser";
+
 const instance = axios.create();
+const workspaceRequests = new WeakMap<object, ReturnType<typeof beginWorkspaceRequest>>();
+
 
 instance.interceptors.request.use(async (config) => {
   if (typeof window !== "undefined" && isCookieAuthMode() && !config.url?.includes("/api/user/me") && !config.url?.startsWith("/api/auth/")) await ensureSessionCurrent();
@@ -18,12 +22,27 @@ instance.interceptors.request.use(async (config) => {
       config.headers.Authorization = `Bearer ${token}`;
     }
   }
+  if (typeof window !== "undefined" && getWorkspaceSnapshot().enabled) {
+    const url = new URL(config.url || "", window.location.origin);
+    if (url.origin === window.location.origin && url.pathname.startsWith("/api/")) {
+      const request = beginWorkspaceRequest(!["get", "head"].includes((config.method || "get").toLowerCase()), config.signal as AbortSignal | undefined);
+      Object.assign(config.headers, request.headers);
+      // Revalidate legacy browser/CDN entries that predate workspace isolation.
+      config.headers["Cache-Control"] = "no-cache";
+      config.headers.Pragma = "no-cache";
+      config.signal = request.signal;
+      workspaceRequests.set(config, request);
+    }
+  }
   return config;
 });
 
 // 统一错误 toast
 instance.interceptors.response.use(
   (response) => {
+    const request = workspaceRequests.get(response.config);
+    request?.finish();
+    if (request && !request.isCurrent()) throw new axios.CanceledError("Workspace changed");
     // 对于 blob 响应，直接返回，不进行任何处理
     if (response.config.responseType === "blob") {
       return response;
@@ -31,6 +50,9 @@ instance.interceptors.response.use(
     return response;
   },
   async (error) => {
+    const request = error.config && workspaceRequests.get(error.config);
+    request?.finish();
+    if (request && !request.isCurrent()) return Promise.reject(new axios.CanceledError("Workspace changed"));
     // Closing a view or replacing a request is normal cancellation, not an API failure.
     if (axios.isCancel(error) || error?.code === "ERR_CANCELED") return Promise.reject(error);
     if (error instanceof SessionRenewalError) return Promise.reject(error);

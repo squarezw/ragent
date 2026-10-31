@@ -1,3 +1,4 @@
+import { workspaceEnabled, WORKSPACE_HEADER } from "@/lib/workspaceTenant";
 import jwt from "jsonwebtoken";
 import { extractSseErrorMessage, isSseCommentLine } from "@/lib/chatSse";
 import {
@@ -81,6 +82,7 @@ function normalizeAttachments(value: unknown): AutomationExecutionAttachment[] {
 
 export async function executeAutomationAgent(params: {
   userId: number;
+  tenantId?: number | null;
   appId: number;
   question: string;
   /**
@@ -89,6 +91,9 @@ export async function executeAutomationAgent(params: {
    */
   attachments?: readonly AutomationAgentAttachment[];
 }): Promise<AutomationExecutionResult> {
+  if (workspaceEnabled() && (!Number.isSafeInteger(params.tenantId) || Number(params.tenantId) <= 0)) {
+    throw new Error("AUTOMATION_TENANT_SNAPSHOT_REQUIRED");
+  }
   const jwtSecret = requiredEnv("JWT_SECRET");
   const backendUrl = requiredEnv("EXTERNAL_API_BASE_URL").replace(/\/+$/, "");
 
@@ -99,6 +104,7 @@ export async function executeAutomationAgent(params: {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      ...(workspaceEnabled() ? { [WORKSPACE_HEADER]: String(params.tenantId) } : {}),
     },
     body: JSON.stringify(
       buildAutomationAgentPayload({

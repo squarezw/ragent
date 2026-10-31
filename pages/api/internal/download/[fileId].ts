@@ -1,3 +1,4 @@
+import { verifyOfficeScope, officeBackendHeaders } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "crypto";
 import axios from "axios";
@@ -23,6 +24,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const fid = fileId as string;
   const exp = parseInt(expires as string, 10);
 
+  const scope = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    ? await verifyOfficeScope(req.query.cap,"file",fid) : null;
+  if(process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    if(!scope)return res.status(403).json({error:"Invalid workspace capability"});
+  } else {
   // Validate token
   if (!token || !expires || isNaN(exp)) {
     return res.status(403).json({ error: "Invalid token" });
@@ -38,18 +44,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(403).json({ error: "Invalid token" });
   }
 
+  }
+
   // Fetch file from Python backend (no auth needed — we verified the token)
   try {
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/files/${fid}/download`, {
+      ...(scope ? { headers:officeBackendHeaders(scope) } : {}),
       responseType: "stream",
       timeout: 300000,
     });
 
     const contentType = response.headers["content-type"] || "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Type", String(contentType));
 
     if (response.headers["content-disposition"]) {
-      res.setHeader("Content-Disposition", response.headers["content-disposition"]);
+      res.setHeader("Content-Disposition", String(response.headers["content-disposition"]));
     }
 
     response.data.pipe(res);

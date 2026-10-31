@@ -37,6 +37,7 @@ async function start() {
     {
       module,
       loading: false,
+      uploading: false,
       loadingHistorySession: false,
       input: "question",
       attachments: [],

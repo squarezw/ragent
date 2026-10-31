@@ -9,10 +9,11 @@ export type SkillStatus = ReviewStatus;
 
 export interface SkillRequires {
   tools?: string[];
-  workflows?: string[];
 }
 
 export interface Skill {
+  platform_provided?: boolean;
+  shared_across_tenants?: boolean;
   id: number;
   name: string;
   display_name: string;
@@ -166,23 +167,12 @@ export interface RequiresToolOption {
   description: string | null;
 }
 
-/** requires.workflows 的候选项（registry 注册的全部 kind，含停用） */
-export interface RequiresWorkflowOption {
-  /** 写进 requires.workflows 的值 */
-  kind: string;
-  display_name: string | null;
-  description: string | null;
-  /** false = 选了会导致 skill 不注入 */
-  is_enabled: boolean;
-}
-
 /** GET /api/v1/skills/requires-options 响应 */
 export interface RequiresOptions {
   tools: RequiresToolOption[];
-  workflows: RequiresWorkflowOption[];
 }
 
-export type RequiresKind = "tool" | "workflow";
+export type RequiresKind = "tool";
 
 /** 一条依赖缺口；available / globally_enabled 两个 bool 决定修复动作 */
 export interface SkillRequiresGap {
@@ -199,9 +189,9 @@ export interface AppSkillDiagnosticItem {
   skill_name: string;
   display_name: string | null;
   effective: boolean;
-  /** null | missing_tools | missing_workflows（运行时先命中的那道门） */
+  /** null | missing_tools */
   reason: string | null;
-  /** 全部缺口（工具 + workflow 混在一起，靠 kind 分） */
+  /** 工具依赖缺口 */
   missing: SkillRequiresGap[];
 }
 
@@ -216,6 +206,10 @@ export interface AppSkillDiagnostics {
 
 /** 应用-Skill 绑定行（GET /api/v1/apps/{appId}/skills，含 skill 摘要） */
 export interface AppSkill {
+  available?: boolean;
+  unavailable_reason?: string | null;
+  owner_tenant_id?: number | null;
+  owner_tenant_name?: string | null;
   id: number;
   app_id: number;
   skill_id: number;

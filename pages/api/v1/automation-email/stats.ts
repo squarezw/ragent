@@ -1,3 +1,5 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { getAutomation, getAutomationEmailRoutingStats } from "@/lib/automation/store";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -8,7 +10,7 @@ function parseAutomationId(value: string | string[] | undefined) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method Not Allowed" });
@@ -37,4 +39,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       detail: process.env.NODE_ENV === "development" ? error?.message || "Unknown error" : undefined,
     });
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

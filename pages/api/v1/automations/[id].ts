@@ -1,3 +1,5 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import {
@@ -33,7 +35,7 @@ function parseId(value: string | string[] | undefined) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -72,6 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error: any) {
     const code = error?.message || "";
     if (code === "APP_NOT_FOUND") return res.status(404).json({ detail: "数字员工不存在" });
+    if (code === "UPSTREAM_AUTOMATION_NOT_FOUND") return res.status(400).json({ detail: "上游自动化不存在或不在当前工作区" });
     if (code === "NAME_REQUIRED") return res.status(400).json({ detail: "请填写自动化名称" });
     if (code === "TASK_REQUIRED") return res.status(400).json({ detail: "请填写任务说明" });
     if (code === "MAILBOX_ID_REQUIRED") {
@@ -90,4 +93,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error("[Automation API] error:", error);
     return res.status(500).json({ detail: "自动化任务更新失败" });
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

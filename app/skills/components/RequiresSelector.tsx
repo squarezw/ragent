@@ -11,22 +11,19 @@ import { AlertTriangle, Plus, Search, X } from "lucide-react";
 import {
   addRequiresName,
   filterToolOptions,
-  filterWorkflowOptions,
-  selectableWorkflowOptions,
   groupToolOptions,
   removeRequiresName,
   resolveToolSelection,
-  resolveWorkflowSelection,
   toggleRequiresName,
   type RequiresSelectionEntry,
 } from "@/lib/skillRequires";
-import type { RequiresToolOption, RequiresWorkflowOption } from "@/types/skill";
+import type { RequiresToolOption } from "@/types/skill";
 
 interface PickerOption {
   value: string;
   label: string;
   description: string | null;
-  /** 停用的 workflow kind：可选但会导致 skill 不注入 */
+  /** 候选项是否禁用 */
   disabled: boolean;
 }
 
@@ -284,61 +281,6 @@ export function RequiresToolsSelector({
       entries={resolveToolSelection(selected, options)}
       buildGroups={buildGroups}
       optionCount={options.length}
-      onChange={onChange}
-    />
-  );
-}
-
-export function RequiresWorkflowsSelector({
-  options,
-  selected,
-  onChange,
-}: {
-  options: RequiresWorkflowOption[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const t = useTranslations("skills");
-
-  // 规则（含"已选中的停用项要留下"这条）在 lib/skillRequires.selectableWorkflowOptions
-  const buildGroups = useCallback(
-    (query: string): PickerGroup[] => {
-      const items = selectableWorkflowOptions(
-        filterWorkflowOptions(options, query), selected);
-      if (items.length === 0) return [];
-      return [
-        {
-          key: "workflow",
-          label: t("groupWorkflows"),
-          options: items.map((item) => ({
-            value: item.kind,
-            label: item.display_name || item.kind,
-            description: item.description,
-            disabled: !item.is_enabled,
-          })),
-        },
-      ];
-    },
-    [options, selected, t]
-  );
-
-  // 计数用「实际可选的」而不是 options.length：全部停用且一个都没选时，
-  // optionCount>0 会让空清单显示成"没有匹配的选项"（像是搜索词的问题），
-  // 而真实情况是这个部署压根没有可用的长任务。
-  const selectableCount = selectableWorkflowOptions(options, selected).length;
-
-  return (
-    <RequiresPicker
-      id="skill-requires-workflows"
-      label={t("requiresWorkflows")}
-      help={t("requiresWorkflowsHelp")}
-      selected={selected}
-      entries={resolveWorkflowSelection(selected, options)}
-      buildGroups={buildGroups}
-      optionCount={selectableCount}
-      emptyHint={
-        options.length > 0 ? t("requiresAllWorkflowsDisabled") : undefined
-      }
       onChange={onChange}
     />
   );

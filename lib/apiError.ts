@@ -10,6 +10,7 @@ export function getApiErrorMessage(error: any, fallback = "请求失败"): strin
   const data = error?.response?.data;
   const raw =
     str(data?.detail) ||
+    str(data?.detail?.message) ||
     str(data?.error?.message) ||
     str(data?.error) ||
     str(data?.message) ||

@@ -1,21 +1,27 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { forwardRef, useImperativeHandle, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { UploadDialog } from "./UploadDialog";
 
 interface FloatingUploadButtonProps {
   datasetId: string;
+  canReplace?: boolean;
   onUploadSuccess: () => void;
   onAutoVectorize?: (fileIds: string[]) => void;
 }
 
-export const FloatingUploadButton = ({
+export interface FloatingUploadButtonHandle {
+  openFilePicker: () => void;
+}
+
+export const FloatingUploadButton = forwardRef<FloatingUploadButtonHandle, FloatingUploadButtonProps>(function FloatingUploadButton({
   datasetId,
+  canReplace = false,
   onUploadSuccess,
   onAutoVectorize,
-}: FloatingUploadButtonProps) => {
+}: FloatingUploadButtonProps, ref) {
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [initialFiles, setInitialFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,6 +30,8 @@ export const FloatingUploadButton = ({
     // 先触发文件选择
     fileInputRef.current?.click();
   };
+
+  useImperativeHandle(ref, () => ({ openFilePicker: handleButtonClick }));
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -70,10 +78,11 @@ export const FloatingUploadButton = ({
         isOpen={showUploadDialog}
         onClose={handleDialogClose}
         datasetId={datasetId}
+        canReplace={canReplace}
         onUploadSuccess={onUploadSuccess}
         initialFiles={initialFiles}
         onAutoVectorize={onAutoVectorize}
       />
     </>
   );
-};
+});

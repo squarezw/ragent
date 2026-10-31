@@ -82,6 +82,8 @@ const fetcher = async (url: string) => {
     },
     unsegmented_count: response.data.unsegmented_count || 0,
     dataset: response.data.dataset || null,
+    can_upload: response.data.can_upload === true,
+    can_replace: response.data.can_replace === true,
   };
 };
 
@@ -221,6 +223,8 @@ export const useFileManagement = (params: FileListParams) => {
     error,
     totalUnsegmentedCount: data?.unsegmented_count || 0,
     dataset: data?.dataset || null,
+    canUpload: data?.can_upload === true,
+    canReplace: data?.can_replace === true,
     deleteFile,
     deleteFiles,
     updateFile,

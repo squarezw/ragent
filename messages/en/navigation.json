@@ -32,5 +32,17 @@
   "refreshTenantStatus": "Refresh access",
   "notifications": "Notifications",
   "pendingTenantCount": "Awaiting tenant assignment ({count})",
-  "pendingTenantUnavailable": "Tenant assignments (unavailable)"
+  "pendingTenantUnavailable": "Tenant assignments (unavailable)",
+  "workspaceSelect": "Select tenant",
+  "workspaceDescription": "Switch the tenant workspace you are managing.",
+  "workspaceSearch": "Search tenant name or code",
+  "workspaceBusy": "Finish the current reply or wait for uploads and saves to complete.",
+  "workspaceConfirm": "Switching tenants closes the current view and discards unsaved changes. Continue?",
+  "workspaceEmpty": "No available tenants",
+  "workspaceSelectFirst": "Select a tenant in the upper right to continue.",
+  "platformSettings": "Platform settings",
+  "platformProvided": "Platform provided",
+  "sharedAcrossTenants": "Shared across tenants",
+  "workspaceTenantUnavailable": "Your tenant is currently unavailable. Please try again later or contact an administrator.",
+  "workspaceTenantUnavailableShort": "Tenant unavailable"
 }

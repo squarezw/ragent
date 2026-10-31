@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) {
     return;
   }
@@ -54,3 +55,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "Database query failed", details: e?.message || e });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

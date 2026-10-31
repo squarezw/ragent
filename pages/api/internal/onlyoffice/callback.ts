@@ -1,3 +1,4 @@
+import { verifyOfficeScope } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import axios from "axios";
@@ -47,10 +48,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Verify JWT from OnlyOffice
   const authHeader = req.headers.authorization;
+  let signedPayload: any = null;
   if (authHeader) {
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
     try {
-      jwt.verify(token, ONLYOFFICE_SECRET);
+      signedPayload = jwt.verify(token, ONLYOFFICE_SECRET, {algorithms:["HS256"]});
     } catch {
       console.error("onlyoffice callback: invalid JWT");
       return res.status(403).json({ error: 1 });
@@ -59,8 +61,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const body: CallbackPayload = req.body;
   const { key, status, url } = body;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const parsed = parseOnlyOfficeKey(key || "");
+    const scope = ["doc","session"].includes(parsed.type)
+      ? await verifyOfficeScope(req.query.cap,parsed.type as "doc"|"session",parsed.id,key) : null;
+    const signed = signedPayload?.payload || signedPayload;
+    if (!scope || !signed || signed.key !== key || signed.status !== status || signed.url !== url)
+      return res.status(403).json({error:1});
+    if (url) {
+      try { if(new URL(url).origin !== new URL(ONLYOFFICE_PUBLIC_URL).origin) return res.status(403).json({error:1}); }
+      catch { return res.status(403).json({error:1}); }
+    }
+  }
 
-  console.log(`onlyoffice callback: key=${key}, status=${status}, url=${url?.slice(0, 80)}`);
+
+  console.log(`onlyoffice callback: key=${key}, status=${status}`);
 
   try {
     // Status 2 (ready for saving) or 6 (force save)
@@ -114,10 +129,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ error: 0 });
   } catch (error: any) {
     console.error(
-      `onlyoffice callback failed: key=${key} status=${status} url=${url?.slice(0, 120)} ` +
+      `onlyoffice callback failed: key=${key} status=${status} ` +
         `msg=${error?.message} stack=${error?.stack?.split("\n").slice(0, 3).join(" | ")}`
     );
-    // Still return error: 0 to prevent OO from retrying endlessly
-    return res.status(200).json({ error: 0 });
+    // Workspace mode must surface a failed save to the editor.
+    return res.status(200).json({ error: process.env.WORKSPACE_TENANT_ENABLED === "true" ? 1 : 0 });
   }
 }

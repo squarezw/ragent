@@ -186,5 +186,6 @@
   "autoSegmentStarted": "已自动开始分段处理",
   "autoSegmentFailed": "自动分段启动失败，请稍后在列表中重试",
   "uploadFilesButton": "上传 {count} 个文件",
-  "uploadFilesWithReplace": "上传 {count} 个文件 (替换 {replace} 个现有文件)"
+  "uploadFilesWithReplace": "上传 {count} 个文件 (替换 {replace} 个现有文件)",
+  "uploadContributionOnly": "仅可新增资料，不能覆盖现有文件。"
 }

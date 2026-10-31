@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "./WorkspaceProvider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -64,6 +65,7 @@ export default function AppSidebar() {
   const newConversationLabel = tChat(NEW_CONVERSATION_KEY);
   const { setOpenMobile } = useSidebar();
   const features = useFeatures();
+  const workspace = useWorkspace();
   const {
     platformLogo,
     platformName,
@@ -171,6 +173,9 @@ export default function AppSidebar() {
           icon: Monitor,
           path: "/monitoring",
           visible: isSuperAdmin,
+        },
+        {
+          title: t("platformSettings"), icon: Settings, path: "/platform-settings", visible: workspace.enabled && isSuperAdmin,
         },
         {
           title: t("systemSettings"),

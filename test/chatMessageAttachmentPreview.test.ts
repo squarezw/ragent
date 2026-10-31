@@ -100,6 +100,7 @@ test("message preview handler opens the dialog for PDF and keeps ZIP on the down
     },
     "next-intl": { useTranslations: () => (key: string) => key },
     "@/lib/chatResourcePreview": { downloadChatLink: (url: string) => downloads.push(url) },
+    "@/lib/workspaceBrowser": { workspaceUrl: (url: string) => url, getWorkspaceSnapshot: () => ({ enabled: false }) },
     "@/lib/chatAttachmentPreview": { chatAttachmentPreview: preview },
     "@/lib/axios": {},
     "@/lib/browserAuthMode": {},

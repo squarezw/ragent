@@ -5,6 +5,7 @@ import axios from "@/lib/axios";
 import { isCookieAuthMode } from "@/lib/browserAuthMode";
 import { uploadFile, getFileUrl } from "@/lib/ossUpload";
 import { sessionAttachmentMime } from "@/lib/sessionAttachments";
+import { beginWorkspaceRequest, getWorkspaceSnapshot, workspaceUrl } from "@/lib/workspaceBrowser";
 import { chatAttachmentPreview } from "@/lib/chatAttachmentPreview";
 import { isAllowedAttachment } from "@/lib/chatAttachments";
 
@@ -44,6 +45,7 @@ export function useFileAttachments() {
   const [previewFile, setPreviewFile] = useState<any>(null);
 
   const handleFileUpload = async (file: File) => {
+    const workspaceUpload = getWorkspaceSnapshot().enabled ? beginWorkspaceRequest(true) : null;
     const id = ++uploadIdRef.current;
     setPendingAttachments((prev) => [...prev, { id, filename: file.name, type: file.type }]);
     uploadingCountRef.current += 1;
@@ -73,6 +75,7 @@ export function useFileAttachments() {
       const response = await axios.post("/api/chat/upload-confirm", {
         objectKey,
         originalFilename: file.name,
+        uploadReceipt,
         contentType: file.type || "application/octet-stream",
       });
 
@@ -95,6 +98,7 @@ export function useFileAttachments() {
         `${t("fileUploadFailed", { name: file.name })}: ${error.response?.data?.error || error.message}`
       );
     } finally {
+      workspaceUpload?.finish();
       setPendingAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
       uploadingCountRef.current -= 1;
       if (uploadingCountRef.current === 0) {
@@ -146,9 +150,9 @@ export function useFileAttachments() {
     const target = chatAttachmentPreview(attachment);
     if (!target) return;
     if (target.kind === "download") {
-      downloadChatLink(target.url, target.filename);
+      downloadChatLink(workspaceUrl(target.url), target.filename);
     } else {
-      setPreviewFile(target.file);
+      setPreviewFile({ ...target.file, sourceUrl: workspaceUrl(target.file.sourceUrl) });
     }
   };
 

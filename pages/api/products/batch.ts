@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -14,6 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     const userId = getUserIdFromRequest(req);
     console.log("User ID from request:", userId);
@@ -41,9 +44,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         `
         SELECT id, sn, name 
         FROM products 
-        WHERE id = ANY($1::int[])
+        WHERE id = ANY($1::int[])${workspace.enabled ? " AND owner_tenant_id = $2" : ""}
       `,
-        [validIds]
+        [validIds, ...(workspace.enabled ? [workspace.tenantId] : [])]
       );
 
       if (existingProducts.rows.length !== validIds.length) {
@@ -60,10 +63,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const deleteResult = await client.query(
         `
         DELETE FROM products 
-        WHERE id = ANY($1::int[])
+        WHERE id = ANY($1::int[])${workspace.enabled ? " AND owner_tenant_id = $2" : ""}
         RETURNING id, sn, name
       `,
-        [validIds]
+        [validIds, ...(workspace.enabled ? [workspace.tenantId] : [])]
       );
 
       await client.query("COMMIT");

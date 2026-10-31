@@ -17,7 +17,7 @@ const PAGE = "app/apps/page.tsx";
 
 test("筛选控件只对超管渲染", () => {
   const src = read(PAGE);
-  assert.match(src, /\{isSuperAdmin && tenants\.length > 0 && \(/,
+  assert.match(src, /\{!workspace.enabled && isSuperAdmin && tenants\.length > 0 && \(/,
     "非超管只有一个租户，给他一个单选项下拉是噪音");
 });
 

@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getLatestVersion } from "@/lib/documentFileVersions";
 
@@ -7,7 +8,7 @@ import { getLatestVersion } from "@/lib/documentFileVersions";
  * Lightweight endpoint that returns only the latest version number.
  * Used by the frontend to poll for save completion after force-save.
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ detail: "Method not allowed" });
   }
@@ -17,3 +18,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   return res.status(200).json({ version: version?.version ?? null });
 }
+
+export default withProcessWorkspace(handler);

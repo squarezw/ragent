@@ -35,9 +35,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const raw = req.query.url;
   if (typeof raw !== "string") return res.status(400).json({ error: "url is required" });
 
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const local = raw.startsWith("/api/oss/");
+    const allowed = local || isAllowedArtifactUrl(raw);
+    if (!allowed) return res.status(400).json({ error: "unsupported artifact URL" });
+    const parsed = new URL(raw, "https://workspace.invalid");
+    const key = decodeURIComponent(parsed.pathname.slice(local ? "/api/oss/".length : 1));
+    const ctx = await (await import("@/lib/workspaceFiles")).requireWorkspaceObject(req,res,key);
+    if (!ctx) return;
+  }
+
   let resolved = raw;
-  if (raw.startsWith("/api/oss/") && /\.html?$/i.test(raw)) {
-    try { resolved = (await ossClient.sign({ objectKey: raw.slice(9) })).url; }
+  if (raw.startsWith("/api/oss/") && /\.html?$/i.test(new URL(raw, "https://workspace.invalid").pathname)) {
+    try { resolved = (await ossClient.sign({ objectKey: decodeURIComponent(new URL(raw, "https://workspace.invalid").pathname.slice(9)) })).url; }
     catch { return res.status(502).json({ error: "artifact unavailable" }); }
   }
   const target = resolved !== raw ? new URL(resolved) : isAllowedArtifactUrl(raw);

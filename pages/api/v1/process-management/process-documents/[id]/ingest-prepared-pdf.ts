@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import {
@@ -24,7 +25,7 @@ const INTERNAL_API_KEY = process.env.ZN_INTERNAL_API_KEY;
 /** 7 天，与 review.ts 保持一致 —— 与常见 S3/OSS 预签名 URL 最大 TTL 匹配。 */
 const SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -102,3 +103,5 @@ export default async function handler(
       .json({ detail: `ingest-prepared-pdf failed: ${err?.message ?? "unknown"}` });
   }
 }
+
+export default withProcessWorkspace(handler);

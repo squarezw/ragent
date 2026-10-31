@@ -12,6 +12,7 @@ function load(file: string, mocks: any = {}, environment: any = env, globals: an
   module,exports:module.exports,process:{env:environment},URL,URLSearchParams,Date,Headers,console,...globals,
   require:(id:string)=>{
    if(id in mocks)return mocks[id];
+   if(id==='./lib/workspaceRoutePolicy')return load('lib/workspaceRoutePolicy.ts',{},environment);
    if(['@/lib/localLogout','./localLogout','./lib/localLogout'].includes(id))return load('lib/localLogout.ts',{},environment);
    if(id==='@/lib/oidcRenewal')return load('lib/oidcRenewal.ts',{},environment);
    if(id==='@/lib/oidcPolicy')return {TRANSACTION_COOKIE:'ragent_oidc_tx',TRANSACTION_PATH:'/api/auth/oidc',RENEWAL_TRANSACTION_COOKIE:'ragent_oidc_renewal_tx'};

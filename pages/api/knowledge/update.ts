@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "PUT" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -121,3 +122,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "更新失败" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "file");

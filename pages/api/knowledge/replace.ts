@@ -1,3 +1,6 @@
+import { verifyWorkspaceUploadReceipt } from "@/lib/workspaceUploadReceipt";
+import { withKnowledgeWorkspace, knowledgeWorkspaceContext } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { logError } from "@/lib/logError";
@@ -7,7 +10,7 @@ import pool from "@/lib/db";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -23,9 +26,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...workspaceHeaders(req) };
   if (req.headers.authorization) {
     headers["Authorization"] = req.headers.authorization;
+  }
+
+  const workspace = knowledgeWorkspaceContext(req);
+  if (!workspace || !verifyWorkspaceUploadReceipt(workspace, req.body.uploadReceipt, objectKey, contentType)) {
+    return res.status(403).json({ error: "WORKSPACE_UPLOAD_RECEIPT_INVALID" });
   }
 
   try {
@@ -39,12 +47,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         file_id: fileId,
         download_url: downloadUrl,
         object_key: objectKey,
+          upload_receipt: req.body.uploadReceipt,
         original_filename: originalFilename,
         content_type: contentType,
         size: size || 0,
       },
       {
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { ...workspaceHeaders(req), ...headers, "Content-Type": "application/json" },
         timeout: 300000,
       }
     );
@@ -95,3 +104,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error.message || "Replace failed" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

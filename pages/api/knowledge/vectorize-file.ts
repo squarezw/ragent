@@ -1,3 +1,5 @@
+import { workspaceHeaders } from "@/lib/workspaceTenant";
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -5,7 +7,7 @@ import pool from "@/lib/db";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -89,6 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     // 构建请求头，透传认证信息
     const headers: any = {
+      ...workspaceHeaders(req),
       "Content-Type": "application/json",
     };
 
@@ -140,3 +143,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

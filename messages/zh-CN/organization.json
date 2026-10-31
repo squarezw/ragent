@@ -83,5 +83,16 @@
   "rechargeNoteHint": "对账时「这笔钱哪来的」全靠它，建议填写。",
   "rechargeSuccess": "已充值 {amount} 积分，当前余额 {balance}",
   "rechargeDuplicate": "该笔充值已提交过，未重复入账。当前余额 {balance}",
-  "rechargeFailed": "充值失败"
+  "rechargeFailed": "充值失败",
+  "pendingUsersTitle": "待分配租户的用户",
+  "pendingAssigned": "已分配租户",
+  "pendingAssignFailed": "分配失败，请刷新后重试",
+  "pendingLoading": "正在加载…",
+  "pendingRetry": "重新加载",
+  "pendingEmpty": "暂无待分配用户",
+  "pendingAssign": "分配租户",
+  "pendingPrevious": "上一页",
+  "pendingNext": "下一页",
+  "pendingChooseTenant": "选择要分配的租户",
+  "pendingSearchTenant": "搜索租户名称或代码"
 }

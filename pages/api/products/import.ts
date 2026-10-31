@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -22,6 +23,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     const userId = getUserIdFromRequest(req);
 
@@ -256,8 +259,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               }
 
               // 检查 SN 是否已存在
-              const existingProduct = await client.query("SELECT id FROM products WHERE sn = $1", [
+              const existingProduct = await client.query(`SELECT id FROM products WHERE sn = $1${workspace.enabled ? " AND owner_tenant_id = $2" : ""}`, [
                 productData.sn,
+                ...(workspace.enabled ? [workspace.tenantId] : []),
               ]);
 
               if (existingProduct.rows.length > 0) {
@@ -270,8 +274,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
               // 插入产品
               const insertQuery = `
-                INSERT INTO products (sn, name, category, material, spec, description, memo)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO products (sn, name, category, material, spec, description, memo${workspace.enabled ? ", owner_tenant_id" : ""})
+                VALUES ($1, $2, $3, $4, $5, $6, $7${workspace.enabled ? ", $8" : ""})
                 RETURNING id, sn, name
               `;
 
@@ -283,6 +287,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 productData.spec,
                 productData.description,
                 productData.memo,
+                ...(workspace.enabled ? [workspace.tenantId] : []),
               ]);
 
               results.push({

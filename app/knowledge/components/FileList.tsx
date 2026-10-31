@@ -28,6 +28,8 @@ interface FileListProps {
   onVectorizeFile: (fileId: string) => void;
   onPreviewFile: (file: FileItem) => void;
   onDownloadFile: (file: FileItem) => void;
+  /** Only provided when the existing upload permission check allows writing. */
+  onUploadRequested?: () => void;
   loading?: boolean;
   downloadingFileId?: string | null;
   canModifyFile?: (file: FileItem) => boolean;
@@ -54,6 +56,7 @@ export const FileList = ({
   onVectorizeFile,
   onPreviewFile,
   onDownloadFile,
+  onUploadRequested,
   loading = false,
   downloadingFileId = null,
   canModifyFile,
@@ -143,6 +146,12 @@ export const FileList = ({
   }
 
   if (files.length === 0) {
+    const emptyContent = (
+      <>
+        <span className="text-muted-foreground text-lg">{t("noFilesYet")}</span>
+        <span className="text-sm text-muted-foreground">{t("startUploadFirst")}</span>
+      </>
+    );
     return (
       <Table>
         <TableHeader>
@@ -170,11 +179,20 @@ export const FileList = ({
         </TableHeader>
         <TableBody>
           <TableRow>
-            <TableCell colSpan={9} className="text-center py-12">
-              <div className="flex flex-col items-center gap-4">
-                <div className="text-muted-foreground text-lg">{t("noFilesYet")}</div>
-                <div className="text-sm text-muted-foreground">{t("startUploadFirst")}</div>
-              </div>
+            <TableCell colSpan={9} className="p-0 text-center">
+              {onUploadRequested ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-auto min-h-40 w-full flex-col gap-4 whitespace-normal rounded-none px-6 py-12"
+                  aria-label={t("startUploadFirst")}
+                  onClick={onUploadRequested}
+                >
+                  {emptyContent}
+                </Button>
+              ) : (
+                <div className="flex flex-col items-center gap-4 py-12">{emptyContent}</div>
+              )}
             </TableCell>
           </TableRow>
         </TableBody>

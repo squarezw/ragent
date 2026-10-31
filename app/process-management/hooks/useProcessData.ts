@@ -1,5 +1,6 @@
 "use client";
 
+import { workspaceStorageKey } from "@/lib/workspaceBrowser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProcessNode } from "../types/process";
 import {
@@ -121,14 +122,16 @@ function loadFromStorage<T>(key: string, fallback: T): T {
 }
 
 export function useProcessData(companyCode?: string | null) {
+  const selectedKey = workspaceStorageKey(SELECTED_KEY);
+  const expandedKey = workspaceStorageKey(EXPANDED_KEY);
   const [tree, setTree] = useState<ProcessNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
-    loadFromStorage<string | null>(SELECTED_KEY, null)
+    loadFromStorage<string | null>(selectedKey, null)
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const expandedIdsRef = useRef<Set<string>>(new Set(loadFromStorage<string[]>(EXPANDED_KEY, [])));
+  const expandedIdsRef = useRef<Set<string>>(new Set(loadFromStorage<string[]>(expandedKey, [])));
 
   const allNodes = flattenNodes(tree);
   const selectedNode = selectedNodeId ? allNodes[selectedNodeId] : null;
@@ -148,7 +151,7 @@ export function useProcessData(companyCode?: string | null) {
       }
       applyExpansionState(data, expandedIdsRef.current);
       // Auto-expand path to previously selected node
-      const savedId = loadFromStorage<string | null>(SELECTED_KEY, null);
+      const savedId = loadFromStorage<string | null>(selectedKey, null);
       if (savedId) {
         const path = findPath(data, savedId);
         if (path) {
@@ -169,7 +172,7 @@ export function useProcessData(companyCode?: string | null) {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyCode]);
+  }, [companyCode, selectedKey]);
 
   // Initial load
   useEffect(() => {
@@ -179,11 +182,11 @@ export function useProcessData(companyCode?: string | null) {
   const selectNode = useCallback((id: string) => {
     setSelectedNodeId(id);
     try {
-      localStorage.setItem(SELECTED_KEY, JSON.stringify(id));
+      localStorage.setItem(selectedKey, JSON.stringify(id));
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [selectedKey]);
 
   const getBreadcrumb = useCallback(
     (nodeId: string) => {
@@ -269,11 +272,11 @@ export function useProcessData(companyCode?: string | null) {
     const ids = collectExpandedIds(nodes);
     expandedIdsRef.current = ids;
     try {
-      localStorage.setItem(EXPANDED_KEY, JSON.stringify([...ids]));
+      localStorage.setItem(expandedKey, JSON.stringify([...ids]));
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [expandedKey]);
 
   const toggleExpand = useCallback(
     (id: string) => {

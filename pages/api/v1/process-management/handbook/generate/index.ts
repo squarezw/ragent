@@ -1,3 +1,4 @@
+import { withProcessWorkspace, bindProcessWorkspaceSession } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -5,7 +6,7 @@ import { getLeafDepartmentNames, resolveTenantId } from "@/lib/tenantDepts";
 
 const PROCESS_MGMT_BASE_URL = process.env.PROCESS_MGMT_BASE_URL || "http://localhost:8030";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -15,7 +16,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const tenantId = await resolveTenantId(userId);
+    const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+      ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res) : null;
+    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspace) return;
+    const tenantId = workspace?.enabled ? workspace.tenantId! : await resolveTenantId(userId);
     const departments = await getLeafDepartmentNames(tenantId);
     if (departments.length === 0) {
       return res.status(409).json({
@@ -28,6 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       { ...req.body, departments },
       { headers: { "Content-Type": "application/json" } }
     );
+    if (!await bindProcessWorkspaceSession(req, res, response.data)) return;
     return res.status(response.status).json(response.data);
   } catch (error: any) {
     if (error.response) {
@@ -38,3 +43,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ detail: "Internal server error" });
   }
 }
+
+export default withProcessWorkspace(handler);

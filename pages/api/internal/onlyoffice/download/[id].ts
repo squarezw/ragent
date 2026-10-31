@@ -1,3 +1,4 @@
+import { verifyOfficeScope, officeBackendHeaders } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "crypto";
 import axios from "axios";
@@ -27,6 +28,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const docKey = id as string;
   const exp = parseInt(expires as string, 10);
 
+  const parts = /^(doc|session):(.+)$/.exec(docKey);
+  const scope = process.env.WORKSPACE_TENANT_ENABLED === "true" && parts
+    ? await verifyOfficeScope(req.query.cap,parts[1] as "doc"|"session",parts[2]) : null;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    if (!scope) return res.status(403).json({error:"Invalid workspace capability"});
+  } else {
   if (!token || !expires || isNaN(exp)) {
     return res.status(403).json({ error: "Invalid token" });
   }
@@ -37,6 +44,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const expected = crypto.createHmac("sha256", SECRET).update(`${docKey}:${expires}`).digest("hex");
   if (token !== expected) {
     return res.status(403).json({ error: "Invalid token" });
+  }
+
   }
 
   try {
@@ -73,6 +82,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const filePath: string = doc?.file_path || "";
       const match = filePath.match(/handbook_([a-f0-9]+)\.docx$/);
       if (match) {
+        if (scope) {
+          const { officeResourceAllowed } = await import("@/lib/workspaceOnlyOffice");
+          if (!await officeResourceAllowed({...scope,type:"session",id:match[1]})) return res.status(404).json({error:"Session not found"});
+        }
         const response = await axios.get(
           `${PROCESS_MGMT_BASE_URL}/api/v1/handbook/download/${match[1]}`,
           { responseType: "stream", timeout: 300000 }
@@ -88,9 +101,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Fallback: fetch from knowledge-base file reference (kb_file_{id})
       const kbMatch = filePath.match(/^kb_file_(.+)$/);
       if (kbMatch) {
+        if (scope) {
+          const { officeResourceAllowed } = await import("@/lib/workspaceOnlyOffice");
+          if (!await officeResourceAllowed({...scope,type:"file",id:kbMatch[1]})) return res.status(404).json({error:"File not found"});
+        }
         const kbResp = await axios.get(
           `${EXTERNAL_API_BASE_URL}/api/v1/files/${kbMatch[1]}/download`,
-          { responseType: "stream", timeout: 300000 }
+          { responseType: "stream", timeout: 300000, ...(scope ? {headers:officeBackendHeaders({...scope,type:"file",id:kbMatch[1]})} : {}) }
         );
         res.setHeader(
           "Content-Type",

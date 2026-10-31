@@ -70,6 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       formData,
       {
         headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
           ...formData.getHeaders(),
           Authorization: req.headers.authorization,
         },

@@ -1,3 +1,5 @@
+import { knowledgeWorkspaceContext, withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import axios from "axios";
@@ -5,7 +7,7 @@ import pool from "@/lib/db";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -24,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const client = await pool.connect();
   try {
     const access = await client.query(
-      "SELECT can_access_dataset($1, $2) AS can_access",
+      "SELECT can_access_dataset($1, $2) AS can_access, can_upload_dataset($1, $2) AS can_upload, can_edit_dataset($1, $2) AS can_replace, (SELECT owner_tenant_id FROM datasets WHERE id = $2) AS owner_tenant_id",
       [userId, dataset_id]
     );
     if (!access.rows[0]?.can_access) {
@@ -41,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const response = await axios.get(
       `${EXTERNAL_API_BASE_URL}/api/v1/datasets/${dataset_id}/files?${queryParams}`,
       {
-        headers: {
+        headers: { ...workspaceHeaders(req),
           Authorization: req.headers.authorization,
         },
         timeout: 30000,
@@ -71,7 +73,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    return res.status(200).json(data);
+    const workspace = knowledgeWorkspaceContext(req);
+    const inWriteScope = !workspace?.enabled || Number(access.rows[0]?.owner_tenant_id) === workspace.tenantId;
+    const canUpload = access.rows[0]?.can_upload === true && inWriteScope;
+    const canReplace = access.rows[0]?.can_replace === true && inWriteScope;
+    return res.status(200).json({ ...data, can_upload: canUpload, can_replace: canReplace });
   } catch (error: any) {
     console.error("通过后端接口获取文件列表错误:", error?.response?.data || error?.message);
     const statusCode = error?.response?.status || 500;
@@ -80,3 +86,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     client.release();
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

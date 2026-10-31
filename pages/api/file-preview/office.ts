@@ -24,7 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const response = await axios.request({
       method: req.method,
       url: `${baseUrl}/api/v1/files/${id}/office-preview`,
-      headers: { Authorization: `Bearer ${getTokenFromRequest(req)}` },
+      headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}), Authorization: `Bearer ${getTokenFromRequest(req)}` },
       data: req.method === "POST" ? { retry: req.body?.retry === true } : undefined,
       timeout: 15000,
       validateStatus: () => true,

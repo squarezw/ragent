@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { useState, useEffect, useDeferredValue } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -171,6 +172,7 @@ export default function ChatSessionsPage() {
   const locale = useLocale();
   const { user } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
+  const workspace = useWorkspace();
   const isTenantAdmin = checkTenantAdmin(user);
   const isDeptAdmin = user?.isDeptAdmin || false;
   const isPriv = isSuperAdmin || isTenantAdmin || isDeptAdmin;
@@ -611,7 +613,7 @@ export default function ChatSessionsPage() {
                   />
                 </div>
               </div>
-              {isSuperAdmin && filters?.tenants && filters.tenants.length > 0 && (
+              {!workspace.enabled && isSuperAdmin && filters?.tenants && filters.tenants.length > 0 && (
                 <div>
                   <Select value={selectedTenantId} onValueChange={handleTenantChange}>
                     <SelectTrigger>

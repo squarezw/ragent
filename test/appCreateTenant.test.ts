@@ -45,8 +45,8 @@ test("changing creation tenant clears resource bindings while preserving other i
 
 test("normal and template creation validate tenant; edits use explicit change detection", () => {
   const page = readFileSync(new URL("../app/apps/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /tenantSelector = isSuperAdmin && \(!editingApp \|\| canEditApp/);
-  assert.match(page, /setCreateTenantId\(user\?\.tenant_id \? String\(user.tenant_id\) : ""\)/);
+  assert.match(page, /tenantSelector = !workspace.enabled && isSuperAdmin && \(!editingApp \|\| canEditApp/);
+  assert.match(page, /setCreateTenantId\(operationTenantId \? String\(operationTenantId\) : ""\)/);
   assert.match(
     page,
     /axios\.post\("\/api\/v1\/apps", \{ \.\.\.submitData, \.\.\.createTenantFields\(isSuperAdmin, createTenantId\) \}\)/

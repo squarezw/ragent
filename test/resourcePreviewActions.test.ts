@@ -15,7 +15,7 @@ test("resource preview puts the external-open action in the accessible header to
   );
   assert.match(
     panel,
-    /href=\{resource\.url\} rel="noopener noreferrer" target="_blank"/,
+    /href=\{workspaceUrl\(resource\.url\)\} rel="noopener noreferrer" target="_blank"/,
     "the external link must retain safe new-tab handling"
   );
   assert.match(panel, /<ExternalLink/, "the external link should use an icon");
@@ -44,7 +44,7 @@ test("DXF previews expose an original-file download without using the preview pr
   );
   assert.match(
     panel,
-    /<a download href=\{resource\.url\}>/,
+    /<a download href=\{workspaceUrl\(resource\.url\)\}>/,
     "the download should use the original resource URL"
   );
   assert.match(panel, /<Download/, "the download should use an icon");

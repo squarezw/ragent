@@ -1,10 +1,11 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
 
 const PROCESS_MGMT_BASE_URL = process.env.PROCESS_MGMT_BASE_URL || "http://localhost:8030";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -37,3 +38,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ detail: "Internal server error" });
   }
 }
+
+export default withProcessWorkspace(handler);

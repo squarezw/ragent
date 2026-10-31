@@ -113,26 +113,25 @@ test("modal 只在选中租户时挂载", () => {
   assert.match(src, /\{historyTenant && \(/);
 });
 
-test("按租户汇总时才出现剩余积分列与充值明细按钮", () => {
+test("用量汇总只保留用户和会话维度", () => {
   const src = read("app/billing/page.tsx");
-  assert.match(src, /groupBy === "tenant" && \(/, "列必须按分组维度条件渲染");
-  assert.ok(src.includes("剩余积分"), "缺剩余积分列");
-  assert.ok(src.includes("充值明细"), "缺充值明细按钮");
+  assert.ok(src.includes('["user", "session"] as const'));
+  assert.doesNotMatch(src, /groupBy === "tenant"/);
+  assert.ok(!src.includes("按租户"));
 });
 
-test("查不到账户的租户显示「—」而不是 0", () => {
-  // 「余额 0」和「不知道余额」是两回事，写成 0 会让人以为查过了。
+test("当前租户余额卡片保留充值明细入口", () => {
   const src = read("app/billing/page.tsx");
-  assert.match(src, /balanceOfTenant\(row\.key\) === null\s*\?\s*"—"/);
+  assert.match(src, /accounts.length === 1 &&/);
+  assert.match(src, /id: accounts\[0\].tenant_id/);
+  assert.ok(src.includes("充值明细"));
 });
 
-test("有余额但无消耗的租户也要出现在按租户汇总里", () => {
-  // 汇总表原本只列有消耗的租户。加了余额列之后，漏掉的那些会让「每行余额之和」
-  // 对不上顶部合计卡片 —— 一张自己和自己对不上的账，比没有这一列更糟。
+test("没有消耗记录时仍显示当前租户余额", () => {
   const src = read("app/billing/page.tsx");
-  const seg = src.slice(src.indexOf("const tenantRows"), src.indexOf("const balanceOfTenant"));
-  assert.match(seg, /accounts\s*\.filter\(\(a\) => !seen\.has\(a\.tenant_id\)\)/);
-  assert.match(seg, /turns: 0/, "补进来的行轮次必须是 0，那正是事实");
+  assert.match(src, /accounts.length > 0 &&/);
+  assert.match(src, /totalBalance.toFixed\(2\)/);
+  assert.ok(!src.includes("const tenantRows"));
 });
 
 test("组织管理里每个租户都有余额与充值入口", () => {

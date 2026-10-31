@@ -1,4 +1,7 @@
 "use client";
+import VisibilityIcon from "@/components/VisibilityIcon";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -42,9 +45,6 @@ import {
   Trash2,
   Eye,
   Loader2,
-  Wrench,
-  Code,
-  Globe,
   PlugZap,
   CircleCheck,
   CircleAlert,
@@ -55,46 +55,38 @@ import { toast } from "sonner";
 import { useTools, Tool, ToolConnectionTestResult, formatTokens } from "@/hooks/useTools";
 import { ToolFormDialog } from "./components/ToolFormDialog";
 
-// 获取工具类型图标（兜底图标）
-const getToolTypeIcon = (type: string) => {
-  switch (type) {
-    case "native":
-      return <Code className="h-4 w-4" />;
-    case "mcp":
-      return <Globe className="h-4 w-4" />;
-    default:
-      return <Wrench className="h-4 w-4" />;
-  }
-};
-
-// 工具图标组件 - 处理图片加载失败的情况
+// 默认图标表示真实归属范围；显式配置的品牌图片保持原样。
 const ToolIcon = ({ tool }: { tool: Tool }) => {
+  const t = useTranslations("tools");
+  const tc = useTranslations("common");
   const [imageError, setImageError] = useState(false);
-
-  // 如果配置了图标且未发生错误，显示图标
   if (tool.icon && tool.icon.trim() && !imageError) {
     return (
       <img
-        src={tool.icon}
+        src={workspaceUrl(tool.icon)}
         alt={tool.display_name}
         className="h-4 w-4 object-contain flex-shrink-0"
         onError={() => setImageError(true)}
       />
     );
   }
-  // 如果没有配置图标或图片加载失败，显示兜底图标
-  return getToolTypeIcon(tool.tool_type);
+  const tenantOwned = tool.owner_tenant_id != null;
+  const label = tenantOwned
+    ? `${t("ownerScope")}: ${tool.owner_tenant_name || tc("tenantShare")}`
+    : t("ownerPlatform");
+  return (
+    <span className="inline-flex shrink-0" role="img" title={label} aria-label={label}>
+      <VisibilityIcon visibility={tenantOwned ? "tenant" : "public"} />
+    </span>
+  );
 };
 
 export default function ToolsPage() {
+  const workspace = useWorkspace();
   const t = useTranslations("tools");
   const router = useRouter();
   const [page, setPage] = useState(1);
   // 页签而不是"全部类型"下拉。**默认 "managed"，即除原生工具之外的全部。**
-  //
-  // 这个页签**没有**叫"MCP 工具"：它同时装着 `tool_type='mcp'` 和 `'workflow'` 两种行
-  // （后者是长任务 kind 的启停开关，如 cad.check_line_width）。标成 MCP 就得按 mcp 过滤，
-  // 那些长任务开关会跟着消失——它们是这页现在唯一的管理入口。
   //
   // 内置工具（原生 + 网关）随代码发布、不在 `tools` 表里，授权判据也写死在代码里
   // （`sql_query` 仅超级管理员……），界面上改不了。把它们混进同一张可编辑的表里会给出
@@ -112,15 +104,16 @@ export default function ToolsPage() {
   // 一页 20 个 MCP 工具、每个最慢 20s，没有进度时界面看起来和卡死没区别。
   const [bulkTest, setBulkTest] = useState({ running: false, done: 0, total: 0 });
 
-  const { user } = useCurrentUser();
+  const { user, loading: userLoading } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
   // 写操作的判据必须与后端 _require_tool_manager 逐字一致：超管或租户管理员。
   // 这个页面此前对写操作**不设任何门**——只是侧边栏不给入口，直接敲 /tools
   // 就能改能删。按钮留给点不动的人，等于把 403 当交互。
   const canManageTools = isSuperAdmin || checkTenantAdmin(user);
+  const canViewDisabledTools = !userLoading && canManageTools;
 
   const {
-    tools,
+    tools: fetchedTools,
     total,
     loading,
     createTool,
@@ -130,10 +123,12 @@ export default function ToolsPage() {
     testConnection,
     refresh,
   } = useTools({
-    is_enabled: isEnabled,
+    is_enabled: canViewDisabledTools ? isEnabled : true,
     page,
     page_size: 20,
   });
+  // Do not expose disabled rows from stale cached responses during role loading/change.
+  const tools = canViewDisabledTools ? fetchedTools : fetchedTools.filter((tool) => tool.is_enabled);
   const {
     builtins,
     meta: builtinMeta,
@@ -369,7 +364,7 @@ export default function ToolsPage() {
                 </Button>
               )}
 
-              {tab === "managed" && (
+              {tab === "managed" && canViewDisabledTools && (
                 <Select
                   value={isEnabled === undefined ? "all" : isEnabled ? "enabled" : "disabled"}
                   onValueChange={(value) => {
@@ -408,18 +403,19 @@ export default function ToolsPage() {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[30%]">{t("name")}</TableHead>
-                  <TableHead className="w-[10%]">{t("category")}</TableHead>
-                  <TableHead className="w-[22%]">{t("description")}</TableHead>
-                  <TableHead className="w-[13%]">{t("creator")}</TableHead>
-                  <TableHead className="w-[12%]">{t("status")}</TableHead>
+                  <TableHead className="w-[26%]">{t("name")}</TableHead>
+                  <TableHead className="w-[9%]">{t("category")}</TableHead>
+                  <TableHead className="w-[18%]">{t("description")}</TableHead>
+                  <TableHead className="w-[12%]">{t("ownerColumn")}</TableHead>
+                  <TableHead className="w-[12%]">{t("creator")}</TableHead>
+                  <TableHead className="w-[10%]">{t("status")}</TableHead>
                   <TableHead className="w-[13%] text-right">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tools.map((tool) => (
                   <TableRow key={tool.id}>
-                    <TableCell className="w-[30%] font-medium">
+                    <TableCell className="font-medium">
                       <div className="flex min-w-0 items-center gap-2">
                         <ToolIcon tool={tool} />
                         <div className="min-w-0">
@@ -435,6 +431,14 @@ export default function ToolsPage() {
                       <Badge className={getCategoryBadge(tool.category)}>{tool.category}</Badge>
                     </TableCell>
                     <TableCell className="max-w-md truncate">{tool.description}</TableCell>
+                    <TableCell
+                      className="whitespace-normal break-words text-sm text-muted-foreground"
+                      title={tool.owner_tenant_id == null ? t("ownerPlatform") : tool.owner_tenant_name || t("ownerTenantUnnamed")}
+                    >
+                      {tool.owner_tenant_id == null
+                        ? t("ownerPlatformShort")
+                        : tool.owner_tenant_name || t("ownerTenantUnnamed")}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {tool.created_by_name ||
                         (tool.created_by ? t("creatorDeleted") : t("creatorUnknown"))}
@@ -443,7 +447,7 @@ export default function ToolsPage() {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={tool.is_enabled}
-                          disabled={!canManageTools}
+                          disabled={!canManageTools || (workspace.enabled && tool.platform_provided && !isSuperAdmin)}
                           onCheckedChange={() => handleToggleEnabled(tool)}
                         />
                         <span className="text-sm">
@@ -453,7 +457,7 @@ export default function ToolsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {/* 体检只对 MCP 工具有意义（native / workflow 不建立连接），
+                        {/* 体检只对 MCP 工具有意义（native 不建立连接），
                             且只有管理员调得动后端那个端点 —— 按钮留给点不动的人，
                             等于把 403 当交互。 */}
                         {canManageTools && tool.tool_type === "mcp" && (
@@ -478,17 +482,12 @@ export default function ToolsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {canManageTools && (
+                        {canManageTools && !(workspace.enabled && tool.platform_provided && !isSuperAdmin) && (
                           <Button variant="ghost" size="sm" onClick={() => handleEdit(tool)}>
                             <Edit className="h-4 w-4" />
                           </Button>
                         )}
-                        {/* 只有 workflow 行不可删：那一行是某个长任务 kind 的唯一
-                            开关，删掉后 refresh_enabled_from_db 会走"注册表里有、DB
-                            里没有"的分支，能力保持默认启用且界面上再也关不掉。
-                            MCP 行一律可删——它们之间没有系统/非系统之分，`qcc-*` 和
-                            `mcp-tally` 同一形态，删了只是少一个连接配置。 */}
-                        {canManageTools && tool.tool_type !== "workflow" && (
+                        {canManageTools && !(workspace.enabled && tool.platform_provided && !isSuperAdmin) && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -585,7 +584,7 @@ export default function ToolsPage() {
  *   注册是**按需**的（启动时不注册），所以这是**正常状态**，不是"坏的"——
  *   这正是它必须和"失败"长得不一样的原因，否则每个新工具看起来都是坏的。
  *
- * native / workflow 不建立连接 → 什么都不画（画"未验证"会误导）。
+ * native 不建立连接 → 什么都不画（画"未验证"会误导）。
  */
 function ToolConnectionStatus({ tool }: { tool: Tool }) {
   const t = useTranslations("tools");

@@ -14,7 +14,7 @@ function load(file: string, mocks: any, env: any = {}) {
     {
       module,
       exports: module.exports,
-      require: (id: string) => ["./localLogout", "./lib/localLogout"].includes(id) ? load("lib/localLogout.ts", {}, env) : mocks[id] || require(id),
+      require: (id: string) => id === "./lib/workspaceRoutePolicy" ? load("lib/workspaceRoutePolicy.ts", {}, env) : ["./localLogout", "./lib/localLogout"].includes(id) ? load("lib/localLogout.ts", {}, env) : mocks[id] || require(id),
       process: { env },
       Date,
       Headers,

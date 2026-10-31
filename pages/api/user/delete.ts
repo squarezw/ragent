@@ -9,6 +9,11 @@ import {
 import pool from "@/lib/db";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
+    : { enabled: false, tenantId: null };
+  if (!workspace) return;
+
   if (req.method !== "DELETE") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -48,6 +53,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const targetUser = targetUserRes.rows[0];
+      if (workspace.enabled && Number(targetUser.tenant_id) !== workspace.tenantId)
+        return res.status(404).json({ error: "User not found" });
 
       // 检查权限 - 只有超级管理员可以删除用户
       const isSuper = await isSuperAdmin(userId);

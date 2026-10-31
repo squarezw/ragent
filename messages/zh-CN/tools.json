@@ -110,7 +110,6 @@
   "builtinWhy": "依据",
   "builtinDisabledByEnv": "已由 env 禁用",
   "builtinEnvHint": "部署级开关：环境变量 {envVar}。",
-  "workflowTool": "长任务开关",
   "footprintSummary": "{count} 个子工具 · 约 {tokens} tokens/轮",
   "connectionStatus": "连接状态",
   "connUntested": "未验证",
@@ -143,5 +142,11 @@
   "creatorDeleted": "用户已注销",
   "executionScopeAll": "当前展示全平台调用记录及统计。",
   "executionScopeTenant": "当前仅展示本租户用户的调用记录及统计。",
-  "executionScopeSelf": "当前仅展示你本人的调用记录及统计。"
+  "executionScopeSelf": "当前仅展示你本人的调用记录及统计。",
+  "ownerScope": "归属范围",
+  "ownerColumn": "归属于",
+  "ownerPlatformShort": "平台",
+  "ownerTenantUnnamed": "未命名组织",
+  "ownerPlatform": "平台共享（所有租户可用）",
+  "ownerScopeHelp": "仅超级管理员可修改。设为租户自有前，会检查全部已有绑定；存在其他租户绑定时需先解除。平台共享配置的修改影响所有租户。"
 }

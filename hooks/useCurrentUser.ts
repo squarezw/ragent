@@ -92,7 +92,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       globalUserInitialized = false;
       setUser(null);
       window.location.assign("/?signedOut=1");
-    } catch {
+    } catch (error) {
+      console.error("[logout] failed", error);
       logoutInProgress = false;
       setLogoutPending(false);
       window.dispatchEvent(new CustomEvent("auth:logout-failed"));

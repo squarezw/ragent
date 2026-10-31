@@ -92,8 +92,8 @@ function BlockedSkill({
   return (
     <section className="rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{item.display_name || item.skill_name}</span>
-        <span className="font-mono text-xs text-muted-foreground break-all">{item.skill_name}</span>
+        <span className="font-medium break-all">{item.reason === "workspace_unavailable" ? t("workspaceUnavailableSkill") : item.display_name || item.skill_name}</span>
+        {item.reason !== "workspace_unavailable" && <span className="font-mono text-xs text-muted-foreground break-all">{item.skill_name}</span>}
         <Badge
           variant="outline"
           className="ml-auto border-amber-300 text-amber-700 dark:text-amber-400"
@@ -104,8 +104,8 @@ function BlockedSkill({
 
       {item.reason && (
         <p className="mt-1 text-xs text-muted-foreground">
-          {item.reason === "missing_workflows"
-            ? t("diagnosticsReasonWorkflows")
+          {item.reason === "workspace_unavailable"
+            ? t("workspaceUnavailable")
             : t("diagnosticsReasonTools")}
         </p>
       )}
@@ -113,9 +113,7 @@ function BlockedSkill({
       {groups.map((group) => (
         <div key={group.kind} className="mt-3">
           <p className="text-xs font-medium text-muted-foreground">
-            {group.kind === "workflow"
-              ? t("diagnosticsMissingWorkflows")
-              : t("diagnosticsMissingTools")}
+            {t("diagnosticsMissingTools")}
           </p>
           <ul className="mt-1.5 space-y-2">
             {group.gaps.map((gap) => (
@@ -151,7 +149,7 @@ function GapRow({
     <li className="rounded-md bg-muted/40 p-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <code className="font-mono text-xs break-all">{gap.name}</code>
-        {gap.tool_type && gap.tool_type !== "workflow" && (
+        {gap.tool_type && (
           <Badge variant="secondary" className="text-xs">
             {gap.tool_type === "mcp" ? ta("mcpTool") : ta("nativeTool")}
           </Badge>

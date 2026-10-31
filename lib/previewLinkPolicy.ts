@@ -30,6 +30,7 @@ export function previewRevision(file: PreviewFile): string {
 }
 
 interface PreviewClaims {
+  operationTenantId?: number;
   fileId: string;
   userId: number;
   mimetype: string;
@@ -54,6 +55,7 @@ export function createPreviewLink(
       if (typeof previous === "object") {
         const remaining = typeof previous.exp === "number" ? previous.exp - nowSeconds : 0;
         if (
+          previous.operationTenantId === claims.operationTenantId &&
           previous.fileId === claims.fileId &&
           previous.userId === claims.userId &&
           previous.mimetype === claims.mimetype &&
@@ -77,6 +79,7 @@ export function createPreviewLink(
       mimetype: claims.mimetype,
       objectKey: claims.objectKey,
       revision: claims.revision,
+      operationTenantId: claims.operationTenantId,
       iat: nowSeconds,
     },
     secret,

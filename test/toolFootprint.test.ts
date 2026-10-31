@@ -34,11 +34,11 @@ test("工具列表渲染四档连接状态与占用提示", () => {
 });
 
 test("未验证 MCP 与不建立连接的工具分开处理", () => {
-  // MCP 缺 footprint 是按需注册前的正常「未验证」状态；native / workflow 才完全不渲染。
+  // MCP 缺 footprint 是按需注册前的正常「未验证」状态；native 才完全不渲染。
   assert.match(
     TOOLS_PAGE,
     /if \(tool\.tool_type !== "mcp"\) return null;/,
-    "native / workflow 不应渲染连接状态"
+    "native 不应渲染连接状态"
   );
   assert.match(TOOLS_PAGE, /if \(!fp\)/, "缺 footprint 的 MCP 必须显示未验证状态");
   assert.ok(TOOLS_PAGE.includes("connUntested"), "缺 footprint 时没有未验证文案");

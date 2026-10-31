@@ -45,6 +45,7 @@ async function invoke(
     }).outputText,
     {
       exports,
+      process: { env: {} },
       require: (name: string) => {
         assert.ok(name in imports, name);
         return imports[name];

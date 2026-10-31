@@ -83,5 +83,16 @@
   "rechargeNoteHint": "This is the only record of where the credits came from.",
   "rechargeSuccess": "Added {amount} credits. Balance: {balance}",
   "rechargeDuplicate": "Already submitted; not credited twice. Balance: {balance}",
-  "rechargeFailed": "Could not add credits"
+  "rechargeFailed": "Could not add credits",
+  "pendingUsersTitle": "Users awaiting tenant assignment",
+  "pendingAssigned": "Tenant assigned",
+  "pendingAssignFailed": "Assignment failed. Refresh and try again.",
+  "pendingLoading": "Loading…",
+  "pendingRetry": "Reload",
+  "pendingEmpty": "No users awaiting assignment",
+  "pendingAssign": "Assign tenant",
+  "pendingPrevious": "Previous",
+  "pendingNext": "Next",
+  "pendingChooseTenant": "Choose a tenant",
+  "pendingSearchTenant": "Search tenant name or code"
 }

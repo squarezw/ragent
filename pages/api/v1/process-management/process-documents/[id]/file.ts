@@ -1,3 +1,5 @@
+import { workspaceHeaders } from "@/lib/workspaceTenant";
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -19,7 +21,7 @@ export const config = {
  * POST ?from_session=xxx      → Copy handbook DOCX to OSS as v1
  * POST ?from_knowledge_file=x → Copy KB file to OSS as v1
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") return handleGet(req, res);
 
   const userId = getUserIdFromRequest(req);
@@ -174,7 +176,7 @@ async function handleCopyFile(
 }
 
 function authHeaders(req: NextApiRequest): Record<string, string> {
-  const h: Record<string, string> = {};
+  const h: Record<string, string> = { ...workspaceHeaders(req) };
   if (req.headers.authorization) h["Authorization"] = req.headers.authorization;
   return h;
 }
@@ -203,3 +205,5 @@ async function handleCopyFromSession(req: NextApiRequest, res: NextApiResponse, 
     `session ${sessionId}`
   );
 }
+
+export default withProcessWorkspace(handler);

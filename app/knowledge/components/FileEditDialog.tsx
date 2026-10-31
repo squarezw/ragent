@@ -82,15 +82,18 @@ export const FileEditDialog = ({
 
     try {
       // Step 1: Upload to OSS
+      let uploadReceipt: string | undefined;
       const objectKey = await uploadFile({
         file: newFile,
         category: "knowledge",
+          onPresigned: (metadata) => { uploadReceipt = metadata.uploadReceipt; },
         onProgress: (percent) => setUploadProgress(percent),
       });
 
       // Step 2: Confirm replace with backend
       const response = await axios.post("/api/knowledge/replace", {
         objectKey,
+        uploadReceipt,
         fileId: file.id,
         originalFilename: newFile.name,
         contentType: newFile.type || "application/octet-stream",

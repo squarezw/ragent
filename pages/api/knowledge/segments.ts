@@ -1,7 +1,8 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { file_id } = req.query;
   if (!file_id) {
     res.status(400).json({ error: "Missing file_id" });
@@ -22,3 +23,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "DB query failed", details: e });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

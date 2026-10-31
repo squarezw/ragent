@@ -143,8 +143,6 @@
   "statistics": "Statistics",
   "nativeTool": "Native",
   "mcpTool": "MCP",
-  "workflowTool": "Long task",
-  "workflowBindNotice": "Once a long task is bound, this digital employee keeps **only the bound ones**. Nothing is bound right now, which means all of them are available. Unbind them all to go back.",
   "enabled": "Enabled",
   "disabled": "Disabled",
   "calls": "Calls",
@@ -198,5 +196,13 @@
   "crossTenantWechatBinding": "Create the employee first, then configure the WeChat binding within its tenant.",
   "editTenantMigrationNotice": "Saving a tenant change clears the previous department and tenant default. Historical records, authorship and permissions are not automatically transferred. Existing resource bindings are retained; incompatible bindings must be resolved before saving.",
   "modelUnavailable": "This model is unavailable in the selected tenant. Choose another model.",
-  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models."
+  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models.",
+  "workspaceKnowledgeBindings": "Bound knowledge bases",
+  "workspaceUnavailableDataset": "Unavailable knowledge base",
+  "cleanupUnavailableDatasets": "Remove unavailable knowledge bases",
+  "cleanupUnavailableDatasetsSuccess": "Removed {count} unavailable knowledge base bindings",
+  "cleanupUnavailableDatasetsFailed": "Could not remove unavailable bindings. Please try again.",
+  "tabKnowledge": "Knowledge",
+  "noKnowledgeBindings": "No knowledge bases bound",
+  "autoKnowledgeStatus": "Knowledge bases are currently selected automatically"
 }

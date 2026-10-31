@@ -119,20 +119,24 @@ export default function AppSkillsSection({
                     <TableCell>
                       <button
                         type="button"
-                        className="font-medium hover:underline text-left"
+                        disabled={row.available === false}
+                        className="font-medium hover:underline text-left disabled:no-underline disabled:text-muted-foreground"
                         onClick={() => router.push(`/skills/${info.skillId}`)}
                       >
-                        {info.displayName || info.name}
+                        {row.available === false ? t("workspaceUnavailableSkill") : info.displayName || info.name}
                       </button>
-                      <div className="font-mono text-xs text-muted-foreground">{info.name}</div>
+                      {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
+                      {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
                     </TableCell>
                     <TableCell className="max-w-md">
                       <span className="line-clamp-2 text-sm text-muted-foreground">
-                        {info.description}
+                        {row.available === false ? t("workspaceUnavailable") : info.description}
                       </span>
                     </TableCell>
                     <TableCell>
-                      {info.isPublished ? (
+                      {row.available === false ? (
+                        <Badge variant="secondary">{t("workspaceUnavailableStatus")}</Badge>
+                      ) : info.isPublished ? (
                         <Badge>{t("statusPublished")}</Badge>
                       ) : (
                         <Badge variant="secondary">{t("statusDraftOnly")}</Badge>

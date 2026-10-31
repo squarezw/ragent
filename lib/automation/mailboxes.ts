@@ -1,3 +1,4 @@
+import { automationTenantClause, automationWorkspaceTenant } from "@/lib/automation/workspace";
 import pool from "@/lib/db";
 import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 import { assertAutomationTablesReady } from "@/lib/automation/schema";
@@ -107,7 +108,7 @@ export async function listAutomationMailboxes(userId: number) {
   await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_mailboxes
-     WHERE created_by_user_id=$1
+     WHERE created_by_user_id=$1${automationTenantClause()}
      ORDER BY created_at DESC, id DESC`,
     [userId],
   );
@@ -131,7 +132,7 @@ function mailboxIdentityFromRow(row: {
 async function findAutomationMailboxByEmail(userId: number, email: string) {
   const result = await pool.query(
     `SELECT * FROM automation_mailboxes
-     WHERE created_by_user_id=$1 AND email=$2
+     WHERE created_by_user_id=$1${automationTenantClause()} AND email=$2
      LIMIT 1`,
     [userId, email],
   );
@@ -140,7 +141,7 @@ async function findAutomationMailboxByEmail(userId: number, email: string) {
 
 export async function createAutomationMailbox(userId: number, input: AutomationMailboxInput) {
   await assertAutomationTablesReady();
-  const tenantId = await getUserTenantId(userId);
+  const tenantId = automationWorkspaceTenant() ?? await getUserTenantId(userId);
   const config = normalizeMailboxConfig(input);
   const encrypted = encryptPassword(config.password);
 
@@ -170,6 +171,7 @@ export async function createAutomationMailbox(userId: number, input: AutomationM
       last_error=NULL,
       last_error_at=NULL,
       updated_at=NOW()
+    ${automationWorkspaceTenant() == null ? "" : `WHERE automation_mailboxes.tenant_id = ${automationWorkspaceTenant()}`}
     RETURNING *`,
     [
       tenantId,
@@ -185,6 +187,8 @@ export async function createAutomationMailbox(userId: number, input: AutomationM
     ],
   );
 
+  if (!result.rows.length) throw new Error("MAILBOX_NOT_OWNED");
+
   // 只有写成功了才动游标（与 PUT 路径同一顺序、同一理由）：写失败时基线必须原样保留。
   // 少了这一步的后果是静默的——旧高水位留在新服务器上，所有 `uid <= 旧值` 的邮件被
   // 无声丢弃，而状态仍显示「已连接」。
@@ -199,7 +203,7 @@ export async function getAutomationMailboxForUser(userId: number, mailboxId: num
   await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_mailboxes
-     WHERE id=$1 AND created_by_user_id=$2
+     WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
      LIMIT 1`,
     [mailboxId, userId],
   );
@@ -230,7 +234,7 @@ export async function markAutomationMailboxConnectionError(
     await pool.query(
       `UPDATE automation_mailboxes
          SET status='error', last_error=$3, last_error_at=NOW(), updated_at=NOW()
-       WHERE id=$1 AND created_by_user_id=$2`,
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}`,
       [mailboxId, userId, message],
     );
   } catch (recordError) {
@@ -251,7 +255,7 @@ export async function markAutomationMailboxConnected(userId: number, mailboxId: 
     await pool.query(
       `UPDATE automation_mailboxes
          SET status='connected', last_error=NULL, last_error_at=NULL, updated_at=NOW()
-       WHERE id=$1 AND created_by_user_id=$2 AND status <> 'connected'`,
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()} AND status <> 'connected'`,
       [mailboxId, userId],
     );
   } catch (error) {
@@ -330,7 +334,7 @@ export async function updateAutomationMailbox(
        name=$3, email=$4, username=$5, password_ciphertext=$6,
        imap_host=$7, imap_port=$8, imap_secure=$9, folder=$10,
        status='connected', last_error=NULL, last_error_at=NULL, updated_at=NOW()
-     WHERE id=$1 AND created_by_user_id=$2
+     WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
      RETURNING *`,
     [
       mailboxId,
@@ -356,6 +360,7 @@ export async function updateAutomationMailbox(
 
 export async function deleteAutomationMailbox(userId: number, mailboxId: number) {
   await assertAutomationTablesReady();
+  if (!(await getAutomationMailboxForUser(userId, mailboxId))) return { deleted: false, dependents: [] };
   // 依赖检查认两种引用，两者都是"这条自动化绑着某个邮箱"：
   // 1. 键格式统一后的 `trigger_config.mailboxId`（整数，与 $2::text 比较）；
   // 2. **任何仍带 `mailboxKey` 的遗留行**。A.1 的清理只删 `mailboxKey='system'`，其余遗留键
@@ -366,7 +371,7 @@ export async function deleteAutomationMailbox(userId: number, mailboxId: number)
   //    那条自动化的邮箱就没了）。
   const dependentResult = await pool.query(
     `SELECT id, name FROM automation_tasks
-     WHERE created_by_user_id=$1
+     WHERE created_by_user_id=$1${automationTenantClause()}
        AND trigger_type='邮件触发'
        AND (
          trigger_config->>'mailboxId'=$2::text
@@ -382,7 +387,7 @@ export async function deleteAutomationMailbox(userId: number, mailboxId: number)
 
   const result = await pool.query(
     `DELETE FROM automation_mailboxes
-     WHERE id=$1 AND created_by_user_id=$2
+     WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
      RETURNING id`,
     [mailboxId, userId],
   );

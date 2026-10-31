@@ -136,5 +136,10 @@
   "streamInterrupted": "The response was interrupted. The received text has been kept. It was not automatically retried to avoid repeating actions.",
   "streamFailed": "The response could not be completed. Please try again later.",
   "modelEndpointUnreachable": "Unable to connect to the tenant model service. Ask your tenant administrator to check the service address and network.",
-  "modelResponseTimeout": "The tenant model response timed out. Try again later or contact your tenant administrator."
+  "modelResponseTimeout": "The tenant model response timed out. Try again later or contact your tenant administrator.",
+  "workspaceBindingsSkipped": "Skipped unavailable bindings: {resources}. Other available capabilities remain active.",
+  "workspaceSkippedSkills": "{count} Skills",
+  "workspaceSkippedTools": "{count} tools",
+  "workspaceSkippedDatasets": "{count} knowledge bases",
+  "workspaceBindingSeparator": ", "
 }

@@ -5,4 +5,5 @@ export const DEFAULT_LLM_MODEL_CODE = "deepseek-flash";
 export interface LlmModelOption {
   code: string;
   display_name: string;
+  platform_provided?: boolean;
 }

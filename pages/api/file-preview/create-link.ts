@@ -1,4 +1,6 @@
-import { getUserIdFromRequest, requireAuth } from "@/lib/auth";
+import axios from "axios";
+import { workspacePreviewSource } from "@/lib/workspacePreviewSource";
+import { getUserIdFromRequest, getTokenFromRequest, requireAuth } from "@/lib/auth";
 import pool from "@/lib/db";
 import { ossClient } from "@/lib/ossClient";
 import jwt from "jsonwebtoken";
@@ -11,6 +13,7 @@ const PREVIEW_TOKEN_TTL_SECONDS = 30 * 60; // 30 分钟有效期（kkFileView �
 
 interface PreviewTokenPayload {
   fileUrl: string;
+  operationTenantId?: number;
   userId: number;
   sourceAuthHeader?: string;
   // 添加时间戳和文件标识，确保每次生成的 URL 都是唯一的
@@ -47,7 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { fileUrl, fileId, extension } = req.body as {
+  let { fileUrl, fileId, extension } = req.body as {
     fileUrl?: string;
     fileId?: string;
     extension?: string;
@@ -70,6 +73,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!userId) {
     res.status(401).json({ error: "未登录" });
     return;
+  }
+
+  let operationTenantId: number | undefined;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
+    const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
+    const ctx = await requireWorkspaceTenant(req, res);
+    if (!ctx) return;
+    operationTenantId = ctx.tenantId!;
+    if (fileId) {
+      const file = await pool.query(`SELECT f.id, f.filename FROM knowledge_files f JOIN datasets d ON d.id=f.dataset_id WHERE f.id::text=$1 AND (d.owner_tenant_id=$2 OR d.visibility='public') AND (can_access_dataset($3,d.id) OR d.visibility='public')`, [String(fileId), ctx.tenantId, ctx.actorUserId]);
+      if (!file.rows.length) return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+      // Bind fallback delivery to the authorized file, never a caller-supplied URL.
+      fileUrl = `/api/uploads/${encodeURIComponent(file.rows[0].filename || "file")}?file_id=${encodeURIComponent(String(fileId))}`;
+    } else {
+      const origin = `${req.headers["x-forwarded-proto"] || "http"}://${req.headers.host}`;
+      const source = workspacePreviewSource(fileUrl, [origin, new URL(appBaseUrl).origin]);
+      if (!source) return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+      fileUrl = source;
+      if (source.startsWith("/api/oss/")) {
+        const local = new URL(source, "https://workspace.invalid");
+        if (!await workspaceCanReadObject(ctx, decodeURIComponent(local.pathname.slice("/api/oss/".length))))
+          return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+      } else {
+        // Probe the exact resource endpoint so published/draft and process ancestry
+        // rules apply before issuing a preview capability. Never follow redirects.
+        try {
+          const response = await axios.get(new URL(source, appBaseUrl).href, {
+            headers: { Authorization: `Bearer ${getTokenFromRequest(req)}`, "X-Workspace-Tenant-ID": String(operationTenantId) },
+            responseType: "stream", maxRedirects: 0, timeout: 15000,
+          });
+          response.data.destroy();
+        } catch {
+          return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+        }
+      }
+    }
   }
 
   // 如果传了 fileId，尝试查 DB 获取 object_key，直接用 OSS 签名 URL
@@ -110,7 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // 无 object_key 或未传 fileId → 保持现有 JWT token 代理流程
-  const sourceAuthHeader = req.headers.authorization;
+  const sourceAuthHeader = getTokenFromRequest(req) ? `Bearer ${getTokenFromRequest(req)}` : undefined;
 
   // 添加时间戳确保 token 唯一性，避免 kkFileView 缓存问题
   const timestamp = Date.now();
@@ -118,6 +158,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const token = jwt.sign(
     {
       fileUrl,
+      operationTenantId,
       userId,
       sourceAuthHeader,
       timestamp,

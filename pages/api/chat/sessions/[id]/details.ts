@@ -5,6 +5,11 @@ import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
 import { normalizeSessionAttachments } from "@/lib/sessionAttachments";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
+    : { enabled: false, tenantId: null };
+  if (!workspace) return;
+
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -34,12 +39,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!scope) {
       return res.status(404).json({ error: "用户不存在" });
     }
+    if (workspace.enabled) {
+      scope.conditions.push(`cs.operation_tenant_id = $${scope.nextIndex}`);
+      scope.params.push(workspace.tenantId);
+      scope.nextIndex++;
+    }
+
 
     // 获取会话基本信息，同时获取知识库信息
     // owner_tenant_id / owner_dept_id 仅用于鉴权，不出现在响应体里
     const sessionQuery = `
       SELECT
         cs.id,
+        ${workspace.enabled ? "cs.operation_tenant_id," : ""}
         cs.created_at,
         cs.updated_at,
         cs.user_id,
@@ -76,12 +88,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         END
       ) AS dataset_id ON true
       LEFT JOIN datasets ds ON ds.id::text = dataset_id
-      WHERE cs.id = $1
-      GROUP BY cs.id, cs.created_at, cs.updated_at, cs.user_id, cs.app_id, cs.summary, cs.dataset_ids,
+      WHERE cs.id = $1 ${workspace.enabled ? "AND cs.operation_tenant_id = $2" : ""}
+      GROUP BY cs.id, ${workspace.enabled ? "cs.operation_tenant_id," : ""} cs.created_at, cs.updated_at, cs.user_id, cs.app_id, cs.summary, cs.dataset_ids,
                u.nickname, u.username, u.email, u.tenant_id, u.dept_id, d.name, d.code
     `;
 
-    const sessionResult = await pool.query(sessionQuery, [id]);
+    const sessionResult = await pool.query(sessionQuery, workspace.enabled ? [id, workspace.tenantId] : [id]);
 
     if (sessionResult.rows.length === 0) {
       return res.status(404).json({ error: "Session not found" });

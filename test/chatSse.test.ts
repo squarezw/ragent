@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  parseWorkspaceBindingWarning,
   extractSseErrorMessage,
   findToolCompletionIndex,
   isSseCommentLine,
@@ -186,4 +187,15 @@ test("malformed or empty call IDs are omitted", () => {
     assert.ok(parsed);
     assert.equal(parsed.tool_call_id, undefined);
   }
+});
+
+
+test("binding warning accepts only validated counts and never exposes resource metadata", () => {
+  assert.deepEqual(parseWorkspaceBindingWarning({code: "WORKSPACE_BINDINGS_SKIPPED", skipped: {skills: 1, tools: 0, datasets: 2}, name: "PRIVATE"}), {
+    code: "WORKSPACE_BINDINGS_SKIPPED", skipped: {skills: 1, tools: 0, datasets: 2},
+  });
+  for (const skipped of [{skills: 0, tools: 0, datasets: 0}, {skills: -1, tools: 0, datasets: 0}, {skills: "1", tools: 0, datasets: 0}, {skills: 1}]) {
+    assert.equal(parseWorkspaceBindingWarning({code: "WORKSPACE_BINDINGS_SKIPPED", skipped}), null);
+  }
+  assert.equal(parseWorkspaceBindingWarning({code: "OTHER", skipped: {skills: 1, tools: 0, datasets: 0}}), null);
 });

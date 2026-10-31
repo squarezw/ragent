@@ -9,7 +9,6 @@ import type {
   RequiresKind,
   RequiresOptions,
   RequiresToolOption,
-  RequiresWorkflowOption,
   SkillRequiresGap,
 } from "@/types/skill";
 
@@ -19,11 +18,10 @@ export type {
   RequiresKind,
   RequiresOptions,
   RequiresToolOption,
-  RequiresWorkflowOption,
   SkillRequiresGap,
 };
 
-const EMPTY_OPTIONS: RequiresOptions = { tools: [], workflows: [] };
+const EMPTY_OPTIONS: RequiresOptions = { tools: [] };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -39,7 +37,7 @@ function asCount(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-/** requires.tools / requires.workflows 的宽松归一：去空白、去空串、去重、保序 */
+/** requires.tools 的宽松归一：去空白、去空串、去重、保序 */
 export function normalizeRequiresList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -65,7 +63,7 @@ export function parseRequiresOptions(data: unknown): RequiresOptions {
   for (const row of toolRows) {
     const item = asRecord(row);
     const name = item && asString(item.name);
-    if (!name) continue;
+    if (!name || (item?.tool_type && !["mcp", "native"].includes(String(item.tool_type)))) continue;
     tools.push({
       name,
       display_name: (item && asString(item.display_name)) || name,
@@ -75,31 +73,16 @@ export function parseRequiresOptions(data: unknown): RequiresOptions {
     });
   }
 
-  const workflowRows = Array.isArray(root.workflows) ? root.workflows : [];
-  const workflows: RequiresWorkflowOption[] = [];
-  for (const row of workflowRows) {
-    const item = asRecord(row);
-    const kind = item && asString(item.kind);
-    if (!kind) continue;
-    workflows.push({
-      kind,
-      display_name: (item && asString(item.display_name)) ?? null,
-      description: (item && asString(item.description)) ?? null,
-      // 字段缺失按「启用」处理：宁可不置灰，也不要把可用 kind 误标成会导致不注入
-      is_enabled: item && typeof item.is_enabled === "boolean" ? item.is_enabled : true,
-    });
-  }
-
-  return { tools, workflows };
+  return { tools };
 }
 
 function parseGap(row: unknown): SkillRequiresGap | null {
   const item = asRecord(row);
   const name = item && asString(item.name);
-  if (!name) return null;
+  if (!name || (item?.kind && item.kind !== "tool")) return null;
   return {
     name,
-    kind: item && item.kind === "workflow" ? "workflow" : "tool",
+    kind: "tool",
     available: item?.available === true,
     tool_type: (item && asString(item.tool_type)) ?? null,
     globally_enabled: item?.globally_enabled === true,
@@ -190,9 +173,7 @@ export type RequiresGapAction = "none" | "edit-skill" | "bind-tools" | "manage-t
 export type RequiresGapMessageKey =
   | "gapToolNotFound"
   | "gapToolGloballyDisabled"
-  | "gapToolNotBound"
-  | "gapWorkflowNotRegistered"
-  | "gapWorkflowDisabled";
+  | "gapToolNotBound";
 
 export interface RequiresGapGuidance {
   category: RequiresGapCategory;
@@ -207,8 +188,6 @@ export interface RequiresGapGuidance {
  * available=true 且 globally_enabled=false → 存在但被超管全局停用；
  * 两者都 true → 工具可用，只是没绑给这个应用。
  *
- * workflow 缺口的 globally_enabled 恒 false（进 missing 就说明不在启用集里），
- * 所以只会落到前两类。
  */
 export function classifyRequiresGap(gap: SkillRequiresGap): RequiresGapCategory {
   if (!gap.available) return "unknown-name";
@@ -222,25 +201,6 @@ export function resolveRequiresGapGuidance(
 ): RequiresGapGuidance {
   const category = classifyRequiresGap(gap);
   const superAdmin = options.isSuperAdmin === true;
-
-  if (gap.kind === "workflow") {
-    if (category === "unknown-name") {
-      return {
-        category,
-        kind: "workflow",
-        messageKey: "gapWorkflowNotRegistered",
-        action: "edit-skill",
-      };
-    }
-    // not-bound-to-app 在 workflow 上不可达（globally_enabled 恒 false）；
-    // 真出现就当「已注册但被关」处理，别给用户一个绑定应用工具的错误指引
-    return {
-      category,
-      kind: "workflow",
-      messageKey: "gapWorkflowDisabled",
-      action: superAdmin ? "manage-tools" : "none",
-    };
-  }
 
   if (category === "unknown-name") {
     return { category, kind: "tool", messageKey: "gapToolNotFound", action: "edit-skill" };
@@ -265,17 +225,17 @@ export interface RenderableGapGroup {
   gaps: RenderableGap[];
 }
 
-/** 混合 missing（工具 + workflow）→ 分组渲染数据；空组不返回，工具组恒在前 */
+/** 工具依赖缺口的分组渲染数据。 */
 export function buildGapGroups(
   missing: SkillRequiresGap[],
   options: { isSuperAdmin?: boolean } = {}
 ): RenderableGapGroup[] {
-  const buckets: Record<RequiresKind, RenderableGap[]> = { tool: [], workflow: [] };
+  const buckets: Record<RequiresKind, RenderableGap[]> = { tool: [] };
   for (const gap of missing) {
     buckets[gap.kind].push({ ...gap, guidance: resolveRequiresGapGuidance(gap, options) });
   }
   const groups: RenderableGapGroup[] = [];
-  for (const kind of ["tool", "workflow"] as const) {
+  for (const kind of ["tool"] as const) {
     if (buckets[kind].length > 0) groups.push({ kind, gaps: buckets[kind] });
   }
   return groups;
@@ -349,40 +309,14 @@ export function filterToolOptions(
   return options.filter((o) => matches(query, o.name, o.display_name, o.category, o.description));
 }
 
-export function filterWorkflowOptions(
-  options: RequiresWorkflowOption[],
-  query: string
-): RequiresWorkflowOption[] {
-  return options.filter((o) => matches(query, o.kind, o.display_name, o.description));
-}
-
-/**
- * 候选清单里该出现哪些长任务。
- *
- * 已被全局停用的不出现：勾了只会让这个 Skill 不被注入，摆出来是在邀请用户犯错
- * （生产上 8 个 cad.* 全停用时，整张清单都是红字警告）。
- *
- * **但已经选中的必须留下。** 一个 skill 可能在 kind 还启用时就声明了依赖，之后那个
- * kind 被全局停用；此时若把它从清单里抹掉，用户一编辑保存就静默丢了这条依赖——连
- * "为什么这个 skill 不被注入"的线索都跟着没了。留着（带停用标注）才能让人看见、
- * 自己决定要不要去掉。
- */
-export function selectableWorkflowOptions(
-  options: RequiresWorkflowOption[],
-  selected: string[]
-): RequiresWorkflowOption[] {
-  const picked = new Set(selected);
-  return options.filter((o) => o.is_enabled || picked.has(o.kind));
-}
-
 /** 已选条目的展示信息；known=false 表示选项里没有这个名字（手工兜底输入），要打警示样式 */
 export interface RequiresSelectionEntry {
   name: string;
   known: boolean;
   displayName: string | null;
-  /** tool: native|mcp；workflow: null */
+  /** native|mcp */
   toolType: string | null;
-  /** workflow 专用：已注册但被全局停用 */
+  /** 条目是否禁用 */
   disabled: boolean;
 }
 
@@ -399,23 +333,6 @@ export function resolveToolSelection(
       displayName: option ? option.display_name : null,
       toolType: option ? option.tool_type : null,
       disabled: false,
-    };
-  });
-}
-
-export function resolveWorkflowSelection(
-  selected: string[],
-  options: RequiresWorkflowOption[]
-): RequiresSelectionEntry[] {
-  const index = new Map(options.map((o) => [o.kind, o]));
-  return selected.map((name) => {
-    const option = index.get(name);
-    return {
-      name,
-      known: option !== undefined,
-      displayName: option ? option.display_name : null,
-      toolType: null,
-      disabled: option ? !option.is_enabled : false,
     };
   });
 }

@@ -1,4 +1,5 @@
 "use client";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
 
 import { useTranslations } from "next-intl";
 import { JsonBlock } from "./JsonBlock";
@@ -35,7 +36,7 @@ export function ParamsPanel({ params }: ParamsPanelProps) {
             {attachments.map((a) => (
               <li key={a.url} className="truncate leading-snug">
                 <a
-                  href={a.url}
+                  href={workspaceUrl(a.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-primary hover:underline"

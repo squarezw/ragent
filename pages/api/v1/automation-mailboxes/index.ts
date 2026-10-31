@@ -1,3 +1,5 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { respondMailboxApiError } from "@/lib/automation/mailbox-errors";
@@ -8,7 +10,7 @@ import {
 } from "@/lib/automation/mailboxes";
 import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -57,4 +59,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   res.setHeader("Allow", ["GET", "POST"]);
   return res.status(405).json({ detail: "Method Not Allowed" });
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

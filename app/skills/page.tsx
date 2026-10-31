@@ -1,8 +1,10 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import VisibilityIcon from "@/components/VisibilityIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import SkillImportDialog from "./components/SkillImportDialog";
@@ -33,24 +35,22 @@ import { useDebounce } from "use-debounce";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSkills, type SkillReference } from "@/hooks/useSkills";
 import { resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
-import { canEditSkill } from "@/lib/skillPermissions";
+import { getSkillOwnerLabel } from "@/lib/skillOwnerLabel";
+import { canEditSkill, canDeleteSkill } from "@/lib/skillPermissions";
 import { filterSkillsByCreator, getSkillCreators } from "@/lib/skillCreatorFilter";
 import { checkDeptAdmin, checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import type { Skill } from "@/types/skill";
 
-const visibilityColors: Record<string, string> = {
-  private: "bg-muted text-foreground",
-  dept: "bg-blue-100 text-blue-800",
-  tenant: "bg-green-100 text-green-800",
-  public: "bg-purple-100 text-purple-800",
-};
+
 
 export default function SkillsPage() {
   const router = useRouter();
   const t = useTranslations("skills");
+  const tw = useTranslations("navigation");
   const tc = useTranslations("common");
   const { user, loading: userLoading } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
+  const workspace = useWorkspace();
   const isTenantAdmin = checkTenantAdmin(user);
   const isDeptAdmin = checkDeptAdmin(user);
 
@@ -79,7 +79,7 @@ export default function SkillsPage() {
   }, [user, orgFilterReady, isSuperAdmin, isTenantAdmin, isDeptAdmin]);
 
   const { skills, loading, deleteSkill } = useSkills(debouncedSearch || undefined, {
-    tenantId: orgFilter?.tenantId ?? null,
+    tenantId: workspace.enabled ? null : orgFilter?.tenantId ?? null,
     deptId: orgFilter?.deptId ?? null,
   });
   const creators = useMemo(() => getSkillCreators(skills), [skills]);
@@ -148,7 +148,7 @@ export default function SkillsPage() {
               className="pl-8 w-56"
             />
           </div>
-          {orgFilter && (
+          {orgFilter && !workspace.enabled && (
             <SkillOrgFilter
               value={orgFilter}
               onChange={setOrgFilter}
@@ -235,7 +235,6 @@ export default function SkillsPage() {
                       <TableHead>{t("displayName")}</TableHead>
                       <TableHead className="max-w-md">{t("description")}</TableHead>
                       <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t("visibility")}</TableHead>
                       <TableHead className="whitespace-nowrap">{t("columnOwner")}</TableHead>
                       <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
                       <TableHead className="text-right">{tc("actions")}</TableHead>
@@ -249,7 +248,13 @@ export default function SkillsPage() {
                       );
                       const badge = reviewStatusBadge(status);
                       const unpublishedChanges = skill.has_unpublished_changes === true;
-                      const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin);
+                      const canEdit = canEditSkill(skill, user, isSuperAdmin, isTenantAdmin, workspace.enabled ? workspace.tenant?.id ?? null : undefined);
+                      const sharedAcrossTenants = workspace.enabled && !skill.platform_provided && skill.shared_across_tenants;
+                      const visibilityLabel = sharedAcrossTenants
+                        ? tw("sharedAcrossTenants")
+                        : t(`visibility_${skill.visibility}`);
+                      const owner = getSkillOwnerLabel(skill);
+                      const canDelete = canDeleteSkill(skill, user, isSuperAdmin, isTenantAdmin, workspace.enabled ? workspace.tenant?.id ?? null : undefined);
                       return (
                         <TableRow
                           key={skill.id}
@@ -258,6 +263,9 @@ export default function SkillsPage() {
                         >
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
+                              <span title={visibilityLabel} role="img" aria-label={visibilityLabel} className="inline-flex shrink-0">
+                                <VisibilityIcon visibility={sharedAcrossTenants ? "public" : skill.visibility} />
+                              </span>
                               {/* 不换行：加了徽标后这一格更窄，中文显示名会被压成一列一个字 */}
                               <span className="whitespace-nowrap">{skill.display_name}</span>
                               {/* 会在沙箱里跑代码的 skill：图标而非徽标，这一列还要放
@@ -267,8 +275,7 @@ export default function SkillsPage() {
                                   <title>{t("executableHint")}</title>
                                 </Terminal>
                               )}
-                              {/* 内置技能没有编辑/删除按钮，光藏起来用户不知道为什么。
-                              徽标 + hover 说明，比一个凭空消失的按钮好懂。 */}
+                              {/* 平台维护来源及更新说明。 */}
                               {skill.is_managed && (
                                 <Badge
                                   variant="outline"
@@ -290,25 +297,10 @@ export default function SkillsPage() {
                             空白会让人以为是渲染坏了 */}
                             {skill.author || <span className="text-muted-foreground">—</span>}
                           </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`text-xs ${visibilityColors[skill.visibility] || visibilityColors.private}`}
-                            >
-                              {t(`visibility_${skill.visibility}`)}
-                            </Badge>
-                          </TableCell>
-                          {/* 归属：这个 Skill 挂在哪个租户/部门。筛选了却看不出每条挂在哪，
-                          用户没法判断筛选到底生效没有，也没法判断该改谁的归属。
-                          部门优先显示 —— 它是更细的那一层，也是复用范围的起点。 */}
+                          {/* 部门共享显示部门；其余共享范围显示资源所属组织。 */}
                           <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {skill.owner_dept_name || skill.owner_tenant_name ? (
-                              <span
-                                title={[skill.owner_tenant_name, skill.owner_dept_name]
-                                  .filter(Boolean)
-                                  .join(" / ")}
-                              >
-                                {skill.owner_dept_name || skill.owner_tenant_name}
-                              </span>
+                            {owner.label ? (
+                              <span title={owner.title || undefined}>{owner.label}</span>
                             ) : (
                               <span className="italic">{t("ownerUnassigned")}</span>
                             )}
@@ -345,13 +337,13 @@ export default function SkillsPage() {
                                   >
                                     {tc("edit")}
                                   </Button>
-                                  <Button
+                                  {canDelete && <Button
                                     variant="destructive"
                                     size="sm"
                                     onClick={() => handleDelete(skill)}
                                   >
                                     {tc("delete")}
-                                  </Button>
+                                  </Button>}
                                 </>
                               )}
                             </div>

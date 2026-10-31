@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslations } from "next-intl";
@@ -129,14 +130,17 @@ const platformIcons: Record<string, any> = {
 export default function AppsPage() {
   const router = useRouter();
   const { user } = useCurrentUser();
+  const workspace = useWorkspace();
+  const operationTenantId = workspace.enabled ? workspace.tenant?.id : user?.tenant_id;
   const isSuperAdmin = checkSuperAdmin(user);
   const t = useTranslations("apps");
+  const tw = useTranslations("navigation");
   const tc = useTranslations("common");
   const ts = useTranslations("skills");
 
   const startChat = (app: App) => {
     if (!user?.id || app.app_type !== "Chat" || app.platform === "Plugin") return;
-    const key = appSelectionKey(user.id, user.tenant_id);
+    const key = appSelectionKey(user.id, operationTenantId);
     localStorage.setItem(key, String(app.id));
     localStorage.setItem(`${key}:optional_datasets`, "[]");
     router.push("/chat");
@@ -157,10 +161,10 @@ export default function AppsPage() {
    * 前端过滤改变不了任何人能拿到什么。
    */
   const visibleApps = useMemo(() => {
-    if (!isSuperAdmin || tenantFilter === "all") return apps;
+    if (workspace.enabled || !isSuperAdmin || tenantFilter === "all") return apps;
     if (tenantFilter === "none") return apps.filter((a) => !a.owner_tenant_id);
     return apps.filter((a) => String(a.owner_tenant_id) === tenantFilter);
-  }, [apps, isSuperAdmin, tenantFilter]);
+  }, [apps, isSuperAdmin, tenantFilter, workspace.enabled]);
 
   /** 只在真的存在未归属应用时才给这个选项，免得挂一个永远为空的条目。 */
   const hasUnassigned = useMemo(() => apps.some((a) => !a.owner_tenant_id), [apps]);
@@ -180,7 +184,7 @@ export default function AppsPage() {
    * 第 7 位那张就落到了上一个组头底下。组头对了、归属错了，比不分组更糟。
    */
   const { renderApps, groupHeaders } = useMemo(() => {
-    if (!isSuperAdmin || tenantFilter !== "all") {
+    if (workspace.enabled || !isSuperAdmin || tenantFilter !== "all") {
       return { renderApps: visibleApps, groupHeaders: null };
     }
     const names = new Map(tenants.map((tn) => [tn.id, tn.name]));
@@ -190,7 +194,7 @@ export default function AppsPage() {
       if (g.apps.length > 0) headers.set(g.apps[0].id, { label: g.label, count: g.apps.length });
     }
     return { renderApps: groups.flatMap((g) => g.apps), groupHeaders: headers };
-  }, [isSuperAdmin, tenantFilter, tenants, visibleApps, t]);
+  }, [isSuperAdmin, tenantFilter, tenants, visibleApps, t, workspace.enabled]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,7 +220,7 @@ export default function AppsPage() {
     Number(editTenantId || 0) !== Number(editingApp.owner_tenant_id || 0);
   const createDatasets = datasetsForCreateTenant(datasets, isSuperAdmin, !!editingApp, createTenantId);
   const canSelectWechatBinding = !!editingApp || !isSuperAdmin ||
-    (!!createTenantId && Number(createTenantId) === user?.tenant_id);
+    (!!createTenantId && Number(createTenantId) === operationTenantId);
   const handleCreateTenantChange = (tenantId: string) => {
     if (editingApp) {
       setEditTenantId(tenantId);
@@ -228,7 +232,7 @@ export default function AppsPage() {
       setAutoSelectDatasets(true);
     }
   };
-  const tenantSelector = isSuperAdmin && (!editingApp || canEditApp(editingApp, user, isSuperAdmin)) ? (
+  const tenantSelector = !workspace.enabled && isSuperAdmin && (!editingApp || canEditApp(editingApp, user, isSuperAdmin)) ? (
     <div className="space-y-2">
       <Label htmlFor="create-tenant">{t("createTenantLabel")}</Label>
       <Select value={editingApp ? editTenantId : createTenantId} onValueChange={handleCreateTenantChange}>
@@ -280,8 +284,8 @@ export default function AppsPage() {
     : createDatasets;
   const modelOwnerTenantId = editingApp
     ? (isSuperAdmin ? Number(editTenantId) || null : editingApp.owner_tenant_id)
-    : (isSuperAdmin ? Number(createTenantId) || null : user?.tenant_id);
-  const modelAccess = modelCatalogAccess(user?.tenant_id, isSuperAdmin, modelOwnerTenantId);
+    : (isSuperAdmin ? Number(createTenantId) || null : operationTenantId);
+  const modelAccess = modelCatalogAccess(operationTenantId, isSuperAdmin, modelOwnerTenantId);
   const llmModels = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
 
   // 定义加载函数（必须在 useEffect 之前）
@@ -332,6 +336,7 @@ export default function AppsPage() {
 
     // 租户列表只给超管用（接口本身也只对超管返回全部）。失败就静默留空 ——
     // 筛选器不出现、列表照常；一个可选的筛选控件不该让整页挂掉。
+    if (workspace.enabled) { setTenants(workspace.tenant ? [workspace.tenant] : []); return; }
     axios
       .get("/api/organization/tenants")
       .then((r) => setTenants(r.data?.tenants ?? []))
@@ -349,7 +354,7 @@ export default function AppsPage() {
   // 打开创建对话框
   const handleCreate = useCallback(() => {
     setEditingApp(null);
-    setCreateTenantId(user?.tenant_id ? String(user.tenant_id) : "");
+    setCreateTenantId(operationTenantId ? String(operationTenantId) : "");
     setFormData({
       name: "",
       description: "",
@@ -365,15 +370,15 @@ export default function AppsPage() {
     });
     setAutoSelectDatasets(true);
     setDialogOpen(true);
-  }, [user?.tenant_id]);
+  }, [operationTenantId]);
 
   // 打开模板选择对话框
   const handleCreateFromTemplate = useCallback(() => {
     setEditingApp(null);
-    setCreateTenantId(user?.tenant_id ? String(user.tenant_id) : "");
+    setCreateTenantId(operationTenantId ? String(operationTenantId) : "");
     setTemplateDialogOpen(true);
     setSelectedTemplate(null); // 重置选择状态
-  }, [user?.tenant_id]);
+  }, [operationTenantId]);
 
   // 创建质量分类智能体
   const handleCreateQualityAgent = useCallback(async () => {
@@ -699,7 +704,7 @@ export default function AppsPage() {
                   {/* 租户筛选：仅超管可见。
                       非超管本来就只拿得到自己租户的应用（后端收窄），给他一个
                       只有一个选项的下拉是噪音。 */}
-                  {isSuperAdmin && tenants.length > 0 && (
+                  {!workspace.enabled && isSuperAdmin && tenants.length > 0 && (
                     <Select value={tenantFilter} onValueChange={setTenantFilter}>
                       <SelectTrigger className="h-9 w-[180px]">
                         <SelectValue placeholder={t("filterByTenant")} />
@@ -1360,7 +1365,7 @@ export default function AppsPage() {
                       ) : (
                         llmModels.map((m) => (
                           <SelectItem key={m.code} value={m.code}>
-                            {m.display_name}
+                            {m.display_name}{workspace.enabled && m.platform_provided ? ` · ${tw("platformProvided")}` : ""}
                           </SelectItem>
                         ))
                       )}

@@ -256,7 +256,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-workspace-dirty={form.nickname !== (userInfo.nickname || "") || form.email !== (userInfo.email || "") || !!form.currentPassword || !!form.newPassword || !!form.confirmPassword ? "true" : undefined}>
       {/* 账户信息和个人信息并排显示 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 账户信息卡片 */}

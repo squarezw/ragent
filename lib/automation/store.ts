@@ -1,3 +1,4 @@
+import { automationTenantClause, automationWorkspaceTenant, automationWorkspaceContext } from "@/lib/automation/workspace";
 import pool from "@/lib/db";
 import {
   MAILBOX_NOT_OWNED,
@@ -408,7 +409,21 @@ export function computeNextRunAt(
 }
 
 export async function resolveAppName(appId: number) {
-  const result = await pool.query("SELECT name FROM apps WHERE id = $1", [appId]);
+  const context = automationWorkspaceContext();
+  if (!context?.enabled) {
+    const result = await pool.query("SELECT name FROM apps WHERE id = $1", [appId]);
+    return result.rows[0]?.name ? String(result.rows[0].name) : null;
+  }
+  const result = await pool.query(
+    `SELECT name FROM apps WHERE id = $1 AND owner_tenant_id = $2
+      AND (user_id = $3 OR $4::boolean OR (
+        COALESCE(status, 'published') = 'published' AND (
+          visibility IN ('public', 'tenant') OR
+          (visibility = 'dept' AND owner_dept_id = (SELECT dept_id FROM users WHERE id = $3))
+        )
+      ))`,
+    [appId, context.tenantId, context.actorUserId, Boolean(context.isSuperAdmin)]
+  );
   return result.rows[0]?.name ? String(result.rows[0].name) : null;
 }
 
@@ -455,7 +470,7 @@ async function requireOwnedMailbox(userId: number, value: unknown) {
 
 export async function createAutomation(userId: number, input: any) {
   await assertAutomationTablesReady();
-  const tenantId = await getUserTenantId(userId);
+  const tenantId = automationWorkspaceTenant() ?? await getUserTenantId(userId);
 
   const appId = Number(input.appId ?? input.app_id);
   if (!Number.isInteger(appId) || appId <= 0) throw new Error("INVALID_APP_ID");
@@ -516,6 +531,11 @@ export async function createAutomation(userId: number, input: any) {
       input.passPreviousResult ?? input.triggerConfig?.passPreviousResult ?? true;
   }
 
+  if (triggerType === "自动化完成触发" && automationWorkspaceTenant() != null &&
+      !(await getAutomation(userId, Number(triggerConfig.upstreamAutomationId)))) {
+    throw new Error("UPSTREAM_AUTOMATION_NOT_FOUND");
+  }
+
   const resultConfig = {
     resultEmail: input.resultEmail || null,
     resultEmailIncludeAttachments: Boolean(input.resultEmailIncludeAttachments),
@@ -553,7 +573,7 @@ export async function listAutomations(userId: number) {
   await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_tasks
-     WHERE created_by_user_id = $1
+     WHERE created_by_user_id = $1${automationTenantClause()}
      ORDER BY created_at DESC, id DESC`,
     [userId]
   );
@@ -564,7 +584,7 @@ export async function getAutomation(userId: number, id: number) {
   await assertAutomationTablesReady();
   const result = await pool.query(
     `SELECT * FROM automation_tasks
-     WHERE id = $1 AND created_by_user_id = $2 LIMIT 1`,
+     WHERE id = $1 AND created_by_user_id = $2${automationTenantClause()} LIMIT 1`,
     [id, userId]
   );
   return result.rows[0] || null;
@@ -704,12 +724,17 @@ export async function updateAutomation(userId: number, id: number, input: any) {
     callbackAuth: input.callbackAuth ?? existingResultConfig.callbackAuth ?? "无需验证",
   };
 
+  if (triggerType === "自动化完成触发" && automationWorkspaceTenant() != null &&
+      !(await getAutomation(userId, Number(triggerConfig.upstreamAutomationId)))) {
+    throw new Error("UPSTREAM_AUTOMATION_NOT_FOUND");
+  }
+
   const result = await pool.query(
     `UPDATE automation_tasks SET
       name=$1, app_id=$2, agent_name=$3, task=$4, trigger_type=$5,
       trigger_config=$6::jsonb, strategy=$7, status=$8,
       result_config=$9::jsonb, next_run_at=$10, updated_at=NOW()
-     WHERE id=$11 AND created_by_user_id=$12
+     WHERE id=$11 AND created_by_user_id=$12${automationTenantClause()}
      RETURNING *`,
     [
       name,
@@ -732,10 +757,11 @@ export async function updateAutomation(userId: number, id: number, input: any) {
 
 export async function deleteAutomation(userId: number, id: number) {
   await assertAutomationTablesReady();
+  if (!(await getAutomation(userId, id))) return { deleted: false, dependents: [] };
 
   const dependentResult = await pool.query(
     `SELECT id, name FROM automation_tasks
-     WHERE created_by_user_id=$1
+     WHERE created_by_user_id=$1${automationTenantClause()}
        AND trigger_type='自动化完成触发'
        AND NULLIF(trigger_config->>'upstreamAutomationId','')::INTEGER=$2
      ORDER BY id`,
@@ -748,7 +774,7 @@ export async function deleteAutomation(userId: number, id: number) {
 
   const result = await pool.query(
     `DELETE FROM automation_tasks
-     WHERE id=$1 AND created_by_user_id=$2
+     WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
      RETURNING id`,
     [id, userId]
   );
@@ -982,7 +1008,7 @@ export async function listRunActions(userId: number, runId: number) {
     `SELECT action.*
      FROM automation_run_actions AS action
      INNER JOIN automation_runs AS run ON run.id = action.run_id
-     WHERE action.run_id=$1 AND run.created_by_user_id=$2
+     WHERE action.run_id=$1 AND run.created_by_user_id=$2${automationTenantClause("run")}
      ORDER BY action.id ASC`,
     [runId, userId]
   );
@@ -1021,7 +1047,7 @@ export async function prepareAutomaticRunActions(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1086,7 +1112,7 @@ export async function claimNextRunAction(userId: number, runId: number) {
        FROM automation_run_actions AS candidate
        INNER JOIN automation_runs AS run ON run.id = candidate.run_id
        WHERE candidate.run_id=$1
-         AND run.created_by_user_id=$2
+         AND run.created_by_user_id=$2${automationTenantClause("run")}
          AND run.status='action_running'
          AND candidate.status='pending'
        ORDER BY candidate.id ASC
@@ -1119,7 +1145,7 @@ export async function completeRunAction(
      FROM automation_runs AS run
      WHERE action.id=$4
        AND action.run_id=run.id
-       AND run.created_by_user_id=$5
+       AND run.created_by_user_id=$5${automationTenantClause("run")}
        AND action.status='running'
      RETURNING action.*`,
     [status, JSON.stringify(resultData || {}), errorText || null, actionId, userId]
@@ -1137,7 +1163,7 @@ export async function finalizeRunActions(userId: number, runId: number) {
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1205,7 +1231,7 @@ export async function prepareFailedRunActionsForRetry(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1413,7 +1439,7 @@ export async function getRunForUser(userId: number, runId: number) {
 
   const result = await pool.query(
     `SELECT * FROM automation_runs
-     WHERE id=$1 AND created_by_user_id=$2
+     WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
      LIMIT 1`,
     [runId, userId]
   );
@@ -1428,7 +1454,7 @@ export async function listRunReviewHistory(userId: number, runId: number) {
     `SELECT history.*
      FROM automation_run_review_history AS history
      INNER JOIN automation_runs AS run ON run.id = history.run_id
-     WHERE history.run_id=$1 AND run.created_by_user_id=$2
+     WHERE history.run_id=$1 AND run.created_by_user_id=$2${automationTenantClause("run")}
      ORDER BY history.created_at ASC, history.id ASC`,
     [runId, userId]
   );
@@ -1449,7 +1475,7 @@ export async function saveRunReviewDraft(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1502,7 +1528,7 @@ export async function beginRunRegeneration(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1557,7 +1583,7 @@ export async function restoreRunAfterRegenerationFailure(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1621,7 +1647,7 @@ export async function approveRunReview(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1688,7 +1714,7 @@ export async function rejectRunReview(
 
     const locked = await client.query(
       `SELECT * FROM automation_runs
-       WHERE id=$1 AND created_by_user_id=$2
+       WHERE id=$1 AND created_by_user_id=$2${automationTenantClause()}
        FOR UPDATE`,
       [runId, userId]
     );
@@ -1979,7 +2005,7 @@ export async function listAutomationNotifications(userId: number) {
             error, started_at, created_at, updated_at, finished_at,
             COALESCE(updated_at, finished_at, created_at, started_at) AS event_time
      FROM automation_runs
-     WHERE created_by_user_id=$1
+     WHERE created_by_user_id=$1${automationTenantClause()}
        AND (
          status='pending'
          OR (
@@ -1999,7 +2025,7 @@ export async function listAutomationNotifications(userId: number) {
             COALESCE(action.finished_at, action.updated_at, action.created_at) AS event_time
      FROM automation_run_actions AS action
      JOIN automation_runs AS run ON run.id=action.run_id
-     WHERE run.created_by_user_id=$1
+     WHERE run.created_by_user_id=$1${automationTenantClause("run")}
        AND action.status='failed'
        AND COALESCE(action.finished_at, action.updated_at, action.created_at) >= $2
      ORDER BY COALESCE(action.finished_at, action.updated_at, action.created_at) DESC, action.id DESC
@@ -2026,7 +2052,7 @@ export async function listAutomationNotifications(userId: number) {
   const mailboxErrorResult = await pool.query(
     `SELECT id, name, email, last_error, last_error_at
      FROM automation_mailboxes
-     WHERE created_by_user_id=$1 AND status='error'
+     WHERE created_by_user_id=$1${automationTenantClause()} AND status='error'
      ORDER BY last_error_at DESC NULLS LAST, id DESC
      LIMIT 50`,
     [userId]
@@ -2164,11 +2190,13 @@ export async function listAutomationNotifications(userId: number) {
 
 export async function markAutomationNotificationsRead(userId: number, eventKeys: string[]) {
   await assertAutomationTablesReady();
+  const visibleKeys = automationWorkspaceTenant() == null ? null :
+    new Set((await listAutomationNotifications(userId)).items.map((item) => item.eventKey));
   const keys = Array.from(
     new Set(
       (Array.isArray(eventKeys) ? eventKeys : [])
         .map((value) => String(value || "").trim())
-        .filter((value) => value.length > 0 && value.length <= 255)
+        .filter((value) => value.length > 0 && value.length <= 255 && (!visibleKeys || visibleKeys.has(value)))
     )
   ).slice(0, 100);
 
@@ -2197,7 +2225,7 @@ export async function listRuns(userId: number, automationId?: number) {
 
   const result = await pool.query(
     `SELECT * FROM automation_runs
-     WHERE created_by_user_id=$1 ${automationFilter}
+     WHERE created_by_user_id=$1${automationTenantClause()} ${automationFilter}
      ORDER BY created_at DESC, id DESC
      LIMIT 500`,
     params

@@ -14,7 +14,7 @@ export function isValidSkillDescription(description: string): boolean {
   return trimmed.length > 0 && trimmed.length <= SKILL_DESCRIPTION_MAX_LENGTH;
 }
 
-/** 逗号分隔输入 → 去重去空的名字数组（requires.tools / requires.workflows 简易编辑） */
+/** 逗号分隔输入 → 去重去空的工具名字数组 */
 export function parseNameList(input: string): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

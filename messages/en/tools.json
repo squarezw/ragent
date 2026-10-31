@@ -110,7 +110,6 @@
   "builtinWhy": "Rationale",
   "builtinDisabledByEnv": "Disabled by env",
   "builtinEnvHint": "Deployment switch: environment variable {envVar}.",
-  "workflowTool": "Long-task switch",
   "footprintSummary": "{count} subtools · ~{tokens} tokens/turn",
   "connectionStatus": "Connection",
   "connUntested": "Not verified",
@@ -143,5 +142,11 @@
   "creatorDeleted": "User deleted",
   "executionScopeAll": "Showing platform-wide execution records and statistics.",
   "executionScopeTenant": "Showing execution records and statistics for users in your tenant only.",
-  "executionScopeSelf": "Showing your own execution records and statistics only."
+  "executionScopeSelf": "Showing your own execution records and statistics only.",
+  "ownerScope": "Ownership",
+  "ownerColumn": "Belongs to",
+  "ownerPlatformShort": "Platform",
+  "ownerTenantUnnamed": "Unnamed organization",
+  "ownerPlatform": "Platform shared (all tenants)",
+  "ownerScopeHelp": "Only super administrators can change ownership. Tenant ownership requires removing conflicting app bindings first. Changes to shared configuration affect all tenants."
 }

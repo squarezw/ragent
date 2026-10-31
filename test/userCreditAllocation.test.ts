@@ -82,6 +82,7 @@ async function lifecycle(
   const exports = {} as { default: (req: unknown, res: unknown) => Promise<void> };
   vm.runInNewContext(compiled, {
     exports,
+    process: { env: {} },
     console: { error() {} },
     require(name: string) {
       if (name === "@/lib/auth") return { getUserIdFromRequest: () => 1 };

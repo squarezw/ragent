@@ -39,7 +39,7 @@ import { FileFilter } from "./components/FileFilter";
 import { CrawlerDialog } from "./components/CrawlerDialog";
 // Components
 import { FileList } from "./components/FileList";
-import { FloatingUploadButton } from "./components/FloatingUploadButton";
+import { FloatingUploadButton, type FloatingUploadButtonHandle } from "./components/FloatingUploadButton";
 import { SegmentDetail } from "./components/SegmentDetail";
 
 type ApiError = {
@@ -86,6 +86,7 @@ export default function KnowledgePage() {
   const [showCrawlerDialog, setShowCrawlerDialog] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const previewDismissedRef = useRef(false);
+  const uploadButtonRef = useRef<FloatingUploadButtonHandle>(null);
 
   // 当前操作的文件
   const [currentFile, setCurrentFile] = useState<FileItem | null>(null);
@@ -105,6 +106,8 @@ export default function KnowledgePage() {
     loading,
     totalUnsegmentedCount,
     dataset,
+    canUpload,
+    canReplace,
     deleteFile,
     deleteFiles,
     updateFile,
@@ -584,6 +587,7 @@ export default function KnowledgePage() {
             downloadingFileId={downloadingFileId}
             canModifyFile={canModifyFile}
             canDeleteFile={canDeleteFile}
+            onUploadRequested={datasetId && canUpload ? () => uploadButtonRef.current?.openFilePicker() : undefined}
           />
 
           {/* 分页组件 */}
@@ -672,9 +676,11 @@ export default function KnowledgePage() {
       />
 
       {/* 悬浮上传按钮 */}
-      {datasetId && (
+      {datasetId && canUpload && (
         <FloatingUploadButton
+          ref={uploadButtonRef}
           datasetId={datasetId}
+          canReplace={canReplace}
           onUploadSuccess={() => {
             // 上传成功后刷新文件列表
             refreshFileList();

@@ -1,3 +1,4 @@
+import { workspaceUrl } from "./workspaceBrowser";
 import axios from "@/lib/axios";
 
 /**
@@ -22,7 +23,7 @@ export function getFileDownloadUrl(fileId: string | undefined, filename: string)
   if (!fileId || fileId === "undefined") {
     throw new Error("file_id is required for file download");
   }
-  return `/api/uploads/${filename}?file_id=${fileId}`;
+  return workspaceUrl(`/api/uploads/${filename}?file_id=${fileId}`);
 }
 
 /**

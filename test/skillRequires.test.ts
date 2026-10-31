@@ -5,7 +5,6 @@ import {
   buildGapGroups,
   classifyRequiresGap,
   filterToolOptions,
-  filterWorkflowOptions,
   groupToolOptions,
   normalizeRequiresList,
   parseRequiresOptions,
@@ -14,8 +13,6 @@ import {
   removeRequiresName,
   resolveRequiresGapGuidance,
   resolveToolSelection,
-  resolveWorkflowSelection,
-  selectableWorkflowOptions,
   summarizeDiagnostics,
   toggleRequiresName,
   type SkillRequiresGap,
@@ -31,6 +28,27 @@ function gap(partial: Partial<SkillRequiresGap>): SkillRequiresGap {
     ...partial,
   };
 }
+
+test("tool requirements preserve fallback input and exclude unsupported registry rows", () => {
+  const parsed = parseRequiresOptions({ tools: [
+    { name: "bare" },
+    { name: "mcp-company", tool_type: "mcp" },
+    { name: "obsolete-kind", tool_type: "unsupported-registry" },
+  ] });
+  assert.deepEqual(parsed.tools.map(tool => tool.name), ["bare", "mcp-company"]);
+  assert.deepEqual(parseRequiresOptions(undefined), { tools: [] });
+  assert.deepEqual(parseRequiresOptions("bad response"), { tools: [] });
+});
+
+test("tool diagnostics retain known gaps and ignore unsupported dependency kinds", () => {
+  const parsed = parseSkillDiagnostics({ items: [{
+    skill_id: 1, skill_name: "test-skill", effective: false,
+    missing: [gap({}), { name: "old-kind", kind: "unsupported-registry" }],
+  }] });
+  assert.equal(parsed?.items[0].missing.length, 1);
+  assert.equal(parsed?.items[0].missing[0].kind, "tool");
+  assert.deepEqual(buildGapGroups([gap({})]).map(group => group.kind), ["tool"]);
+});
 
 // ==================== 三种缺口分类 ====================
 
@@ -99,127 +117,6 @@ test("resolveRequiresGapGuidance: 未绑定给绑定入口，与是否超管无�
   assert.equal(resolveRequiresGapGuidance(gap({}), { isSuperAdmin: false }).action, "bind-tools");
 });
 
-// ==================== workflow 缺口的两种情形 ====================
-
-test("resolveRequiresGapGuidance: workflow kind 不存在", () => {
-  const g = gap({
-    name: "cad.review",
-    kind: "workflow",
-    available: false,
-    tool_type: null,
-    globally_enabled: false,
-  });
-  assert.deepEqual(resolveRequiresGapGuidance(g), {
-    category: "unknown-name",
-    kind: "workflow",
-    messageKey: "gapWorkflowNotRegistered",
-    action: "edit-skill",
-  });
-});
-
-test("resolveRequiresGapGuidance: workflow kind 已注册但被关", () => {
-  const g = gap({
-    name: "cad.annotate_copper",
-    kind: "workflow",
-    available: true,
-    tool_type: "workflow",
-    globally_enabled: false,
-  });
-  assert.deepEqual(resolveRequiresGapGuidance(g), {
-    category: "globally-disabled",
-    kind: "workflow",
-    messageKey: "gapWorkflowDisabled",
-    action: "none",
-  });
-  assert.equal(resolveRequiresGapGuidance(g, { isSuperAdmin: true }).action, "manage-tools");
-});
-
-test("resolveRequiresGapGuidance: workflow 契约外的 globally_enabled=true 不给绑定入口", () => {
-  const g = gap({
-    name: "cad.export",
-    kind: "workflow",
-    available: true,
-    tool_type: "workflow",
-    globally_enabled: true,
-  });
-  const guidance = resolveRequiresGapGuidance(g);
-  assert.equal(guidance.category, "not-bound-to-app");
-  assert.equal(guidance.messageKey, "gapWorkflowDisabled");
-  assert.notEqual(guidance.action, "bind-tools");
-});
-
-// ==================== 混合 missing 的分组渲染数据 ====================
-
-test("buildGapGroups: 工具与 workflow 同时缺 → 工具组在前，各带自己的指引", () => {
-  const groups = buildGapGroups([
-    gap({ name: "qcc-risk", kind: "tool", available: true, globally_enabled: true }),
-    gap({
-      name: "cad.annotate_copper",
-      kind: "workflow",
-      available: true,
-      tool_type: "workflow",
-      globally_enabled: false,
-    }),
-    gap({
-      name: "typo-tool",
-      kind: "tool",
-      available: false,
-      tool_type: null,
-      globally_enabled: false,
-    }),
-  ]);
-
-  assert.equal(groups.length, 2);
-  assert.equal(groups[0].kind, "tool");
-  assert.deepEqual(
-    groups[0].gaps.map((g) => [g.name, g.guidance.messageKey, g.guidance.action]),
-    [
-      ["qcc-risk", "gapToolNotBound", "bind-tools"],
-      ["typo-tool", "gapToolNotFound", "edit-skill"],
-    ]
-  );
-  assert.equal(groups[1].kind, "workflow");
-  assert.deepEqual(
-    groups[1].gaps.map((g) => [g.name, g.guidance.messageKey]),
-    [["cad.annotate_copper", "gapWorkflowDisabled"]]
-  );
-});
-
-test("buildGapGroups: 空组不返回", () => {
-  const onlyWorkflows = buildGapGroups([
-    gap({
-      name: "cad.x",
-      kind: "workflow",
-      available: false,
-      tool_type: null,
-      globally_enabled: false,
-    }),
-  ]);
-  assert.equal(onlyWorkflows.length, 1);
-  assert.equal(onlyWorkflows[0].kind, "workflow");
-  assert.deepEqual(buildGapGroups([]), []);
-});
-
-test("buildGapGroups: isSuperAdmin 透传到每条指引", () => {
-  const groups = buildGapGroups(
-    [
-      gap({ name: "disabled-tool", globally_enabled: false }),
-      gap({
-        name: "cad.off",
-        kind: "workflow",
-        available: true,
-        tool_type: "workflow",
-        globally_enabled: false,
-      }),
-    ],
-    { isSuperAdmin: true }
-  );
-  assert.deepEqual(
-    groups.flatMap((g) => g.gaps.map((x) => x.guidance.action)),
-    ["manage-tools", "manage-tools"]
-  );
-});
-
 // ==================== 诊断响应解析与摘要 ====================
 
 const DIAGNOSTICS_FIXTURE = {
@@ -247,13 +144,6 @@ const DIAGNOSTICS_FIXTURE = {
           tool_type: "mcp",
           globally_enabled: true,
         },
-        {
-          name: "cad.annotate_copper",
-          kind: "workflow",
-          available: true,
-          tool_type: "workflow",
-          globally_enabled: false,
-        },
       ],
     },
   ],
@@ -261,17 +151,6 @@ const DIAGNOSTICS_FIXTURE = {
   effective_count: 1,
   blocked_count: 1,
 };
-
-test("parseSkillDiagnostics: 契约形状原样解析", () => {
-  const parsed = parseSkillDiagnostics(DIAGNOSTICS_FIXTURE);
-  assert.ok(parsed);
-  assert.equal(parsed.app_id, 4);
-  assert.equal(parsed.items.length, 2);
-  assert.equal(parsed.items[1].reason, "missing_tools");
-  assert.equal(parsed.items[1].missing.length, 2);
-  assert.equal(parsed.items[1].missing[1].kind, "workflow");
-  assert.equal(parsed.blocked_count, 1);
-});
 
 test("parseSkillDiagnostics: 计数缺失时从 items 推导", () => {
   const parsed = parseSkillDiagnostics({ items: DIAGNOSTICS_FIXTURE.items });
@@ -349,32 +228,7 @@ const OPTIONS_FIXTURE = {
       description: null,
     },
   ],
-  workflows: [
-    {
-      kind: "cad.annotate_copper",
-      display_name: "CAD 铜宽标注",
-      description: null,
-      is_enabled: false,
-    },
-    { kind: "cad.review_dcb", display_name: null, description: null, is_enabled: true },
-  ],
 };
-
-test("parseRequiresOptions: 缺字段时退化到 name / 启用", () => {
-  const parsed = parseRequiresOptions({
-    tools: [{ name: "bare" }, { display_name: "no name" }],
-    workflows: [{ kind: "cad.x" }],
-  });
-  assert.deepEqual(parsed.tools, [
-    { name: "bare", display_name: "bare", tool_type: "", category: null, description: null },
-  ]);
-  assert.equal(parsed.workflows[0].is_enabled, true);
-});
-
-test("parseRequiresOptions: 拿不到时返回空选项（UI 回落手工输入）", () => {
-  assert.deepEqual(parseRequiresOptions(undefined), { tools: [], workflows: [] });
-  assert.deepEqual(parseRequiresOptions("boom"), { tools: [], workflows: [] });
-});
 
 test("groupToolOptions: MCP 分区在 Native 之前，未知类型兜底 other", () => {
   const groups = groupToolOptions([
@@ -426,19 +280,6 @@ test("filterToolOptions: 命中 name / display_name / category / description，�
   assert.equal(filterToolOptions(tools, "   ").length, 3);
 });
 
-test("filterWorkflowOptions: 命中 kind 与展示名", () => {
-  const { workflows } = parseRequiresOptions(OPTIONS_FIXTURE);
-  assert.deepEqual(
-    filterWorkflowOptions(workflows, "copper").map((w) => w.kind),
-    ["cad.annotate_copper"]
-  );
-  assert.deepEqual(
-    filterWorkflowOptions(workflows, "铜宽").map((w) => w.kind),
-    ["cad.annotate_copper"]
-  );
-  assert.equal(filterWorkflowOptions(workflows, "").length, 2);
-});
-
 // ==================== 已选条目整形 ====================
 
 test("resolveToolSelection: 选项外的名字标 known=false（手工兜底要警示）", () => {
@@ -454,22 +295,6 @@ test("resolveToolSelection: 选项外的名字标 known=false（手工兜底要�
     },
     { name: "not-yet-online", known: false, displayName: null, toolType: null, disabled: false },
   ]);
-});
-
-test("resolveWorkflowSelection: 停用 kind 标 disabled，未注册 kind 标 known=false", () => {
-  const { workflows } = parseRequiresOptions(OPTIONS_FIXTURE);
-  const entries = resolveWorkflowSelection(
-    ["cad.annotate_copper", "cad.review_dcb", "cad.ghost"],
-    workflows
-  );
-  assert.deepEqual(
-    entries.map((e) => [e.name, e.known, e.disabled]),
-    [
-      ["cad.annotate_copper", true, true],
-      ["cad.review_dcb", true, false],
-      ["cad.ghost", false, false],
-    ]
-  );
 });
 
 test("resolveToolSelection: 选项为空时全部按未知处理，不丢已选值", () => {
@@ -519,39 +344,4 @@ test("parseSaveWarnings: 抽出非空字符串，缺失返回空数组", () => {
   );
   assert.deepEqual(parseSaveWarnings({ id: 1, warnings: null }), []);
   assert.deepEqual(parseSaveWarnings(null), []);
-});
-
-
-const WF = (kind: string, is_enabled: boolean) => ({
-  kind,
-  display_name: kind,
-  description: "",
-  is_enabled,
-});
-
-test("selectableWorkflowOptions 隐藏已停用的候选", () => {
-  const got = selectableWorkflowOptions([WF("a.on", true), WF("b.off", false)], []);
-  assert.deepEqual(got.map((o) => o.kind), ["a.on"]);
-});
-
-test("selectableWorkflowOptions 保留已选中的停用项", () => {
-  // 这条是重点：skill 早先声明了依赖、之后那个 kind 被全局停用。抹掉它会让用户
-  // 一编辑保存就静默丢了这条依赖，连"为什么不被注入"的线索都没有了。
-  const got = selectableWorkflowOptions(
-    [WF("a.on", true), WF("b.off", false)],
-    ["b.off"]
-  );
-  assert.deepEqual(got.map((o) => o.kind), ["a.on", "b.off"]);
-});
-
-test("selectableWorkflowOptions 全停用且无选中时返回空", () => {
-  assert.deepEqual(selectableWorkflowOptions([WF("a.off", false)], []), []);
-});
-
-test("selectableWorkflowOptions 不改变原数组顺序", () => {
-  const got = selectableWorkflowOptions(
-    [WF("z", true), WF("a", true)],
-    []
-  );
-  assert.deepEqual(got.map((o) => o.kind), ["z", "a"]);
 });

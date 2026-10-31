@@ -1,3 +1,4 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -8,7 +9,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
  * Body: { filenames: string[], dataset_id: string }
  * Response: { duplicates: { [filename: string]: ExistingFile[] } }
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -95,3 +96,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "检查重复文件失败" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

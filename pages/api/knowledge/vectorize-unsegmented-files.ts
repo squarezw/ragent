@@ -1,3 +1,5 @@
+import { workspaceHeaders } from "@/lib/workspaceTenant";
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -16,6 +18,7 @@ const MAX_RUNNING_FILES = SEGMENT_ALL_BATCH_SIZE * SEGMENT_ALL_MAX_CONCURRENT_BA
 type QueueItem = {
   fileId: string;
   authHeader?: string;
+  tenantId?: string;
 };
 
 type CandidateRow = {
@@ -30,9 +33,10 @@ let isDraining = false;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function buildHeaders(authHeader?: string) {
+function buildHeaders(authHeader?: string, tenantId?: string) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(tenantId ? { "X-Workspace-Tenant-ID": tenantId } : {}),
   };
 
   if (authHeader) {
@@ -64,7 +68,7 @@ function forgetSubmitted(fileIds: string[]) {
   });
 }
 
-async function submitBatch(fileIds: string[], authHeader?: string) {
+async function submitBatch(fileIds: string[], authHeader?: string, tenantId?: string) {
   fileIds.forEach((fileId) => {
     queuedFileIds.delete(fileId);
     runningFileIds.add(fileId);
@@ -78,7 +82,7 @@ async function submitBatch(fileIds: string[], authHeader?: string) {
     },
     {
       timeout: 120000,
-      headers: buildHeaders(authHeader),
+      headers: buildHeaders(authHeader, tenantId),
     }
   );
   rememberSubmitted(fileIds);
@@ -145,8 +149,8 @@ async function waitForBatchCompletion(fileIds: string[]) {
   });
 }
 
-function startTrackedBatch(fileIds: string[], authHeader?: string) {
-  const submitPromise = submitBatch(fileIds, authHeader);
+function startTrackedBatch(fileIds: string[], authHeader?: string, tenantId?: string) {
+  const submitPromise = submitBatch(fileIds, authHeader, tenantId);
 
   void submitPromise
     .then(() => waitForBatchCompletion(fileIds))
@@ -194,7 +198,7 @@ function takeNextBatch(maxBatchSize: number) {
 
   // Keep each external request under one auth context.
   for (let i = 0; i < queue.length && batch.length < maxBatchSize; ) {
-    if (queue[i].authHeader === first.authHeader) {
+    if (queue[i].authHeader === first.authHeader && queue[i].tenantId === first.tenantId) {
       const [item] = queue.splice(i, 1);
       queuedFileIds.delete(item.fileId);
       batch.push(item);
@@ -224,7 +228,7 @@ async function drainQueue() {
       const fileIds = batch.map((item) => item.fileId);
       const authHeader = batch[0]?.authHeader;
 
-      startTrackedBatch(fileIds, authHeader).catch((error: unknown) => {
+      startTrackedBatch(fileIds, authHeader, batch[0]?.tenantId).catch((error: unknown) => {
         console.error("[Vectorize Unsegmented] Background batch failed:", error);
       });
     }
@@ -237,7 +241,7 @@ async function drainQueue() {
   }
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -256,6 +260,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const authHeader =
     typeof req.headers.authorization === "string" ? req.headers.authorization : undefined;
 
+  const tenantId = workspaceHeaders(req)["X-Workspace-Tenant-ID"];
   const client = await pool.connect();
   try {
     const canEditRes = await client.query("SELECT can_edit_dataset($1, $2) as can_edit", [
@@ -300,10 +305,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       firstBatch.length > 0 ? availableIds.slice(firstBatch.length) : availableIds;
 
     if (firstBatch.length > 0) {
-      await startTrackedBatch(firstBatch, authHeader);
+      await startTrackedBatch(firstBatch, authHeader, tenantId);
     }
 
-    const queuedCount = enqueueFiles(remainingIds.map((fileId) => ({ fileId, authHeader })));
+    const queuedCount = enqueueFiles(remainingIds.map((fileId) => ({ fileId, authHeader, tenantId })));
     skippedCount += remainingIds.length - queuedCount;
     void drainQueue();
 
@@ -348,3 +353,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     client.release();
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

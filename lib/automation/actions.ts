@@ -1,3 +1,4 @@
+import { workspaceEnabled, WORKSPACE_HEADER } from "@/lib/workspaceTenant";
 import jwt from "jsonwebtoken";
 import {
   claimNextRunAction,
@@ -20,6 +21,9 @@ async function executeEmailAction(params: {
   run: any;
   action: any;
 }) {
+  const tenantId = Number(params.run.tenant_id);
+  if (workspaceEnabled() && (!Number.isSafeInteger(tenantId) || tenantId <= 0))
+    throw new Error("AUTOMATION_TENANT_SNAPSHOT_REQUIRED");
   const to = String(params.action.config?.to || "").trim();
   if (!to) throw new Error("结果接收邮箱为空");
 
@@ -45,6 +49,7 @@ async function executeEmailAction(params: {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      ...(workspaceEnabled() ? { [WORKSPACE_HEADER]: String(tenantId) } : {}),
       "Idempotency-Key": `automation-run-${params.run.id}-${params.action.action_key}`,
     },
     body: JSON.stringify({

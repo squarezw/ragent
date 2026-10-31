@@ -38,6 +38,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing keys array" });
   }
 
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
+    const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
+    const ctx = await requireWorkspaceTenant(req, res);
+    if (!ctx) return;
+    for (const key of keys) {
+      if (typeof key !== "string" || !await workspaceCanReadObject(ctx, key))
+        return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+    }
+  }
   try {
     const urls: Record<string, string> = {};
     for (let i = 0; i < keys.length; i += SIGN_CONCURRENCY) {

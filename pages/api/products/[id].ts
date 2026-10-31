@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -9,6 +10,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     const userId = getUserIdFromRequest(req);
     const { id } = req.query;
@@ -19,13 +22,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     switch (req.method) {
       case "GET":
-        await getProduct(req, res, id);
+        await getProduct(req, res, id, workspace.enabled ? workspace.tenantId : null);
         break;
       case "PUT":
-        await updateProduct(req, res, id);
+        await updateProduct(req, res, id, workspace.enabled ? workspace.tenantId : null);
         break;
       case "DELETE":
-        await deleteProduct(req, res, id);
+        await deleteProduct(req, res, id, workspace.enabled ? workspace.tenantId : null);
         break;
       default:
         res.setHeader("Allow", ["GET", "PUT", "DELETE"]);
@@ -37,9 +40,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-async function getProduct(req: NextApiRequest, res: NextApiResponse, id: string) {
+async function getProduct(req: NextApiRequest, res: NextApiResponse, id: string, tenantId: number | null) {
   try {
-    const result = await pool.query("SELECT * FROM products WHERE id = $1", [id]);
+    const result = await pool.query(`SELECT * FROM products WHERE id = $1${tenantId == null ? "" : " AND owner_tenant_id = $2"}`, tenantId == null ? [id] : [id, tenantId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Product not found" });
@@ -52,7 +55,7 @@ async function getProduct(req: NextApiRequest, res: NextApiResponse, id: string)
   }
 }
 
-async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: string) {
+async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: string, tenantId: number | null) {
   try {
     const { sn, name, category, material, spec, description, memo } = req.body;
 
@@ -61,9 +64,10 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: stri
     }
 
     // 检查 SN 是否已被其他产品使用
-    const existingProduct = await pool.query("SELECT id FROM products WHERE sn = $1 AND id != $2", [
+    const existingProduct = await pool.query(`SELECT id FROM products WHERE sn = $1 AND id != $2${tenantId == null ? "" : " AND owner_tenant_id = $3"}`, [
       sn,
       id,
+      ...(tenantId == null ? [] : [tenantId]),
     ]);
     if (existingProduct.rows.length > 0) {
       return res.status(400).json({ error: "Product with this SN already exists" });
@@ -72,7 +76,7 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: stri
     const query = `
       UPDATE products 
       SET sn = $1, name = $2, category = $3, material = $4, spec = $5, description = $6, memo = $7, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8
+      WHERE id = $8${tenantId == null ? "" : " AND owner_tenant_id = $9"}
       RETURNING *
     `;
 
@@ -85,6 +89,7 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: stri
       description,
       memo,
       id,
+      ...(tenantId == null ? [] : [tenantId]),
     ]);
 
     if (result.rows.length === 0) {
@@ -98,9 +103,9 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse, id: stri
   }
 }
 
-async function deleteProduct(req: NextApiRequest, res: NextApiResponse, id: string) {
+async function deleteProduct(req: NextApiRequest, res: NextApiResponse, id: string, tenantId: number | null) {
   try {
-    const result = await pool.query("DELETE FROM products WHERE id = $1 RETURNING *", [id]);
+    const result = await pool.query(`DELETE FROM products WHERE id = $1${tenantId == null ? "" : " AND owner_tenant_id = $2"} RETURNING *`, tenantId == null ? [id] : [id, tenantId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Product not found" });

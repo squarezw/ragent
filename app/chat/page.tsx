@@ -1,4 +1,6 @@
 "use client";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
+import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { findToolCompletionIndex } from "@/lib/chatSse";
 import type { ToolStep } from "./components/ToolActivity";
@@ -13,7 +15,6 @@ import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
 import { useChatSession } from "@/hooks/useChatSession";
 import { useDatasets } from "@/hooks/useDatasets";
-import { useTaskAttach } from "@/hooks/useTaskAttach";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
@@ -60,8 +61,7 @@ function toHistoryAttachments(raw: SessionAttachment[] | undefined): Attachment[
 
 export default function ChatPage() {
   const t = useTranslations("chat");
-  const { askStream, sendFeedback, setChatId, chatId } = useChatSession();
-  const { activeRuns, attachRun, cancelRun } = useTaskAttach(chatId);
+  const { askStream, sendFeedback, setChatId } = useChatSession();
 
   const { datasets } = useDatasets();
   const { organizedDatasets, loading: orgLoading } = useOrganization();
@@ -286,9 +286,14 @@ export default function ChatPage() {
           partialAnswer += chunk;
           setStreamingMessage(partialAnswer);
         },
-        onWorkflowRunStarted: (runId, kind) => {
-          if (!isCurrent()) return;
-          attachRun(runId, kind);
+        onWorkspaceWarning: (warning) => {
+          if (!isCurrent() || terminal) return;
+          const resources = [
+            warning.skipped.skills > 0 ? t("workspaceSkippedSkills", { count: warning.skipped.skills }) : null,
+            warning.skipped.tools > 0 ? t("workspaceSkippedTools", { count: warning.skipped.tools }) : null,
+            warning.skipped.datasets > 0 ? t("workspaceSkippedDatasets", { count: warning.skipped.datasets }) : null,
+          ].filter(Boolean).join(t("workspaceBindingSeparator"));
+          toast.warning(t("workspaceBindingsSkipped", { resources }), { duration: 10000 });
         },
         onToolStatus: (status) => {
           if (!isCurrent()) return;
@@ -591,7 +596,7 @@ export default function ChatPage() {
                   const absoluteUrl = new URL(url, window.location.origin).href;
                   const resource = attachmentPreviewResource({ filename, url: absoluteUrl });
                   if (resource) setPreviewResource(resource);
-                  else downloadChatLink(absoluteUrl, filename);
+                  else downloadChatLink(workspaceUrl(absoluteUrl), filename);
                 }}
                 onPreviewAttachment={(attachment) => {
                   const resource = attachmentPreviewResource(attachment);
@@ -602,8 +607,6 @@ export default function ChatPage() {
                 sendFeedback={sendFeedback}
                 messagesContainerRef={messagesContainerRef}
                 messagesEndRef={messagesEndRef}
-                activeRuns={activeRuns}
-                onCancelRun={cancelRun}
               />
 
               <div

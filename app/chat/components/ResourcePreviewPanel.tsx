@@ -1,4 +1,5 @@
 "use client";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
 
 import DxfPreview from "./DxfPreview";
 import { Download, ExternalLink, LoaderCircle, X } from "lucide-react";
@@ -73,7 +74,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
   }, [onClose]);
 
   const title = resource.kind === "dxf" ? t("dxfPreview") : resource.kind === "image" ? t("imagePreview") : t("webPreview");
-  const embedUrl = getEmbedUrl(resource);
+  const embedUrl = workspaceUrl(getEmbedUrl(resource));
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -123,7 +124,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button aria-label={t("openInNewTab")} asChild size="icon" type="button" variant="ghost">
-                  <a href={resource.url} rel="noopener noreferrer" target="_blank">
+                  <a href={workspaceUrl(resource.url)} rel="noopener noreferrer" target="_blank">
                     <ExternalLink />
                   </a>
                 </Button>
@@ -134,7 +135,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button aria-label={t("downloadOriginalDrawing")} asChild size="icon" type="button" variant="ghost">
-                    <a download href={resource.url}>
+                    <a download href={workspaceUrl(resource.url)}>
                       <Download />
                     </a>
                   </Button>
