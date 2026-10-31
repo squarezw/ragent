@@ -14,6 +14,7 @@ import SkillOrgFilter, {
 } from "./components/SkillOrgFilter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -53,6 +54,7 @@ export default function SkillsPage() {
   const workspace = useWorkspace();
   const isTenantAdmin = checkTenantAdmin(user);
   const isDeptAdmin = checkDeptAdmin(user);
+  const canFilterCreators = !userLoading && (isSuperAdmin || isTenantAdmin);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch] = useDebounce(search, 300);
@@ -82,10 +84,13 @@ export default function SkillsPage() {
     tenantId: workspace.enabled ? null : orgFilter?.tenantId ?? null,
     deptId: orgFilter?.deptId ?? null,
   });
-  const creators = useMemo(() => getSkillCreators(skills), [skills]);
+  const creators = useMemo(() => canFilterCreators ? getSkillCreators(skills) : [], [skills, canFilterCreators]);
+  useEffect(() => {
+    if (!canFilterCreators) setCreatorId(null);
+  }, [canFilterCreators]);
   const filteredSkills = useMemo(
-    () => filterSkillsByCreator(skills, creatorId),
-    [skills, creatorId]
+    () => filterSkillsByCreator(skills, canFilterCreators ? creatorId : null),
+    [skills, creatorId, canFilterCreators]
   );
 
   // 删除被引用时（409）弹引用应用清单
@@ -138,7 +143,7 @@ export default function SkillsPage() {
         <div>
           <p className="text-muted-foreground">{t("pageDescription")}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -148,6 +153,17 @@ export default function SkillsPage() {
               className="pl-8 w-56"
             />
           </div>
+          {canFilterCreators && (
+            <Select value={creatorId === null ? "all" : String(creatorId)} onValueChange={(value) => setCreatorId(value === "all" ? null : Number(value))}>
+              <SelectTrigger className="w-44" aria-label={t("filterCreator")}>
+                <SelectValue placeholder={t("allCreators")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allCreators")}</SelectItem>
+                {creators.map((creator) => <SelectItem key={creator.userId} value={String(creator.userId)}>{creator.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           {orgFilter && !workspace.enabled && (
             <SkillOrgFilter
               value={orgFilter}
@@ -192,35 +208,6 @@ export default function SkillsPage() {
             </div>
           ) : (
             <>
-              <div className="flex min-w-0 items-center gap-3 border-b pb-4">
-                <span className="shrink-0 text-sm font-medium">{t("filterCreator")}</span>
-                <div className="min-w-0 overflow-x-auto">
-                  <div className="flex min-w-max gap-2 pb-1">
-                    <Button
-                      aria-pressed={creatorId === null}
-                      className="shrink-0 whitespace-nowrap"
-                      onClick={() => setCreatorId(null)}
-                      size="sm"
-                      variant={creatorId === null ? "default" : "outline"}
-                    >
-                      {t("allCreators")}
-                    </Button>
-                    {creators.map((creator) => (
-                      <Button
-                        aria-pressed={creatorId === creator.userId}
-                        className="shrink-0 whitespace-nowrap"
-                        key={creator.userId}
-                        onClick={() => setCreatorId(creator.userId)}
-                        size="sm"
-                        variant={creatorId === creator.userId ? "default" : "outline"}
-                      >
-                        {creator.name}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
               {filteredSkills.length === 0 ? (
                 <div className="py-12 text-center">
                   <h3 className="mb-2 text-lg font-medium">{t("noSkillsForCreator")}</h3>
@@ -234,7 +221,7 @@ export default function SkillsPage() {
                     <TableRow>
                       <TableHead>{t("displayName")}</TableHead>
                       <TableHead className="max-w-md">{t("description")}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t("author")}</TableHead>
+                      {canFilterCreators && <TableHead className="whitespace-nowrap">{t("author")}</TableHead>}
                       <TableHead className="whitespace-nowrap">{t("columnOwner")}</TableHead>
                       <TableHead className="whitespace-nowrap">{tc("status")}</TableHead>
                       <TableHead className="text-right">{tc("actions")}</TableHead>
@@ -258,8 +245,8 @@ export default function SkillsPage() {
                       return (
                         <TableRow
                           key={skill.id}
-                          className={canEdit ? "cursor-pointer" : ""}
-                          onClick={canEdit ? () => router.push(`/skills/${skill.id}`) : undefined}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/skills/${skill.id}`)}
                         >
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
@@ -292,11 +279,11 @@ export default function SkillsPage() {
                               {skill.description}
                             </span>
                           </TableCell>
-                          <TableCell className="text-sm">
+                          {canFilterCreators && <TableCell className="text-sm">
                             {/* 作者账号注销后 author 为空：显示占位符而不是空白单元格，
                             空白会让人以为是渲染坏了 */}
                             {skill.author || <span className="text-muted-foreground">—</span>}
-                          </TableCell>
+                          </TableCell>}
                           {/* 部门共享显示部门；其余共享范围显示资源所属组织。 */}
                           <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                             {owner.label ? (
@@ -325,27 +312,23 @@ export default function SkillsPage() {
                           </TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-2">
-                              {/* 没有写权限的人：编辑/删除藏掉，**查看也一并藏掉**——跨租户的
-                              公开技能在列表里只展示一行，既不能改也不能点进去看详情。
-                              操作列空白，而不是放一个「查看」按钮骗人能进去。 */}
-                              {canEdit && (
-                                <>
+                              {/* Shared users open the safe summary and their own variable settings. */}
+                              <>
                                   <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => router.push(`/skills/${skill.id}`)}
                                   >
-                                    {tc("edit")}
+                                    {canEdit && skill.can_view_content === true ? tc("edit") : tc("view")}
                                   </Button>
-                                  {canDelete && <Button
+                                  {canEdit && canDelete && <Button
                                     variant="destructive"
                                     size="sm"
                                     onClick={() => handleDelete(skill)}
                                   >
                                     {tc("delete")}
                                   </Button>}
-                                </>
-                              )}
+                              </>
                             </div>
                           </TableCell>
                         </TableRow>

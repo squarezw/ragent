@@ -85,8 +85,8 @@ function BlockedSkill({
 }) {
   const t = useTranslations("skills");
   const groups = useMemo(
-    () => buildGapGroups(item.missing, { isSuperAdmin }),
-    [item.missing, isSuperAdmin]
+    () => item.can_view_content === true ? buildGapGroups(item.missing, { isSuperAdmin }) : [],
+    [item.missing, item.can_view_content, isSuperAdmin]
   );
 
   return (
@@ -105,8 +105,8 @@ function BlockedSkill({
       {item.reason && (
         <p className="mt-1 text-xs text-muted-foreground">
           {item.reason === "workspace_unavailable"
-            ? t("workspaceUnavailable")
-            : t("diagnosticsReasonTools")}
+            ? t("skillUnavailable")
+            : item.can_view_content === true ? t("diagnosticsReasonTools") : t("diagnosticsDetailsRestricted")}
         </p>
       )}
 

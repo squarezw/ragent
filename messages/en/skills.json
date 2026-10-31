@@ -365,5 +365,9 @@
   "workspaceUnavailableSkill": "Unavailable Skill",
   "workspaceSource": "Source tenant: {tenant}",
   "workspaceUnavailable": "This resource is unavailable in this tenant. Update its sharing scope or remove the binding.",
-  "workspaceUnavailableStatus": "Unavailable in this tenant"
+  "workspaceUnavailableStatus": "Unavailable in this tenant",
+  "contentAccessRestricted": "Only the creator, an administrator of the owning tenant, or a system super administrator can view this Skill’s content and internal configuration. Shared use is unchanged.",
+  "diagnosticsDetailsRestricted": "The current user cannot view internal dependency details. Contact the creator or an administrator for help.",
+  "skillUnavailable": "The current user does not have access to this Skill. Contact its creator or an administrator to update its sharing scope, or remove the binding.",
+  "skillUnavailableStatus": "Unavailable to the current user"
 }

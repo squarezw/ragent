@@ -12,6 +12,8 @@ export interface SkillRequires {
 }
 
 export interface Skill {
+  /** Server-authoritative creator/system-super capability; missing is denied. */
+  can_view_content?: boolean;
   platform_provided?: boolean;
   shared_across_tenants?: boolean;
   id: number;
@@ -185,6 +187,7 @@ export interface SkillRequiresGap {
 
 /** 单个已发布 skill 在该应用下的生效状态 */
 export interface AppSkillDiagnosticItem {
+  can_view_content?: boolean;
   skill_id: number;
   skill_name: string;
   display_name: string | null;

@@ -26,6 +26,10 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const skillId = Number(id);
 
   const { user, loading: userLoading } = useCurrentUser();
+  const workspace = useWorkspace();
+  const accessScope = !userLoading && user && (!workspace.enabled || (workspace.ready && workspace.tenant))
+    ? JSON.stringify([user.id, user.tenant_id, user.dept_id, user.status, user.roles, checkSuperAdmin(user), checkTenantAdmin(user), workspace.enabled, workspace.tenant?.id ?? null])
+    : null;
   const {
     skill,
     loading,
@@ -35,7 +39,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     submitReview,
     exportMarkdown,
     refresh,
-  } = useSkill(Number.isFinite(skillId) ? skillId : null);
+  } = useSkill(Number.isFinite(skillId) ? skillId : null, accessScope);
   const [saving, setSaving] = useState(false);
   const [exportContent, setExportContent] = useState<string | null>(null);
   const [diffSkillId, setDiffSkillId] = useState<number | null>(null);
@@ -50,15 +54,11 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   }, [skillId]);
 
   // P5：具备审核权者直接发布（自审即过），普通用户走提交审核
-  const workspace = useWorkspace();
+  const canViewContent = skill?.can_view_content === true;
   const canReview = checkSuperAdmin(user) || checkTenantAdmin(user);
-  // 资产/exec 配置编辑权 = 作者本人 / 超管 / **本租户**租户管理员，与后端
-  // _can_edit_skill 同口径（共用 lib/skillPermissions，别在这里另写一份）。
-  //
-  // 原先写的是 `canReview || 作者本人`，而 canReview 里的 checkTenantAdmin 不带租户范围
-  // ——别的租户的租户管理员在这一页能改，后端 is_reviewer 却要求同租户。松的一侧是界面，
-  // 所以表现为"能编辑能保存，保存时 403"。
-  const canEditAssets = canEditSkill(skill, user, checkSuperAdmin(user), checkTenantAdmin(user), workspace.enabled ? workspace.tenant?.id ?? null : undefined);
+  // Source visibility comes only from the backend's creator/system-super/owner-tenant-admin capability.
+  // Editing additionally retains the existing lifecycle/workspace checks.
+  const canEditAssets = canViewContent && canEditSkill(skill, user, checkSuperAdmin(user), checkTenantAdmin(user), workspace.enabled ? workspace.tenant?.id ?? null : undefined);
 
   const canManageLifecycle = canManageSkillLifecycle(skill, user, checkSuperAdmin(user), checkTenantAdmin(user), workspace.enabled ? workspace.tenant?.id ?? null : undefined);
 
@@ -91,6 +91,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   };
 
   const handleExport = async () => {
+    if (!canViewContent) return;
     const content = await exportMarkdown();
     if (content !== null) {
       setExportContent(content);
@@ -125,12 +126,13 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
           <ArrowLeft className="h-4 w-4 mr-2" />
           {t("backToList")}
         </Button>
-        <Button variant="outline" onClick={handleExport}>
+        {canViewContent && <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 mr-2" />
           {t("exportSkillMd")}
-        </Button>
+        </Button>}
       </div>
 
+      {canViewContent ? <>
       <SkillEditor
         skill={skill}
         saving={saving}
@@ -167,22 +169,31 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         }
       />
 
+      </> : (
+        <section className="space-y-2 rounded-md border p-4">
+          <h1 className="text-xl font-semibold">{skill.display_name || skill.name}</h1>
+          <p className="text-sm text-muted-foreground">{skill.description}</p>
+          {skill.is_executable && <p className="text-sm">{t("executableHint")}</p>}
+          <p className="text-sm text-muted-foreground">{t("contentAccessRestricted")}</p>
+        </section>
+      )}
+
       {/*
         个人环境变量：**不受 canEditAssets 约束**——配凭据的是 skill 的使用者，
         他通常既不是作者也不是管理员；写的也只是自己那一行。
         skill 没声明 env 模板时组件自己整块不渲染。
       */}
-      <SkillUserEnvPanel skillId={skill.id} skillDisplayName={skill.display_name || skill.name} />
+      {skill.is_executable === true && <SkillUserEnvPanel skillId={skill.id} skillDisplayName={skill.display_name || skill.name} />}
 
       {/* 草稿 vs 已发布对照 */}
-      <SkillDiffDialog
+      {canViewContent && <SkillDiffDialog
         skillId={diffSkillId}
         skillName={skill.name}
         onOpenChange={(open) => !open && setDiffSkillId(null)}
-      />
+      />}
 
       {/* SKILL.md 导出预览 */}
-      <Dialog
+      {canViewContent && <Dialog
         open={exportContent !== null}
         onOpenChange={(open) => !open && setExportContent(null)}
       >
@@ -213,7 +224,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
             </Button>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </div>
   );
 }
