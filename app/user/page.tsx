@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { useEffect, useState, useCallback } from "react";
 import { useSWRConfig } from "swr";
 import { PENDING_TENANT_COUNT_KEY } from "@/hooks/usePendingTenantCount";
@@ -110,6 +111,9 @@ export default function UserPage() {
   const tc = useTranslations("common");
   const locale = useLocale();
   const { user, loading: userLoading } = useCurrentUser();
+  const workspace = useWorkspace();
+  const operationTenantId = workspace.enabled ? workspace.tenant?.id : user?.tenant_id;
+  const workspaceReady = !workspace.enabled || (workspace.ready && operationTenantId != null);
   const [users, setUsers] = useState<User[]>([]);
   const creditBalances = useUserCreditBalances(users.map((item) => item.id));
   const [allocationUser, setAllocationUser] = useState<User | null>(null);
@@ -237,7 +241,9 @@ export default function UserPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filterTenantId !== null) {
+      if (workspace.enabled && operationTenantId != null) {
+        params.append("tenant_id", operationTenantId.toString());
+      } else if (filterTenantId !== null) {
         params.append("tenant_id", filterTenantId.toString());
       }
       if (filterDeptId !== null) {
@@ -254,32 +260,32 @@ export default function UserPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterTenantId, filterDeptId, debouncedSearchUsername]);
+  }, [filterTenantId, filterDeptId, debouncedSearchUsername, workspace.enabled, operationTenantId]);
 
   const fetchTenants = useCallback(async () => {
     try {
       const res = await axios.get("/api/organization/tenants");
       console.log("租户数据:", res.data);
-      setTenants(res.data.tenants || []);
+      setTenants(workspace.enabled ? (res.data.tenants || []).filter((tenant: Tenant) => tenant.id === operationTenantId) : res.data.tenants || []);
     } catch (error) {
       console.error("获取租户列表失败:", error);
     }
-  }, []);
+  }, [workspace.enabled, operationTenantId]);
 
   const fetchDepts = useCallback(async () => {
     try {
-      let url = "/api/organization/depts";
+      let url = workspace.enabled ? `/api/organization/depts?tenant_id=${operationTenantId}` : "/api/organization/depts";
 
       // 根据用户权限决定获取哪些部门
       if (user?.isSuperAdmin) {
         // 超级管理员可以获取所有部门
-        url = "/api/organization/depts";
-      } else if (user?.isTenantAdmin && user?.tenant_id) {
+        url = workspace.enabled ? `/api/organization/depts?tenant_id=${operationTenantId}` : "/api/organization/depts";
+      } else if (user?.isTenantAdmin && operationTenantId) {
         // 租户管理员只能获取自己租户的部门
-        url = `/api/organization/depts?tenant_id=${user.tenant_id}`;
-      } else if (user?.isDeptAdmin && user?.tenant_id) {
+        url = `/api/organization/depts?tenant_id=${operationTenantId}`;
+      } else if (user?.isDeptAdmin && operationTenantId) {
         // 部门管理员可以获取自己管理的部门（包括子部门）
-        url = `/api/organization/depts?tenant_id=${user.tenant_id}`;
+        url = `/api/organization/depts?tenant_id=${operationTenantId}`;
       }
 
       const res = await axios.get(url);
@@ -288,10 +294,10 @@ export default function UserPage() {
     } catch (error) {
       console.error("获取部门列表失败:", error);
     }
-  }, [user?.isSuperAdmin, user?.isTenantAdmin, user?.isDeptAdmin, user?.tenant_id]);
+  }, [user?.isSuperAdmin, user?.isTenantAdmin, user?.isDeptAdmin, operationTenantId, workspace.enabled]);
 
   useEffect(() => {
-    if (user) {
+    if (user && workspaceReady) {
       fetchUsers();
 
       // 根据用户权限获取相应的数据
@@ -303,16 +309,18 @@ export default function UserPage() {
         fetchDepts();
       }
     }
-  }, [user, fetchUsers, fetchTenants, fetchDepts]);
+  }, [user, workspaceReady, fetchUsers, fetchTenants, fetchDepts]);
 
   const handleOpenAdd = () => {
-    setForm(createEmptyUser(user, t("normalUser")));
+    if (!workspaceReady) return;
+    setForm({ ...createEmptyUser(user, t("normalUser")), ...(workspace.enabled ? { tenant_id: operationTenantId, dept_id: null } : {}) });
     setEditing(false);
     setShowDialog(true);
     setError("");
   };
 
   const handleOpenEdit = (user: User) => {
+    if (!workspaceReady || (workspace.enabled && user.tenant_id !== operationTenantId)) return;
     setForm({ ...user, role: user.roles?.[0] || t("normalUser"), password: "" });
     setEditing(true);
     setShowDialog(true);
@@ -398,6 +406,7 @@ export default function UserPage() {
   };
 
   const handleSubmit = async () => {
+    if (!workspaceReady || (workspace.enabled && form.tenant_id !== operationTenantId)) return;
     setError("");
     setLoading(true);
 
@@ -549,7 +558,7 @@ export default function UserPage() {
                 autoComplete="off"
               />
             </div>
-            {isSuperAdmin && (
+            {!workspace.enabled && isSuperAdmin && (
               <div className="flex items-center gap-2">
                 <label htmlFor="filter-tenant" className="text-sm font-medium">
                   {t("tenant")}:
@@ -592,7 +601,7 @@ export default function UserPage() {
                     setFilterDeptId(parseInt(value, 10));
                   }
                 }}
-                disabled={isSuperAdmin && filterTenantId === null}
+                disabled={!workspace.enabled && isSuperAdmin && filterTenantId === null}
               >
                 <SelectTrigger id="filter-dept" className="w-[200px]">
                   <SelectValue placeholder={t("allDepts")} />
@@ -601,15 +610,17 @@ export default function UserPage() {
                   <SelectItem value="all">{t("allDepts")}</SelectItem>
                   {(() => {
                     let availableDepts = depts;
-                    if (isSuperAdmin && filterTenantId !== null) {
+                    if (workspace.enabled) {
+                      availableDepts = depts.filter((dept) => dept.tenant_id === operationTenantId);
+                    } else if (isSuperAdmin && filterTenantId !== null) {
                       // 超级管理员选择租户后，只显示该租户的部门
                       availableDepts = depts.filter((dept) => dept.tenant_id === filterTenantId);
                     } else if (isTenantAdmin) {
                       // 租户管理员只显示自己租户的部门
-                      availableDepts = depts.filter((dept) => dept.tenant_id === user?.tenant_id);
+                      availableDepts = depts.filter((dept) => dept.tenant_id === operationTenantId);
                     } else if (isDeptAdmin) {
                       // 部门管理员只显示自己租户的部门
-                      availableDepts = depts.filter((dept) => dept.tenant_id === user?.tenant_id);
+                      availableDepts = depts.filter((dept) => dept.tenant_id === operationTenantId);
                     }
                     return availableDepts.map((dept) => (
                       <SelectItem key={dept.id} value={dept.id.toString()}>
@@ -876,6 +887,7 @@ export default function UserPage() {
                       <select
                         id="new-tenant"
                         className="w-full border rounded px-2 py-1"
+                        disabled={workspace.enabled}
                         value={form.tenant_id || ""}
                         onChange={(e) =>
                           setForm({
@@ -911,7 +923,7 @@ export default function UserPage() {
                             );
                           } else if (user?.isTenantAdmin) {
                             // 租户管理员只能选择自己租户的部门
-                            return depts.filter((dept) => dept.tenant_id === user?.tenant_id);
+                            return depts.filter((dept) => dept.tenant_id === operationTenantId);
                           }
                           return [];
                         })()}
@@ -992,7 +1004,8 @@ export default function UserPage() {
                     <select
                       id="edit-tenant"
                       className="w-full border rounded px-2 py-1"
-                      value={form.tenant_id || ""}
+                      disabled={workspace.enabled}
+                        value={form.tenant_id || ""}
                       onChange={(e) =>
                         setForm({
                           ...form,
@@ -1109,7 +1122,7 @@ export default function UserPage() {
                       </label>
                       <DeptSelect
                         id="admin-dept"
-                        depts={depts.filter((dept) => dept.tenant_id === user?.tenant_id)}
+                        depts={depts.filter((dept) => dept.tenant_id === operationTenantId)}
                         value={form.dept_id}
                         onChange={(deptId) => setForm({ ...form, dept_id: deptId })}
                         placeholder={t("noDept")}
