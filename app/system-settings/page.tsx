@@ -1,4 +1,6 @@
 "use client";
+import { usePathname } from "next/navigation";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { TenantModelsManager } from "@/components/TenantModelsManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -117,6 +119,8 @@ interface SystemSettings {
 export default function SystemSettingsPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
+  const workspace = useWorkspace();
+  const platformPage = usePathname() === "/platform-settings";
   const { mutate } = useSWRConfig();
   const t = useTranslations("systemSettings");
   const tc = useTranslations("common");
@@ -145,6 +149,9 @@ export default function SystemSettingsPage() {
     theme_primary_color: "",
     theme_secondary_color: "",
   });
+  const [savedSystemSettings, setSavedSystemSettings] = useState(systemSettings);
+  const [savedSmtpSettings, setSavedSmtpSettings] = useState(smtpSettings);
+  const workspaceDirty = JSON.stringify(systemSettings) !== JSON.stringify(savedSystemSettings) || JSON.stringify(smtpSettings) !== JSON.stringify(savedSmtpSettings);
   const [systemLoading, setSystemLoading] = useState(false);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [systemSuccess, setSystemSuccess] = useState(false);
@@ -164,7 +171,7 @@ export default function SystemSettingsPage() {
   // 加载系统设置（平台名称、Logo等）
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload privileged settings only when administrator access changes.
   useEffect(() => {
-    if (userLoading || !isSuperAdmin) return;
+    if (userLoading || !isSuperAdmin || (workspace.enabled && !platformPage)) return;
     let active = true;
     const loadSystemSettings = async () => {
       try {
@@ -181,10 +188,28 @@ export default function SystemSettingsPage() {
             theme_primary_color: response.data.theme_primary_color || "",
             theme_secondary_color: response.data.theme_secondary_color || "",
           });
+          setSavedSystemSettings({
+            platform_name: response.data.platform_name || "",
+            platform_logo: response.data.platform_logo || "",
+            platform_subtitle: response.data.platform_subtitle || "",
+            login_left_panel_html: response.data.login_left_panel_html || "",
+            theme_primary_color: response.data.theme_primary_color || "",
+            theme_secondary_color: response.data.theme_secondary_color || "",
+          });
 
           // 加载 SMTP 配置
           if (response.data.smtp_config) {
             setSmtpSettings({
+              SMTP_HOST: response.data.smtp_config.SMTP_HOST || "",
+              SMTP_PORT: response.data.smtp_config.SMTP_PORT || 0,
+              SMTP_USERNAME: response.data.smtp_config.SMTP_USERNAME || "",
+              SMTP_PASSWORD: response.data.smtp_config.SMTP_PASSWORD || "",
+              SMTP_FROM_NAME: response.data.smtp_config.SMTP_FROM_NAME || "",
+              SMTP_FROM_EMAIL: response.data.smtp_config.SMTP_FROM_EMAIL || "",
+              SMTP_USE_TLS: response.data.smtp_config.SMTP_USE_TLS ?? false,
+              SMTP_USE_SSL: response.data.smtp_config.SMTP_USE_SSL ?? true,
+            });
+          setSavedSmtpSettings({
               SMTP_HOST: response.data.smtp_config.SMTP_HOST || "",
               SMTP_PORT: response.data.smtp_config.SMTP_PORT || 0,
               SMTP_USERNAME: response.data.smtp_config.SMTP_USERNAME || "",
@@ -219,6 +244,7 @@ export default function SystemSettingsPage() {
       await axios.put("/api/system", {
         smtp_config: smtpSettings,
       });
+      setSavedSmtpSettings(smtpSettings);
       setSmtpSuccess(true);
       setTimeout(() => setSmtpSuccess(false), 3000);
     } catch (error: any) {
@@ -281,6 +307,11 @@ export default function SystemSettingsPage() {
         login_left_panel_html: systemSettings.login_left_panel_html,
         theme_primary_color: systemSettings.theme_primary_color,
       });
+      setSavedSystemSettings((previous) => ({ ...previous,
+        platform_name: systemSettings.platform_name, platform_logo: systemSettings.platform_logo,
+        platform_subtitle: systemSettings.platform_subtitle, login_left_panel_html: systemSettings.login_left_panel_html,
+        theme_primary_color: systemSettings.theme_primary_color,
+      }));
       setSystemSuccess(true);
       setTimeout(() => setSystemSuccess(false), 3000);
     } catch (error: any) {
@@ -339,6 +370,10 @@ export default function SystemSettingsPage() {
       });
       // 更新 SWR 缓存以触发全局主题更新
       mutate("/api/system");
+      setSavedSystemSettings((previous) => ({ ...previous,
+        theme_primary_color: systemSettings.theme_primary_color, theme_secondary_color: systemSettings.theme_secondary_color,
+        login_left_panel_html: systemSettings.login_left_panel_html,
+      }));
       setThemeSuccess(true);
       setTimeout(() => setThemeSuccess(false), 3000);
     } catch (error: any) {
@@ -387,7 +422,8 @@ export default function SystemSettingsPage() {
   }
 
   if (!user) return null;
-  if (!isSuperAdmin) {
+  if (platformPage && !isSuperAdmin) return null;
+  if (!isSuperAdmin || (workspace.enabled && !platformPage)) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-4">
@@ -401,7 +437,7 @@ export default function SystemSettingsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-workspace-dirty={workspaceDirty ? "true" : undefined}>
       <div className="flex items-center gap-2 mb-4">
         <Settings className="h-5 w-5 text-blue-600" />
         <h1 className="text-xl font-semibold">{t("title")}</h1>
@@ -1010,7 +1046,7 @@ export default function SystemSettingsPage() {
         <GithubOAuthSection defaultOpen={false} />
         </div>
         </div>
-        <TenantModelsManager />
+        {!platformPage && <TenantModelsManager />}
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——

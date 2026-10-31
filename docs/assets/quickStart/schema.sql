@@ -658,6 +658,33 @@ COMMENT ON FUNCTION public.can_edit_dataset(p_user_id integer, p_dataset_id uuid
 
 
 --
+-- Name: can_upload_dataset(integer, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.can_upload_dataset(p_user_id integer, p_dataset_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT COALESCE(public.can_edit_dataset(p_user_id, p_dataset_id), FALSE)
+        OR EXISTS (
+            SELECT 1
+            FROM public.users u JOIN public.datasets d ON d.id = p_dataset_id
+            WHERE u.id = p_user_id
+                AND u.tenant_id IS NOT NULL
+                AND d.owner_tenant_id IS NOT NULL
+                AND u.tenant_id = d.owner_tenant_id
+                AND public.can_access_dataset(p_user_id, p_dataset_id)
+                AND (
+                    d.visibility = 'tenant'
+                    OR (d.visibility = 'dept'
+                        AND u.dept_id IS NOT NULL
+                        AND d.owner_dept_id IS NOT NULL
+                        AND u.dept_id = d.owner_dept_id)
+                )
+        );
+$$;
+
+
+--
 -- Name: cleanup_old_tasks(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1458,7 +1485,6 @@ CREATE TABLE public.chat_session_detail (
     segments_ids integer[],
     segment_similarities double precision[],
     "references" integer[],
-    workflow_run_id bigint,
     prompt_tokens integer,
     completion_tokens integer,
     total_tokens integer,
@@ -1469,13 +1495,6 @@ CREATE TABLE public.chat_session_detail (
     cache_write_tokens integer,
     tenant_id integer
 );
-
-
---
--- Name: COLUMN chat_session_detail.workflow_run_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.chat_session_detail.workflow_run_id IS '若该消息触发了长任务，关联 workflow_runs.id；run 被删时置 NULL（保留消息）';
 
 
 --
@@ -3324,203 +3343,6 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- Name: workflow_events; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.workflow_events (
-    id bigint NOT NULL,
-    run_id bigint NOT NULL,
-    seq bigint NOT NULL,
-    ts timestamp with time zone DEFAULT now() NOT NULL,
-    event_type character varying(40) NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb NOT NULL
-);
-
-
---
--- Name: TABLE workflow_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.workflow_events IS 'append-only 工作流事件流；30 天保留策略由独立 cron 处理';
-
-
---
--- Name: COLUMN workflow_events.seq; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_events.seq IS '同一 run 内单调递增；append_event 用 pg_advisory_xact_lock(run_id) 保证';
-
-
---
--- Name: COLUMN workflow_events.event_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_events.event_type IS 'run.queued / run.started / node.started / node.progress / node.succeeded / node.failed / run.succeeded / run.failed / run.cancelled / interrupt / text.chunk';
-
-
---
--- Name: workflow_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.workflow_events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: workflow_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.workflow_events_id_seq OWNED BY public.workflow_events.id;
-
-
---
--- Name: workflow_node_executions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.workflow_node_executions (
-    id bigint NOT NULL,
-    run_id bigint NOT NULL,
-    node_name character varying(80) NOT NULL,
-    node_index integer NOT NULL,
-    status character varying(20) DEFAULT 'running'::character varying NOT NULL,
-    inputs jsonb DEFAULT '{}'::jsonb NOT NULL,
-    outputs jsonb DEFAULT '{}'::jsonb NOT NULL,
-    error jsonb DEFAULT '{}'::jsonb NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    elapsed_ms integer,
-    CONSTRAINT workflow_node_executions_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'skipped'::character varying])::text[])))
-);
-
-
---
--- Name: TABLE workflow_node_executions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.workflow_node_executions IS '工作流每节点的执行记录';
-
-
---
--- Name: COLUMN workflow_node_executions.metadata; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_node_executions.metadata IS '自由字段：tokens / cost / polygon_count / bytes 等';
-
-
---
--- Name: workflow_node_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.workflow_node_executions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: workflow_node_executions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.workflow_node_executions_id_seq OWNED BY public.workflow_node_executions.id;
-
-
---
--- Name: workflow_runs; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.workflow_runs (
-    id bigint NOT NULL,
-    tenant_id character varying(64),
-    user_id integer,
-    app_id integer,
-    conversation_id integer,
-    triggering_message_id integer,
-    kind character varying(64) NOT NULL,
-    status character varying(20) DEFAULT 'queued'::character varying NOT NULL,
-    inputs jsonb DEFAULT '{}'::jsonb NOT NULL,
-    outputs jsonb DEFAULT '{}'::jsonb NOT NULL,
-    error jsonb DEFAULT '{}'::jsonb NOT NULL,
-    graph jsonb DEFAULT '{}'::jsonb NOT NULL,
-    worker_id character varying(64),
-    attempts integer DEFAULT 0 NOT NULL,
-    next_retry_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    completed_at timestamp with time zone,
-    heartbeat_at timestamp with time zone,
-    CONSTRAINT workflow_runs_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'interrupted'::character varying])::text[])))
-);
-
-
---
--- Name: TABLE workflow_runs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.workflow_runs IS '长任务实例表：每条 row = 一次工作流执行';
-
-
---
--- Name: COLUMN workflow_runs.kind; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_runs.kind IS '点分多级 kind，如 cad.annotate_copper / research.insurance';
-
-
---
--- Name: COLUMN workflow_runs.status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_runs.status IS 'queued / running / succeeded / failed / cancelled / interrupted';
-
-
---
--- Name: COLUMN workflow_runs.graph; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_runs.graph IS '运行时不可变快照（Dify 范式），保证图迭代后仍可解释历史 run';
-
-
---
--- Name: COLUMN workflow_runs.worker_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_runs.worker_id IS '抢占该 run 的 dispatcher worker_id（hostname-pid-uuid）';
-
-
---
--- Name: COLUMN workflow_runs.heartbeat_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.workflow_runs.heartbeat_at IS 'runner 心跳时间，janitor 据此识别孤儿';
-
-
---
--- Name: workflow_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.workflow_runs_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: workflow_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.workflow_runs_id_seq OWNED BY public.workflow_runs.id;
-
-
---
 -- Name: app_skills id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3763,27 +3585,6 @@ ALTER TABLE ONLY public.user_roles ALTER COLUMN id SET DEFAULT nextval('public.u
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
-
-
---
--- Name: workflow_events id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_events ALTER COLUMN id SET DEFAULT nextval('public.workflow_events_id_seq'::regclass);
-
-
---
--- Name: workflow_node_executions id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_node_executions ALTER COLUMN id SET DEFAULT nextval('public.workflow_node_executions_id_seq'::regclass);
-
-
---
--- Name: workflow_runs id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_runs ALTER COLUMN id SET DEFAULT nextval('public.workflow_runs_id_seq'::regclass);
 
 
 --
@@ -4227,30 +4028,6 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: workflow_events workflow_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_events
-    ADD CONSTRAINT workflow_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: workflow_node_executions workflow_node_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_node_executions
-    ADD CONSTRAINT workflow_node_executions_pkey PRIMARY KEY (id);
-
-
---
--- Name: workflow_runs workflow_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_runs
-    ADD CONSTRAINT workflow_runs_pkey PRIMARY KEY (id);
-
-
---
 -- Name: idx_app_skills_app; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4283,13 +4060,6 @@ CREATE INDEX idx_app_tools_tool_id ON public.app_tools USING btree (tool_id);
 --
 
 CREATE INDEX idx_apps_status ON public.apps USING btree (status);
-
-
---
--- Name: idx_chat_session_detail_workflow_run; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_chat_session_detail_workflow_run ON public.chat_session_detail USING btree (workflow_run_id) WHERE (workflow_run_id IS NOT NULL);
 
 
 --
@@ -4876,41 +4646,6 @@ CREATE INDEX idx_users_tenant_id ON public.users USING btree (tenant_id);
 
 
 --
--- Name: idx_workflow_events_run_seq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_events_run_seq ON public.workflow_events USING btree (run_id, seq);
-
-
---
--- Name: idx_workflow_node_executions_run_index; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_node_executions_run_index ON public.workflow_node_executions USING btree (run_id, node_index);
-
-
---
--- Name: idx_workflow_runs_conversation; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_runs_conversation ON public.workflow_runs USING btree (conversation_id, created_at DESC);
-
-
---
--- Name: idx_workflow_runs_kind_status_created; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_runs_kind_status_created ON public.workflow_runs USING btree (kind, status, created_at);
-
-
---
--- Name: idx_workflow_runs_tenant_user_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_runs_tenant_user_status ON public.workflow_runs USING btree (tenant_id, user_id, status);
-
-
---
 -- Name: ix_app_tools_app_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5180,14 +4915,6 @@ ALTER TABLE ONLY public.app_tools
 
 ALTER TABLE ONLY public.app_tools
     ADD CONSTRAINT app_tools_tool_id_fkey FOREIGN KEY (tool_id) REFERENCES public.tools(id) ON DELETE CASCADE;
-
-
---
--- Name: chat_session_detail chat_session_detail_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.chat_session_detail
-    ADD CONSTRAINT chat_session_detail_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
 
 
 --
@@ -5471,24 +5198,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: workflow_events workflow_events_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_events
-    ADD CONSTRAINT workflow_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: workflow_node_executions workflow_node_executions_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_node_executions
-    ADD CONSTRAINT workflow_node_executions_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
-
-
---
 -- PostgreSQL database dump complete
 --
 
 \unrestrict dEH654jICKosgMjp3SoC1CjNTxO70EaCG5CV4iWvEthMaNa2KbfE0pjfv2tZdhQ
-

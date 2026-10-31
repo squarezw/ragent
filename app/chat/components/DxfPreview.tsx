@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { DxfViewer } from "dxf-viewer";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
 import { visibleDxfColor } from "@/lib/dxfPreviewColors";
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +40,8 @@ export default function DxfPreview({ url }: { url: string }) {
         instance = new ReadableDxfViewer(host.current, { autoResize: true });
         viewer.current = instance;
         await instance.Load({
-          url: `/api/chat/preview-dxf?url=${encodeURIComponent(url)}`,
+          // Worker fetches do not inherit the window fetch workspace headers.
+          url: workspaceUrl(`/api/chat/preview-dxf?url=${encodeURIComponent(url)}`),
           fonts: ["/fonts/dxf/NotoSansSC.ttf"],
           workerFactory: () => {
             const worker = new Worker(new URL("./dxf.worker.js", import.meta.url));

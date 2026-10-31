@@ -17,6 +17,7 @@ export type AutomationAgentAttachment = {
   objectKey: string;
   filename: string;
   contentType?: string;
+  uploadReceipt?: string;
   size?: number;
 };
 
@@ -53,6 +54,7 @@ export function buildAutomationAgentPayload(params: {
       filename: attachment.filename,
       content_type: attachment.contentType,
       size: attachment.size,
+      ...(attachment.uploadReceipt ? { upload_receipt: attachment.uploadReceipt } : {}),
     }));
   }
 

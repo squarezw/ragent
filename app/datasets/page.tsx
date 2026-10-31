@@ -1,4 +1,6 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
+import VisibilityIcon from "@/components/VisibilityIcon";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -64,21 +66,8 @@ const DatasetCard = ({ dataset, onSelect, onEdit, onDelete }: DatasetCardProps) 
   const t = useTranslations("datasets");
   const tc = useTranslations("common");
   const locale = useLocale();
-
-  const getVisibilityIcon = (visibility: string) => {
-    switch (visibility) {
-      case "private":
-        return <Lock className="h-5 w-5 text-muted-foreground shrink-0" />;
-      case "dept":
-        return <Users className="h-5 w-5 text-muted-foreground shrink-0" />;
-      case "tenant":
-        return <Building2 className="h-5 w-5 text-muted-foreground shrink-0" />;
-      case "public":
-        return <Globe className="h-5 w-5 text-muted-foreground shrink-0" />;
-      default:
-        return <Users className="h-5 w-5 text-muted-foreground shrink-0" />;
-    }
-  };
+  const workspace = useWorkspace();
+  const sharedReadOnly = workspace.enabled && Number(dataset.owner_tenant_id) !== workspace.tenant?.id;
 
   return (
     <Card
@@ -89,12 +78,13 @@ const DatasetCard = ({ dataset, onSelect, onEdit, onDelete }: DatasetCardProps) 
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-lg flex items-center gap-2 min-w-0">
-              {getVisibilityIcon(dataset.visibility)}
+              <VisibilityIcon visibility={dataset.visibility} />
               <div className="truncate flex-1 min-w-0">{dataset.name}</div>
             </CardTitle>
             <CardDescription className="mt-2">
               <div className="flex items-center gap-2 text-sm">
                 <span>{tc("files", { count: dataset.file_count || 0 })}</span>
+                {sharedReadOnly && <span className="text-xs text-muted-foreground">{t("workspaceSharedReadOnly")}</span>}
               </div>
             </CardDescription>
           </div>
@@ -102,9 +92,10 @@ const DatasetCard = ({ dataset, onSelect, onEdit, onDelete }: DatasetCardProps) 
             <Button
               size="sm"
               variant="ghost"
+              disabled={sharedReadOnly}
               onClick={(e) => {
                 e.stopPropagation();
-                onEdit(dataset);
+                if (!sharedReadOnly) onEdit(dataset);
               }}
             >
               <Settings className="h-4 w-4" />
@@ -123,9 +114,10 @@ const DatasetCard = ({ dataset, onSelect, onEdit, onDelete }: DatasetCardProps) 
             <Button
               size="sm"
               variant="ghost"
+              disabled={sharedReadOnly}
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(dataset);
+                if (!sharedReadOnly) onDelete(dataset);
               }}
               className="text-destructive hover:text-destructive/80"
             >

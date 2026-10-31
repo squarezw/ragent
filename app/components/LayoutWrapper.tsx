@@ -5,6 +5,8 @@ import TenantBoundary from "./TenantBoundary";
 import AppSidebar from "./AppSidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import HeaderActions from "./HeaderActions";
+import { WorkspaceProvider } from "./WorkspaceProvider";
+import WorkspaceBoundary from "./WorkspaceBoundary";
 import DynamicTitle from "./DynamicTitle";
 import { UserProvider } from "@/hooks/useCurrentUser";
 
@@ -38,6 +40,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   // 正常的后台管理界面布局
   return (
     <UserProvider>
+      <WorkspaceProvider>
       <SidebarProvider defaultOpen={!shouldCollapseSidebar}>
         <div
           className="flex w-full overflow-hidden h-screen"
@@ -59,11 +62,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                   : "flex-1 overflow-y-auto p-2 sm:p-6 min-w-0"
               }
             >
-              <TenantBoundary>{children}</TenantBoundary>
+              <WorkspaceBoundary><TenantBoundary>{children}</TenantBoundary></WorkspaceBoundary>
             </main>
           </SidebarInset>
         </div>
       </SidebarProvider>
+      </WorkspaceProvider>
     </UserProvider>
   );
 }

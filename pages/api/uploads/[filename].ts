@@ -1,3 +1,4 @@
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import path from "path";
 import axios from "axios";
@@ -8,6 +9,12 @@ import { getMimeTypeFromExtension, shouldInlineDisplay } from "@/lib/mimeTypes";
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const ctx = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
+    if (!ctx) return;
+    const file = await pool.query(`SELECT f.id FROM knowledge_files f JOIN datasets d ON d.id=f.dataset_id WHERE f.id::text=$1 AND (d.owner_tenant_id=$2 OR d.visibility='public') AND (can_access_dataset($3,d.id) OR d.visibility='public')`, [String(req.query.file_id || ""),ctx.tenantId,ctx.actorUserId]);
+    if (!file.rows.length) return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+  }
   const { filename, file_id } = req.query;
 
   if (Array.isArray(filename) || Array.isArray(file_id)) {
@@ -58,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // token 可能来自 Authorization 头(网页 axios)或 cookie(浏览器直开)，统一拼成 Bearer 转发后端
     const token = getTokenFromRequest(req);
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...workspaceHeaders(req) };
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -101,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.setHeader("Content-Disposition", "inline");
     }
 
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Cache-Control", process.env.WORKSPACE_TENANT_ENABLED === "true" ? "private, no-store" : "public, max-age=3600");
 
     response.data.on("error", (error: Error) => {
       console.error("[File Download] Stream error:", error);

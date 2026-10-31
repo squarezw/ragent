@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -14,7 +15,7 @@ const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek
  * refined by LLM for readability.
  * Used to pre-populate the "更新说明" field in the submit-review dialog.
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ detail: "Unauthorized" });
@@ -101,3 +102,5 @@ async function refineSummariesWithLLM(rawSummaries: string): Promise<string> {
     return rawSummaries;
   }
 }
+
+export default withProcessWorkspace(handler);

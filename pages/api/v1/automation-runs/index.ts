@@ -1,8 +1,10 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { listRuns, runRowToApi } from "@/lib/automation/store";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -27,4 +29,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error("[Automation Runs API] error:", error);
     return res.status(500).json({ detail: "运行记录加载失败" });
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

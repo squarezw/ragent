@@ -15,6 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/license/status`, {
       headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         accept: "application/json",
         Authorization: req.headers.authorization,
       },

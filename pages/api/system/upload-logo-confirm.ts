@@ -1,3 +1,4 @@
+import pool from "@/lib/db";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/permissions";
@@ -18,6 +19,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: "Forbidden" });
     }
 
+    if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+      const actor=await pool.query("SELECT id FROM users WHERE id=$1 AND status='active'",[userId]);
+      if(!actor.rows.length)return res.status(401).json({error:"Unauthorized"});
+    }
     const { objectKey } = req.body;
 
     if (!objectKey) {

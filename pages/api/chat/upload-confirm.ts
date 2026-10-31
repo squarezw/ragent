@@ -35,6 +35,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { objectKey, originalFilename, contentType } = req.body;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const ctx = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
+    if (!ctx) return;
+    const { verifyWorkspaceUploadReceipt } = await import("@/lib/workspaceUploadReceipt");
+    if (!verifyWorkspaceUploadReceipt(ctx, req.body.uploadReceipt || req.body.upload_receipt, objectKey, contentType))
+      return res.status(403).json({ error: "WORKSPACE_UPLOAD_RECEIPT_INVALID" });
+  }
 
   if (!objectKey || !originalFilename) {
     return res.status(400).json({ error: "Missing required fields" });

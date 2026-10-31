@@ -1,3 +1,4 @@
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
@@ -5,7 +6,7 @@ import pool from "@/lib/db";
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -42,15 +43,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              d.name AS dataset_name
       FROM knowledge_files kf
       JOIN datasets d ON d.id = kf.dataset_id
-      WHERE can_access_dataset($1, kf.dataset_id)
+      WHERE (can_access_dataset($1, kf.dataset_id) OR ($4::int IS NOT NULL AND d.visibility='public'))
         AND kf.status <> 'deleted'
+        AND ($4::int IS NULL OR (d.owner_tenant_id=$4 OR d.visibility='public'))
         AND ($2::text IS NULL
              OR kf.originalname ILIKE '%' || $2 || '%' ESCAPE '\\'
              OR kf.filename ILIKE '%' || $2 || '%' ESCAPE '\\')
       ORDER BY kf.upload_time DESC NULLS LAST, kf.id DESC
       LIMIT $3
       `,
-      [userId, search, limit + 1]
+      [userId, search, limit + 1, knowledgeWorkspaceTenantId(req)]
     );
 
     const truncated = result.rows.length > limit;
@@ -61,3 +63,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     client.release();
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

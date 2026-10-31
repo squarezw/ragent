@@ -52,7 +52,7 @@ test("history normalization does not retain or invent upload proofs", () => {
   assert.equal(chatAttachmentPayload(restored)[0].upload_receipt, undefined);
 });
 
-test("authenticated presign signs only the storage service's returned key", async () => {
+test("authenticated presign relays only the backend-authorized key and receipt", async () => {
   const { createRequire } = await import("node:module");
   const { readFileSync } = await import("node:fs");
   const { runInNewContext } = await import("node:vm");
@@ -62,7 +62,7 @@ test("authenticated presign signs only the storage service's returned key", asyn
   let userId: number | null = 7;
   let storageCalls = 0;
   const imports: Record<string, unknown> = {
-    "@/lib/auth": { getUserIdFromRequest: () => userId },
+    "@/lib/auth": { getUserIdFromRequest: () => userId, getTokenFromRequest: () => userId ? "fixture-token" : null },
     "@/lib/env": { requireEnv: () => secret },
     "@/lib/chatUploadReceipt": { signChatUploadReceipt },
     "@/lib/ossClient": {
@@ -92,6 +92,19 @@ test("authenticated presign signs only the storage service's returned key", asyn
       return imports[name];
     },
     console,
+    process: { env: {} },
+    AbortSignal,
+    fetch: async (_url: string, init: any) => {
+      storageCalls++;
+      const payload = JSON.parse(init.body);
+      assert.equal(init.headers.Authorization, "Bearer fixture-token");
+      assert.equal(payload.objectKey, undefined, "browser supplied key must never be forwarded");
+      const objectKey = "attachments/server-returned.png";
+      return { ok: true, status: 200, json: async () => ({
+        objectKey, uploadUrl: "https://offline.invalid/put", headers: {},
+        ...(payload.category === "attachments" ? { uploadReceipt: signChatUploadReceipt(7, objectKey, payload.contentType, secret) } : {}),
+      }) };
+    },
   });
   let status = 0;
   let body: any;

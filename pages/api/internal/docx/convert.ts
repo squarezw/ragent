@@ -1,3 +1,4 @@
+import { officeRequestScope, officeCapabilityUrl } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "crypto";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -35,8 +36,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ detail: "only pdf output is supported" });
   }
 
+  const scope = await officeRequestScope(req,res,type,String(id));
+  if (scope === false) return;
   const docKey = type === "session" ? `session:${id}` : `doc:${id}`;
-  const downloadUrl = generateSignedDownloadUrl(docKey);
+  const downloadUrl = scope ? officeCapabilityUrl(INTERNAL_BASE_URL,docKey,scope) : generateSignedDownloadUrl(docKey);
 
   const baseName = filename ? stripDocxExtension(filename) : String(id);
 

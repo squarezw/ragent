@@ -16,6 +16,7 @@ const routeTitleKeys: { [key: string]: string } = {
   "/graph": "knowledgeGraph",
   "/process-management": "processManagement",
   "/organization": "organization",
+  "/platform-settings": "platformSettings",
   "/user": "userManagement",
   "/settings": "settings",
   "/monitoring": "systemMonitoring",

@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { markVersionStatus } from "@/lib/documentFileVersions";
 
@@ -17,7 +18,7 @@ import { markVersionStatus } from "@/lib/documentFileVersions";
 
 const INTERNAL_API_KEY = process.env.ZN_INTERNAL_API_KEY;
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -60,3 +61,5 @@ export default async function handler(
       .json({ detail: `mark-version-status failed: ${err?.message ?? "unknown"}` });
   }
 }
+
+export default withProcessWorkspace(handler);

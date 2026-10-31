@@ -9,7 +9,7 @@
  * - **不设「When to use」**：触发条件由 description 字段承担（它的引导写法就是
  *   "Use when ..."，且注入时作为 skill 的一行摘要），正文再写一遍是重复。
  *   「不适用」的反面清单也归 description——本仓两次事故都源于触发边界没写清
- *   （长任务 GUIDANCE 关键词冲突、fund skill 与 Adobe 印前混淆），而做判断的
+ *   （不同 Skill 的触发关键词冲突），而做判断的
  *   正是 description。
  * - `References` 只能写**内联**的口径/术语；平台没有渐进披露能力，模型读不到
  *   skill 资产里的文件（见 SuperAgent/plans/2026-07-27-digital-employee-architecture.md §十一），

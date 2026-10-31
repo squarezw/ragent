@@ -1,4 +1,5 @@
 "use client";
+import { workspaceUrl } from "@/lib/workspaceBrowser";
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -140,7 +141,7 @@ export function MarkdownRenderer({
           a: ({ node, href, onClick, ...props }) => (
             <a
               className="text-blue-500 underline hover:text-blue-400"
-              href={href}
+              href={href ? workspaceUrl(href) : href}
               download={onPreviewResource && isChatDownloadOnly(href || "") ? "" : undefined}
               onClick={(event) => {
                 const resource = toPreviewResource("url", href);
@@ -161,7 +162,7 @@ export function MarkdownRenderer({
             const image = (
               // Chat content can reference arbitrary external image hosts, so it cannot use Next image optimization.
               // biome-ignore lint/performance/noImgElement: external chat images need direct rendering
-              <img alt={alt || ""} className={imageClassName} src={src} {...props} />
+              <img alt={alt || ""} className={imageClassName} src={typeof src === "string" ? workspaceUrl(src) : src} {...props} />
             );
             if (!resource || !onPreviewResource) return image;
 

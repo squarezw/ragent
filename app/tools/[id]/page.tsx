@@ -243,7 +243,7 @@ export default function ToolDetailPage({ params }: { params: Promise<{ id: strin
             <div>{tool.is_system ? t("yes") : t("no")}</div>
           </div>
 
-          {/* 连接状态。只有 MCP 工具有"连得上吗"这回事 —— native / workflow 不建立连接。
+          {/* 连接状态。只有 MCP 工具有"连得上吗"这回事 —— native 不建立连接。
               这一块存在的理由：注册是按需的（启动时不连），从没被用过的工具在
               列表页什么都看不出来，而"这条连接还能不能用"原先只能去聊天里发句话试。 */}
           {tool.tool_type === "mcp" && (

@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "未登录" });
@@ -176,3 +177,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(405).json({ error: "Method not allowed" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "dataset");

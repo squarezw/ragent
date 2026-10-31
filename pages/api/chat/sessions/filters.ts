@@ -4,6 +4,11 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import { buildVisibilityScope, deptIdsAtOrBelow } from "@/lib/visibilityScope";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
+    : { enabled: false, tenantId: null };
+  if (!workspace) return;
+
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -95,6 +100,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         deptQueryParams.push(userPerms.deptId);
         deptParamIndex++;
       }
+    }
+
+    if (workspace.enabled) {
+      userWhereConditions.push(`u.tenant_id = $${userParamIndex++}`);
+      userQueryParams.push(workspace.tenantId);
+      deptWhereConditions.push(`tenant_id = $${deptParamIndex++}`);
+      deptQueryParams.push(workspace.tenantId);
+      statsWhereConditions.push(`cs.operation_tenant_id = $${statsParamIndex++}`);
+      statsQueryParams.push(workspace.tenantId);
     }
 
     const userWhereClause = `WHERE ${userWhereConditions.join(" AND ")}`;

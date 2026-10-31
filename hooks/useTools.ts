@@ -1,4 +1,5 @@
 import useSWR from "swr";
+import { getApiErrorMessage } from "@/lib/apiError";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 
@@ -12,16 +13,19 @@ export interface ToolAppAssociation {
 }
 
 export interface Tool {
+  owner_tenant_id?: number | null;
+  owner_tenant_name?: string | null;
+  platform_provided?: boolean;
   id: number;
   name: string;
   display_name: string;
   description: string;
   /**
-   * `tools` 表里实际存在三种值。**"native" 已经不会出现**——迁移 042 之后原生工具
+   * 仅支持 MCP 和旧 native 记录。迁移 042 之后原生工具
    * 不再有行（名册在后端代码里，见 native_registry）；保留在联合类型里只为兼容尚未
-   * 迁移的老数据。"workflow" 行不是工具，是长任务 kind 的启停开关。
+   * 迁移的老数据。
    */
-  tool_type: "native" | "mcp" | "workflow";
+  tool_type: "native" | "mcp";
   category: string;
   icon?: string;
   default_config: Record<string, any>;
@@ -57,7 +61,7 @@ export interface Tool {
    * 运行时它从对方服务器拉回几十个子工具的完整 JSON Schema，且**每一轮对话都全量
    * 重发**。2026-08-25 实测：一句「你好」耗 39,550 输入 token，其中约 92% 是工具定义。
    *
-   * 缺席是正常的：native / workflow 类型不走 MCP 注册，本来就没有这个块。
+   * 缺席是正常的：native 类型不走 MCP 注册，本来就没有这个块。
    */
   footprint?: {
     /** 展开成几个子工具；0 且 status=failed 表示服务器连不上 */
@@ -72,7 +76,7 @@ export interface Tool {
      *                  与 failed 分开是因为处置相反：这个要改配置，不是等对端恢复。
      *
      * 缺席整个 footprint = **未验证**（配置完整但从没被用过，也没体检过），
-     * 与 native / workflow 行（本来就不走 MCP 注册）长得一样。界面必须把"未验证"
+     * 与 native 行（本来就不走 MCP 注册）长得一样。界面必须把"未验证"
      * 与"失败"分开画 —— 否则每个还没人用过的工具都看起来是坏的。
      */
     status: "ok" | "failed" | "unconfigured";
@@ -91,7 +95,7 @@ export interface Tool {
  *
  * 四种状态**互相不能塌成两档**（都塌成成功/失败会让人做错处置）：
  * `unconfigured` 要改配置，`failed` 要查对端或网络，`not_applicable` 是这类工具
- * 压根不建连接（native / workflow）。
+ * 压根不建连接（native）。
  */
 export interface ToolConnectionTestResult {
   status: "ok" | "failed" | "unconfigured" | "not_applicable";
@@ -152,7 +156,7 @@ export function formatTokens(n: number): string {
 }
 
 export const useTools = (params?: {
-  tool_type?: "native" | "mcp" | "workflow";
+  tool_type?: "native" | "mcp";
   category?: string;
   is_enabled?: boolean;
   page?: number;
@@ -200,7 +204,7 @@ export const useTools = (params?: {
       }
     } catch (error: any) {
       console.error("Update tool error:", error);
-      toast.error(error.response?.data?.detail || "更新工具失败");
+      toast.error(getApiErrorMessage(error, "更新工具失败"));
       return null;
     }
   };
@@ -244,7 +248,7 @@ export const useTools = (params?: {
   };
 
   return {
-    tools: data?.tools || [],
+    tools: (data?.tools || []).filter((tool: { tool_type?: string }) => tool.tool_type === "mcp" || tool.tool_type === "native"),
     total: data?.total || 0,
     page: data?.page || 1,
     pageSize: data?.page_size || 20,

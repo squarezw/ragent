@@ -17,6 +17,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const objectKey = keyParts.join("/");
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && keyParts[0] !== "system") {
+    const ctx = await (await import("@/lib/workspaceFiles")).requireWorkspaceObject(req, res, objectKey);
+    if (!ctx) return;
+  }
   const category = keyParts[0];
 
   if (!PUBLIC_CATEGORIES.includes(category)) {
@@ -40,7 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .trim();
       res.setHeader("Content-Type", contentType || "application/octet-stream");
       res.setHeader("Content-Disposition", "inline");
-      res.setHeader("Cache-Control", "private, max-age=600");
+      res.setHeader("Cache-Control", process.env.WORKSPACE_TENANT_ENABLED === "true" ? "private, no-store" : "private, max-age=600");
       Readable.fromWeb(upstream.body).pipe(res);
       return;
     }

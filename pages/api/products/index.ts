@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -9,15 +10,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     const userId = getUserIdFromRequest(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     switch (req.method) {
       case "GET":
-        await getProducts(req, res, userId);
+        await getProducts(req, res, userId, workspace.enabled ? workspace.tenantId : null);
         break;
       case "POST":
-        await createProduct(req, res, userId);
+        await createProduct(req, res, userId, workspace.enabled ? workspace.tenantId : null);
         break;
       default:
         res.setHeader("Allow", ["GET", "POST"]);
@@ -29,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-async function getProducts(req: NextApiRequest, res: NextApiResponse, userId: number) {
+async function getProducts(req: NextApiRequest, res: NextApiResponse, userId: number, tenantId: number | null) {
   try {
     const { page = 1, limit = 30, search = "", category = "", embedding_status = "" } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
@@ -37,6 +41,10 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse, userId: nu
     let whereClause = "WHERE 1=1";
     const params: any[] = [];
     let paramIndex = 1;
+    if (tenantId != null) {
+      whereClause += ` AND owner_tenant_id = $${paramIndex++}`;
+      params.push(tenantId);
+    }
 
     if (search) {
       whereClause += ` AND (name ILIKE $${paramIndex} OR sn ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
@@ -87,7 +95,7 @@ async function getProducts(req: NextApiRequest, res: NextApiResponse, userId: nu
   }
 }
 
-async function createProduct(req: NextApiRequest, res: NextApiResponse, userId: number) {
+async function createProduct(req: NextApiRequest, res: NextApiResponse, userId: number, tenantId: number | null) {
   try {
     const { sn, name, category, material, spec, description, memo } = req.body;
 
@@ -96,18 +104,18 @@ async function createProduct(req: NextApiRequest, res: NextApiResponse, userId: 
     }
 
     // 检查 SN 是否已存在
-    const existingProduct = await pool.query("SELECT id FROM products WHERE sn = $1", [sn]);
+    const existingProduct = await pool.query(`SELECT id FROM products WHERE sn = $1${tenantId == null ? "" : " AND owner_tenant_id = $2"}`, tenantId == null ? [sn] : [sn, tenantId]);
     if (existingProduct.rows.length > 0) {
       return res.status(400).json({ error: "Product with this SN already exists" });
     }
 
     const query = `
-      INSERT INTO products (sn, name, category, material, spec, description, memo)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO products (sn, name, category, material, spec, description, memo${tenantId == null ? "" : ", owner_tenant_id"})
+      VALUES ($1, $2, $3, $4, $5, $6, $7${tenantId == null ? "" : ", $8"})
       RETURNING *
     `;
 
-    const result = await pool.query(query, [sn, name, category, material, spec, description, memo]);
+    const result = await pool.query(query, [sn, name, category, material, spec, description, memo, ...(tenantId == null ? [] : [tenantId])]);
 
     res.status(201).json({ data: result.rows[0] });
   } catch (error) {

@@ -1,3 +1,6 @@
+import { withoutAutomationWorkspace } from "@/lib/automation/workspace";
+import { taskUploadAttachment } from "@/lib/automation/task-upload";
+import { workspaceEnabled } from "@/lib/workspaceTenant";
 import cron, { type ScheduledTask } from "node-cron";
 import pool from "@/lib/db";
 import { assertAutomationTablesReady } from "@/lib/automation/schema";
@@ -123,6 +126,7 @@ async function executeDueAutomation(automationId: number) {
 
     try {
       const result = await executeAutomationAgent({
+        tenantId: task.tenant_id,
         userId: task.created_by_user_id,
         appId: task.app_id,
         question: task.task,
@@ -202,7 +206,7 @@ async function executeDueAutomation(automationId: number) {
   }
 }
 
-export async function scanDueAutomations() {
+async function scanDueAutomationsInternal() {
   if (global.automationCronBusy) return;
   global.automationCronBusy = true;
 
@@ -272,6 +276,7 @@ async function fetchConfiguredMailboxUnread(
  */
 type EmailAttachmentTask = {
   created_by_user_id?: unknown;
+  tenant_id?: unknown;
   trigger_config?: { mailboxId?: unknown } | null;
 };
 
@@ -307,7 +312,7 @@ async function prepareEmailAttachments(
       Number(task.created_by_user_id),
       requireMailboxId(task.trigger_config?.mailboxId)
     );
-    if (!mailbox) return nothingDelivered;
+    if (!mailbox || (workspaceEnabled() && (Number(mailbox.tenant_id) <= 0 || Number(mailbox.tenant_id) !== Number(task.tenant_id)))) return nothingDelivered;
 
     files = await fetchMessageAttachments(
       mailboxConnectionFromRow(mailbox),
@@ -338,12 +343,12 @@ async function prepareEmailAttachments(
         category: "attachments",
       });
 
-      delivered.push({
+      delivered.push(taskUploadAttachment(task, {
         objectKey,
         filename: file.filename,
         contentType: file.contentType,
         size: file.size,
-      });
+      }));
     } catch (error) {
       console.error(`[Automation Email] 附件上传失败，跳过《${file.filename}》:`, error);
       skippedNames.push(file.filename);
@@ -405,6 +410,7 @@ async function executeEmailAutomation(task: any, message: InboxMessage) {
 
   try {
     const result = await executeAutomationAgent({
+        tenantId: task.tenant_id,
       userId: Number(task.created_by_user_id),
       appId: Number(task.app_id),
       question,
@@ -473,6 +479,13 @@ async function processEmailMailboxGroup(tasks: any[]) {
   const config = tasks[0].trigger_config || {};
   // 遗留数据缺少整数 mailboxId 时直接抛错（不再回退 system），错误由 scanEmailAutomations 按分组记录。
   const mailboxId = requireMailboxId(config.mailboxId);
+  if (workspaceEnabled()) {
+    const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
+    if (!mailbox || !Number.isSafeInteger(Number(mailbox.tenant_id)) || Number(mailbox.tenant_id) <= 0)
+      throw new Error("AUTOMATION_TENANT_SNAPSHOT_REQUIRED");
+    tasks = tasks.filter((task) => Number(task.tenant_id) === Number(mailbox.tenant_id));
+    if (!tasks.length) return;
+  }
   const cursor = await getAutomationEmailMailboxCursor(userId, mailboxId);
 
   const data = await fetchConfiguredMailboxUnread(
@@ -570,7 +583,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
   }
 }
 
-export async function scanEmailAutomations() {
+async function scanEmailAutomationsInternal() {
   if (global.automationEmailCronBusy) return;
   global.automationEmailCronBusy = true;
 
@@ -654,4 +667,12 @@ export async function initAutomationScheduler() {
     });
     console.log("[Automation Email] dedup retention cleanup initialized (daily at 03:00)");
   }
+}
+
+export async function scanDueAutomations() {
+  return withoutAutomationWorkspace(() => scanDueAutomationsInternal());
+}
+
+export async function scanEmailAutomations() {
+  return withoutAutomationWorkspace(() => scanEmailAutomationsInternal());
 }

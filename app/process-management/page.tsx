@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -49,10 +50,11 @@ export default function ProcessManagementPage() {
   const t = useTranslations("processManagement");
   const { user, loading: userLoading } = useCurrentUser();
   // undefined = still loading (skip fetch), null = no company, string = resolved
-  const companyCode = userLoading ? undefined : (user?.company_code ?? null);
+  const workspace = useWorkspace();
+  const companyCode = userLoading ? undefined : (workspace.enabled ? workspace.tenant?.company_code ?? null : user?.company_code ?? null);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
 
-  const SESSION_ID_KEY = "ragent-handbook-session";
+  const SESSION_ID_KEY = workspace.enabled ? `ragent-handbook-session:${user?.id}:${workspace.tenant?.id}` : "ragent-handbook-session";
 
   // Shared handbook session state — prefer URL param, fallback to sessionStorage
   const [handbookSessionId, setHandbookSessionId] = useState<string | null>(() => {

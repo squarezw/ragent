@@ -56,6 +56,7 @@ function manager(user: any, editDraft: ModelDraft | null = null) {
   const jsx = (type: any, props: any) => ({ type, props });
   const module = { exports: {} as any };
   const mocks: any = {
+    "@/app/components/WorkspaceProvider": { useWorkspace: () => ({ enabled: false, tenant: null }) },
     react: {
       useEffect() {},
       useState() {
@@ -168,6 +169,7 @@ test("actual catalog hook refreshes tenant scope and ignores a late previous ten
   const listeners = new Map<string, () => void>();
   const module = { exports: {} as any };
   const mocks: any = {
+    "@/app/components/WorkspaceProvider": { useWorkspace: () => ({ enabled: false, tenant: null }) },
     react: {
       useState: () => [
         state,

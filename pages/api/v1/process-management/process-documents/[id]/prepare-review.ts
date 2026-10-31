@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import FormData from "form-data";
@@ -11,7 +12,7 @@ const PROCESS_MGMT_BASE_URL = process.env.PROCESS_MGMT_BASE_URL || "http://local
  * 提交审核对话框打开时调用，返回 AI 建议的"更新说明"。
  * 首次发布 / 无 draft / 无已固化版本 → 直接返回空，由用户自填。
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -86,3 +87,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     reason: result.has_changes ? "compared" : "no_changes_detected",
   });
 }
+
+export default withProcessWorkspace(handler);

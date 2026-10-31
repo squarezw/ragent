@@ -25,12 +25,12 @@ test("工具页的写操作全部受同一条判据管", () => {
   // 新建
   assert.match(src, /\{tab === "managed" && canManageTools && \(/, "「添加工具」按钮没设门");
   // 编辑
-  assert.match(src, /\{canManageTools && \(\s*<Button variant="ghost" size="sm" onClick=\{\(\) => handleEdit\(tool\)\}>/,
+  assert.match(src, /\{canManageTools && !\(workspace.enabled && tool.platform_provided && !isSuperAdmin\) && \(\s*<Button variant="ghost" size="sm" onClick=\{\(\) => handleEdit\(tool\)\}>/,
     "「编辑」按钮没设门");
   // 删除
-  assert.match(src, /\{canManageTools && tool\.tool_type !== "workflow" && \(/, "「删除」按钮没设门");
+  assert.match(src, /\{canManageTools && !\(workspace.enabled && tool.platform_provided && !isSuperAdmin\) && \(/, "「删除」按钮没设门");
   // 启停开关
-  assert.match(src, /disabled=\{!canManageTools\}/, "启停开关没设门——它调的是 update_tool");
+  assert.match(src, /disabled=\{!canManageTools \|\| \(workspace.enabled && tool.platform_provided && !isSuperAdmin\)\}/, "启停开关没设门——它调的是 update_tool");
 });
 
 test("启停开关不是只藏了按钮而已", () => {
@@ -41,7 +41,7 @@ test("启停开关不是只藏了按钮而已", () => {
   assert.ok(idx !== -1, "找不到启停开关");
   const block = src.slice(idx, idx + 260);
   assert.ok(block.includes("checked={tool.is_enabled}"), "开关仍要显示真实状态");
-  assert.ok(block.includes("disabled={!canManageTools}"), "无权限时必须是禁用而不是隐藏");
+  assert.ok(block.includes("disabled={!canManageTools || (workspace.enabled && tool.platform_provided && !isSuperAdmin)}"), "无权限时必须是禁用而不是隐藏");
 });
 
 /**

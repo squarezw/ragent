@@ -9,9 +9,7 @@ export interface AppTool {
   tool_id: number;
   tool_name: string;
   tool_display_name: string;
-  // workflow 行也能绑：绑定它收窄该应用的长任务范围（后端 Phase 3）。
-  // 漏掉这个成员时，绑定列表会把长任务标成「MCP」，比较也会被判成永假。
-  tool_type: "native" | "mcp" | "workflow";
+  tool_type: "native" | "mcp";
   category: string;
   default_config: Record<string, any>;
   custom_config: Record<string, any>;
@@ -142,7 +140,7 @@ export const useAppTools = (appId: number | null, isEnabled?: boolean) => {
   return {
     appId: data?.app_id,
     appName: data?.app_name,
-    tools: data?.tools || [],
+    tools: (data?.tools || []).filter((tool: { tool_type?: string }) => tool.tool_type === "mcp" || tool.tool_type === "native"),
     total: data?.total || 0,
     loading: isLoading,
     error,

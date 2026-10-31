@@ -1,3 +1,4 @@
+import { officeRequestScope, officeCapabilityUrl, signOfficeScope } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -34,6 +35,9 @@ export default async function handler(
   const docType = type as string;
   const docId = id as string;
 
+  const scope = await officeRequestScope(req,res,docType,docId);
+  if (scope === false) return;
+
   // Build the document key for OnlyOffice.
   // - doc:     `doc_<id>_v<N>_<ts>`  — N 是打开编辑器时的 latest version，
   //                                    让 OnlyOffice 延迟 save 跟提交后新产生的版本隔离
@@ -48,13 +52,14 @@ export default async function handler(
   // Build the download URL that OnlyOffice will fetch the file from
   const downloadDocKey =
     docType === "session" ? `session:${docId}` : `doc:${docId}`;
-  const downloadUrl = generateSignedDownloadUrl(
+  if (scope) scope.key = docKey;
+  const downloadUrl = scope ? officeCapabilityUrl(INTERNAL_BASE_URL,downloadDocKey,scope) : generateSignedDownloadUrl(
     INTERNAL_BASE_URL,
     downloadDocKey,
   );
 
   // Build the callback URL for OnlyOffice to notify saves
-  const callbackUrl = `${INTERNAL_BASE_URL}/api/internal/onlyoffice/callback`;
+  const callbackUrl = `${INTERNAL_BASE_URL}/api/internal/onlyoffice/callback${scope ? `?cap=${encodeURIComponent(signOfficeScope(scope))}` : ""}`;
 
   // Get document title
   let title = "document.docx";

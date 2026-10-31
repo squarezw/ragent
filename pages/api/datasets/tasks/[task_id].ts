@@ -1,3 +1,5 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { requireAuth, getUserIdFromRequest } from "@/lib/auth";
@@ -8,7 +10,7 @@ const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://local
  * 查询异步任务的执行状态和结果
  * GET /api/datasets/tasks/[task_id]
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) {
     return;
   }
@@ -29,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/datasets/tasks/${task_id}`, {
-      headers: {
+      headers: { ...workspaceHeaders(req),
         accept: "application/json",
         Authorization: req.headers.authorization,
       },
@@ -72,3 +74,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

@@ -1,3 +1,4 @@
+import { workspacePreviewSource } from "@/lib/workspacePreviewSource";
 import axios from "axios";
 import jwt from "jsonwebtoken";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -7,6 +8,7 @@ const PREVIEW_TOKEN_SECRET = process.env.PREVIEW_TOKEN_SECRET || process.env.JWT
 
 interface PreviewTokenPayload {
   fileUrl: string;
+  operationTenantId?: number;
   userId: number;
   sourceAuthHeader?: string;
   timestamp?: number;
@@ -88,7 +90,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { fileUrl, sourceAuthHeader, timestamp, fileId } = payload;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && (!Number.isSafeInteger(payload.operationTenantId) || Number(payload.operationTenantId) <= 0))
+    return res.status(403).json({ error: "WORKSPACE_PREVIEW_TOKEN_REQUIRED" });
+  let { fileUrl } = payload;
+  const { sourceAuthHeader, timestamp, fileId } = payload;
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const base = process.env.FILE_PREVIEW_BASE_URL;
+    const source = base && workspacePreviewSource(fileUrl, [new URL(base).origin]);
+    if (!source || !base) return res.status(403).json({ error: "WORKSPACE_PREVIEW_SOURCE_INVALID" });
+    fileUrl = new URL(source, base).href;
+  }
 
   if (!fileUrl) {
     res.status(400).json({ error: "fileUrl missing in token" });
@@ -120,13 +131,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       targetUrl = targetUrl.replace(":3001", ":3000");
     }
 
+    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && payload.operationTenantId) {
+      const fixed = new URL(targetUrl);
+      fixed.searchParams.set("workspace_tenant_id", String(payload.operationTenantId));
+      targetUrl = fixed.href;
+    }
     const response = await axios.get(targetUrl, {
       responseType: "stream",
-      headers: sourceAuthHeader
-        ? {
-            Authorization: sourceAuthHeader,
-          }
-        : undefined,
+      headers: {
+        ...(sourceAuthHeader ? { Authorization: sourceAuthHeader } : {}),
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" ? { "X-Workspace-Tenant-ID": String(payload.operationTenantId) } : {}),
+      },
+      ...(process.env.WORKSPACE_TENANT_ENABLED === "true" ? { maxRedirects: 0 } : {}),
       timeout: 30000, // 30秒超时
     });
 

@@ -1,5 +1,9 @@
 "use client";
 
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { checkSuperAdmin } from "@/lib/clientPermissions";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
+
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -40,15 +44,19 @@ export function ToolFormDialog({
   updateTool,
 }: ToolFormDialogProps) {
   const t = useTranslations("tools");
+  const { user } = useCurrentUser();
+  const workspace = useWorkspace();
+  const canChangeOwner = !!tool && workspace.enabled && checkSuperAdmin(user) && tool.tool_type === "mcp";
+  const [ownerTenant, setOwnerTenant] = useState("platform");
   const [loading, setLoading] = useState(false);
   const [configError, setConfigError] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     display_name: "",
     description: "",
-    // 联合类型跟 Tool 一致（表里确实有 workflow 行），但**只有 mcp 能新建**：见下方
+    // 联合类型跟 Tool 一致，但只有 mcp 能新建：见下方
     // Select。默认值随之改成 mcp——原来默认 native，而那种行现在建了等于没建。
-    tool_type: "mcp" as "native" | "mcp" | "workflow",
+    tool_type: "mcp" as "native" | "mcp",
     category: "search",
     icon: "",
     default_config: "{}",
@@ -85,6 +93,7 @@ export function ToolFormDialog({
             documentation_url: "",
       });
     }
+    setOwnerTenant(tool?.owner_tenant_id == null ? "platform" : String(tool.owner_tenant_id));
     setConfigError("");
   }, [tool, open]);
 
@@ -117,6 +126,11 @@ export function ToolFormDialog({
         documentation_url: formData.documentation_url || undefined,
       };
 
+      if (canChangeOwner && tool) {
+        const nextOwner = ownerTenant === "platform" ? null : Number(ownerTenant);
+        if (nextOwner !== (tool.owner_tenant_id ?? null)) data.owner_tenant_id = nextOwner;
+      }
+
       let result;
       if (tool) {
         result = await updateTool(tool.id, data);
@@ -142,6 +156,22 @@ export function ToolFormDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {canChangeOwner && (
+            <div className="space-y-2">
+              <Label htmlFor="tool-owner-tenant">{t("ownerScope")}</Label>
+              <Select value={ownerTenant} onValueChange={setOwnerTenant} disabled={loading}>
+                <SelectTrigger id="tool-owner-tenant"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="platform">{t("ownerPlatform")}</SelectItem>
+                  {tool?.owner_tenant_id != null && !workspace.tenants.some((tenant) => tenant.id === tool.owner_tenant_id) && (
+                    <SelectItem value={String(tool.owner_tenant_id)} disabled>{tool.owner_tenant_name || String(tool.owner_tenant_id)}</SelectItem>
+                  )}
+                  {workspace.tenants.map((tenant) => <SelectItem key={tenant.id} value={String(tenant.id)}>{tenant.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t("ownerScopeHelp")}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="name">{t("toolIdentifier")}</Label>
@@ -183,7 +213,6 @@ export function ToolFormDialog({
                   · 原生工具**建不出来**：迁移 042 之后它们在 tools 表没有行，名册和
                     授权判据都在后端代码里，加一个要改代码发版。留着这个选项只会让人
                     建出一行什么都不做的记录。
-                  · workflow 行由 kind 自动发现产生，也不该在这里手工新建。
                   编辑既有的非 MCP 行时，把它当前的类型以只读形式显示出来——不给一个
                   会把它悄悄改成 MCP 的下拉。 */}
               {formData.tool_type === "mcp" ? (
@@ -197,7 +226,7 @@ export function ToolFormDialog({
                 </Select>
               ) : (
                 <div className="h-10 flex items-center text-sm text-muted-foreground">
-                  {formData.tool_type === "native" ? t("nativeTool") : t("workflowTool")}
+                  {formData.tool_type === "native" ? t("nativeTool") : t("mcpTool")}
                 </div>
               )}
             </div>

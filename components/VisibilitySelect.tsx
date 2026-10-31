@@ -10,6 +10,8 @@ interface VisibilitySelectProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  /** 仅覆盖选项网格布局，不影响共享范围及表单行为。 */
+  optionsClassName?: string;
   /**
    * 是否提供「全平台」选项。默认 true —— 保持既有调用方（datasets）行为不变。
    *
@@ -26,6 +28,7 @@ export default function VisibilitySelect({
   onChange,
   disabled = false,
   className = "",
+  optionsClassName = "",
   allowPublic = true,
   footer,
 }: VisibilitySelectProps) {
@@ -65,7 +68,7 @@ export default function VisibilitySelect({
   return (
     <div className={`space-y-2 ${className}`}>
       <label className="text-sm font-medium">{t("visibilityScope")}</label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className={`grid grid-cols-2 gap-2 ${optionsClassName}`}>
         {visibilityOptions.map((option) => {
           const Icon = option.icon;
           const isSelected = value === option.value;

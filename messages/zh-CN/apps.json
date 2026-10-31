@@ -143,8 +143,6 @@
   "statistics": "统计",
   "nativeTool": "原生",
   "mcpTool": "MCP",
-  "workflowTool": "长任务",
-  "workflowBindNotice": "绑定长任务后，这个数字员工将**只保留已绑定的**长任务能力；当前未绑定任何长任务，等于全部可用。要恢复全部，把所有长任务解绑即可。",
   "enabled": "启用",
   "disabled": "停用",
   "calls": "调用",
@@ -198,5 +196,13 @@
   "crossTenantWechatBinding": "请先创建数字员工，再在所属租户内配置微信绑定。",
   "editTenantMigrationNotice": "保存租户变更后会解除原部门归属和租户默认设置。历史记录、作者及访问权限不会自动转交。现有关联资源会保留，不兼容的绑定需先处理才能保存。",
   "modelUnavailable": "模型在当前租户不可用，请重新选择。",
-  "customModelOwnerMismatch": "此数字员工不属于您当前租户，仅可选择平台模型。如需使用本租户模型，请新建本租户数字员工，或联系超级管理员调整归属。"
+  "customModelOwnerMismatch": "此数字员工不属于您当前租户，仅可选择平台模型。如需使用本租户模型，请新建本租户数字员工，或联系超级管理员调整归属。",
+  "workspaceKnowledgeBindings": "已绑定知识库",
+  "workspaceUnavailableDataset": "不可用的知识库",
+  "cleanupUnavailableDatasets": "清除不可用知识库",
+  "cleanupUnavailableDatasetsSuccess": "已清除 {count} 个不可用的知识库绑定",
+  "cleanupUnavailableDatasetsFailed": "清除失败，请稍后重试",
+  "tabKnowledge": "知识库",
+  "noKnowledgeBindings": "暂无绑定的知识库",
+  "autoKnowledgeStatus": "当前为自动选择知识库"
 }

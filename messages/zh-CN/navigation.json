@@ -32,5 +32,17 @@
   "refreshTenantStatus": "刷新访问权限",
   "notifications": "提醒",
   "pendingTenantCount": "待分配租户 {count} 人",
-  "pendingTenantUnavailable": "待分配租户（暂时无法加载）"
+  "pendingTenantUnavailable": "待分配租户（暂时无法加载）",
+  "workspaceSelect": "选择租户",
+  "workspaceDescription": "切换当前管理的租户工作区。",
+  "workspaceSearch": "搜索租户名称或代码",
+  "workspaceBusy": "请先结束当前回复或等待上传、保存完成。",
+  "workspaceConfirm": "切换租户将关闭当前页面内容，未保存的修改将丢失。是否继续？",
+  "workspaceEmpty": "没有可选租户",
+  "workspaceSelectFirst": "请点击右上角选择租户后继续。",
+  "platformSettings": "平台设置",
+  "platformProvided": "平台提供",
+  "sharedAcrossTenants": "全平台共享",
+  "workspaceTenantUnavailable": "当前租户暂不可用，请稍后重试或联系管理员。",
+  "workspaceTenantUnavailableShort": "租户暂不可用"
 }

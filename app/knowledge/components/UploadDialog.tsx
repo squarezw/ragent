@@ -27,6 +27,7 @@ interface UploadDialogProps {
   isOpen: boolean;
   onClose: () => void;
   datasetId: string;
+  canReplace?: boolean;
   onUploadSuccess: () => void;
   initialFiles?: File[];
   onAutoVectorize?: (fileIds: string[]) => void;
@@ -60,6 +61,7 @@ export const UploadDialog = ({
   isOpen,
   onClose,
   datasetId,
+  canReplace = false,
   onUploadSuccess,
   initialFiles = [],
   onAutoVectorize,
@@ -92,7 +94,7 @@ export const UploadDialog = ({
         const updatedFiles = filesToCheck.map((f) => {
           const dups = (duplicates[f.file.name] || []).map((dup: any) => ({
             ...dup,
-            shouldReplace: true, // 默认勾选替换
+            shouldReplace: canReplace,
           }));
           return {
             ...f,
@@ -108,7 +110,7 @@ export const UploadDialog = ({
         setCheckingDuplicates(false);
       }
     },
-    [datasetId]
+    [datasetId, canReplace]
   );
 
   // 处理初始文件
@@ -161,6 +163,7 @@ export const UploadDialog = ({
 
   // 切换单个现有文件的替换状态
   const toggleDuplicateFileReplace = (uploadFileId: string, duplicateFileId: string) => {
+    if (!canReplace) return;
     setFiles((prev) =>
       prev.map((f) => {
         if (f.id !== uploadFileId) return f;
@@ -213,7 +216,7 @@ export const UploadDialog = ({
     // Build per-file replace maps
     const replaceMap: { [filename: string]: string[] } = {};
     files.forEach((fileObj) => {
-      const selectedDups = fileObj.duplicateFiles.filter((d) => d.shouldReplace);
+      const selectedDups = canReplace ? fileObj.duplicateFiles.filter((d) => d.shouldReplace) : [];
       if (selectedDups.length > 0) {
         replaceMap[fileObj.file.name] = selectedDups.map((d) => d.id);
       }
@@ -237,9 +240,11 @@ export const UploadDialog = ({
     const uploadSingleFile = async (fileObj: UploadFile) => {
       try {
         // Step 1: Upload to OSS with progress
+        let uploadReceipt: string | undefined;
         const objectKey = await uploadFile({
           file: fileObj.file,
           category: "knowledge",
+          onPresigned: (metadata) => { uploadReceipt = metadata.uploadReceipt; },
           onProgress: (percent) => {
             setFiles((prev) =>
               prev.map((f) => (f.id === fileObj.id ? { ...f, progress: percent } : f))
@@ -255,6 +260,7 @@ export const UploadDialog = ({
 
         const response = await axios.post("/api/knowledge/upload-confirm", {
           objectKey,
+          uploadReceipt,
           originalFilename: fileObj.file.name,
           contentType: fileObj.file.type || "application/octet-stream",
           size: fileObj.file.size,
@@ -561,7 +567,7 @@ export const UploadDialog = ({
                           <div className="px-3 pb-3 pt-0">
                             <div className="bg-card rounded border border-amber-200 divide-y divide-amber-100">
                               <div className="px-3 py-2 text-xs font-medium text-amber-700 bg-amber-100">
-                                {t("duplicateReplaceHint")}
+                                {t(canReplace ? "duplicateReplaceHint" : "uploadContributionOnly")}
                               </div>
                               {fileObj.duplicateFiles.map((dupFile) => (
                                 <div
@@ -597,7 +603,7 @@ export const UploadDialog = ({
                                     onCheckedChange={() =>
                                       toggleDuplicateFileReplace(fileObj.id, dupFile.id)
                                     }
-                                    disabled={uploading || fileObj.status !== "pending"}
+                                    disabled={!canReplace || uploading || fileObj.status !== "pending"}
                                     title={
                                       dupFile.shouldReplace
                                         ? t("cancelReplace")

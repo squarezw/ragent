@@ -136,5 +136,10 @@
   "streamInterrupted": "回答中断，已保留收到的内容。为避免重复执行操作，系统未自动重试。",
   "streamFailed": "本次回答未能完成，请稍后重试。",
   "modelEndpointUnreachable": "无法连接租户模型站点，请联系租户管理员检查服务地址和网络。",
-  "modelResponseTimeout": "租户模型响应超时，请稍后重试或联系租户管理员。"
+  "modelResponseTimeout": "租户模型响应超时，请稍后重试或联系租户管理员。",
+  "workspaceBindingsSkipped": "已跳过当前不可用的绑定：{resources}。其余可用能力继续运行。",
+  "workspaceSkippedSkills": "Skill {count} 项",
+  "workspaceSkippedTools": "工具 {count} 项",
+  "workspaceSkippedDatasets": "知识库 {count} 项",
+  "workspaceBindingSeparator": "、"
 }

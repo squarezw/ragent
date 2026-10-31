@@ -1,10 +1,12 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { requireAuth, getUserIdFromRequest } from "@/lib/auth";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) {
     return;
   }
@@ -41,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         enableDeepSearch,
       },
       {
-        headers: {
+        headers: { ...workspaceHeaders(req),
           "Content-Type": "application/json",
           Authorization: req.headers.authorization,
         },
@@ -88,3 +90,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

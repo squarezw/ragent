@@ -1,9 +1,10 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 import { ossClient } from "@/lib/ossClient";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "DELETE") {
     res.status(405).json({ error: "Method not allowed" });
     return;
@@ -120,3 +121,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "Delete failed", details: e?.message || e });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "file");

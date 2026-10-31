@@ -76,8 +76,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cancellation.signal
       );
       if (!result) throw new Error("No result returned from runQA");
-      const { answer, reference, segment_ids, detail_id, chat_id } = result;
-      res.json({ answer, detail_id, reference, segment_ids, chat_id });
+      const { answer, reference, segment_ids, detail_id, chat_id, workspace_warning } = result;
+      res.json({ answer, detail_id, reference, segment_ids, chat_id, workspace_warning });
     }
   } catch (error: any) {
     if (cancellation.signal.aborted || res.destroyed || res.writableEnded) return;

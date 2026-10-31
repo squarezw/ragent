@@ -87,3 +87,19 @@ export function findToolCompletionIndex(
     (s) => s.label === (event.display_name || event.skill || event.name) && s.ok === undefined
   );
 }
+
+
+export interface WorkspaceBindingWarning {
+  code: "WORKSPACE_BINDINGS_SKIPPED";
+  skipped: { skills: number; tools: number; datasets: number };
+}
+/** Only safe counts enter the UI; resource names and arbitrary backend text are discarded. */
+export function parseWorkspaceBindingWarning(value: unknown): WorkspaceBindingWarning | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Record<string, any>;
+  if (input.code !== "WORKSPACE_BINDINGS_SKIPPED" || !input.skipped) return null;
+  const { skills, tools, datasets } = input.skipped;
+  if (![skills, tools, datasets].every(n => Number.isSafeInteger(n) && n >= 0)) return null;
+  if (skills + tools + datasets === 0) return null;
+  return { code: "WORKSPACE_BINDINGS_SKIPPED", skipped: { skills, tools, datasets } };
+}

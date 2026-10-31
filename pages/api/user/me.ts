@@ -44,6 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const companyCode = user.tenant_id ? getCompanyCodeByTenantId(user.tenant_id) : undefined;
       const response = {
         ...user,
+        workspace_enabled: process.env.WORKSPACE_TENANT_ENABLED === "true",
         ...(process.env.OIDC_ENABLED === "true" && token ? {
           auth_session_expires_at: (decode(token) as { exp?: number } | null)?.exp,
         } : {}),

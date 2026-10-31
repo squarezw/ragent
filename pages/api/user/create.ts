@@ -5,6 +5,11 @@ import { canManageDept, isSuperAdmin, getUserPermissions } from "@/lib/permissio
 import pool from "@/lib/db";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
+    : { enabled: false, tenantId: null };
+  if (!workspace) return;
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -47,6 +52,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // 确定目标租户和部门
       let targetTenantId = tenant_id;
+      if (workspace.enabled) {
+        if (tenant_id != null && Number(tenant_id) !== workspace.tenantId)
+          return res.status(403).json({ error: "WORKSPACE_TENANT_FORBIDDEN" });
+        targetTenantId = workspace.tenantId;
+      }
       let targetDeptId = dept_id;
 
       const isSuper = await isSuperAdmin(userId);

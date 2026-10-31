@@ -1,3 +1,5 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 /**
  * `POST /api/v1/email/unread-config`：读一个监听邮箱里「游标之后」的邮件。
  *
@@ -18,7 +20,7 @@ import { fetchMailboxUnread } from "@/lib/automation/imap-client";
 import { respondMailboxApiError } from "@/lib/automation/mailbox-errors";
 import { getAutomationMailboxForUser, mailboxConnectionFromRow } from "@/lib/automation/mailboxes";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
@@ -47,4 +49,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 连接类失败（主机、授权码、证书）沿用原文映射成 400，其余按错误码处理。
     return respondMailboxApiError(res, error);
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

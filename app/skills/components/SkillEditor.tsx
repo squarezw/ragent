@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -22,7 +23,7 @@ import { SKILL_DESCRIPTION_MAX_LENGTH, isValidSkillName } from "@/lib/skillValid
 import { normalizeRequiresList } from "@/lib/skillRequires";
 import { SKILL_BODY_SCAFFOLD } from "@/lib/skillScaffold";
 import { useRequiresOptions } from "@/hooks/useRequiresOptions";
-import { RequiresToolsSelector, RequiresWorkflowsSelector } from "./RequiresSelector";
+import { RequiresToolsSelector } from "./RequiresSelector";
 import {
   hasUnpublishedChanges as computeUnpublishedChanges,
   resolveReviewStatus,
@@ -37,13 +38,12 @@ interface SkillEditorProps {
   saving: boolean;
   /** 具备审核权（超管/租户管理员）：显示「发布」（自审即过）；否则显示「提交审核」 */
   canReview: boolean;
-  /**
-   * 只读态（内置技能）：藏掉所有写操作按钮、字段禁用。
-   *
-   * 不是"没权限"——是**谁都不能改**（真源在代码仓，改了会被下次同步覆盖）。
-   * 所以这里不显示禁用的按钮让人反复去点，而是整排换成一句说明。
-   */
+  /** 无编辑权限时隐藏写操作并禁用字段。 */
   readOnly?: boolean;
+  /** 编辑权限不扩大发布及提交审核权限。 */
+  canManageLifecycle?: boolean;
+  /** 独立发布权限；未传入时保留新建页原有审核权限规则。 */
+  canPublish?: boolean;
   /**
    * 超级管理员：显示「所属租户」下拉，可把 Skill 迁到别的租户。
    *
@@ -79,6 +79,8 @@ export default function SkillEditor({
   saving,
   canReview,
   readOnly = false,
+  canManageLifecycle = true,
+  canPublish = canManageLifecycle && canReview,
   isSuperAdmin = false,
   isTenantAdmin = false,
   onTransferTenant,
@@ -102,9 +104,6 @@ export default function SkillEditor({
   const [content, setContent] = useState(skill ? skill.content || "" : SKILL_BODY_SCAFFOLD);
   const [requiresTools, setRequiresTools] = useState<string[]>(
     normalizeRequiresList(skill?.requires?.tools)
-  );
-  const [requiresWorkflows, setRequiresWorkflows] = useState<string[]>(
-    normalizeRequiresList(skill?.requires?.workflows)
   );
   const [visibility, setVisibility] = useState<SkillVisibility>(skill?.visibility || "tenant");
   // 归属部门：决定「本部门及以下」从哪一层开始算。
@@ -131,7 +130,6 @@ export default function SkillEditor({
       setDescription(skill.description ?? "");
       setContent(skill.content ?? "");
       setRequiresTools(normalizeRequiresList(skill.requires?.tools));
-      setRequiresWorkflows(normalizeRequiresList(skill.requires?.workflows));
       setVisibility(skill.visibility ?? "tenant");
       setOwnerDeptId(skill.owner_dept_id ?? null);
     }
@@ -178,14 +176,13 @@ export default function SkillEditor({
       content,
       requires: {
         tools: requiresTools,
-        workflows: requiresWorkflows,
       },
       visibility,
       // 只在真的选了部门时才带上：不带 = 让后端保持原样（编辑）或落成作者部门（新建）。
       // 带一个 null 上去会被理解成"清空归属部门"，那是另一个意思。
       ...(ownerDeptId != null ? { owner_dept_id: ownerDeptId } : {}),
     }),
-    [name, displayName, description, content, requiresTools, requiresWorkflows, visibility,
+    [name, displayName, description, content, requiresTools, visibility,
      ownerDeptId]
   );
 
@@ -193,7 +190,8 @@ export default function SkillEditor({
   // 普通用户的 skill 固定挂在自己部门。这里只管**显示**，边界在后端。
   const { departments } = useOrganization();
   const { user: currentUser } = useCurrentUser();
-  const currentUserTenantId = currentUser?.tenant_id ?? null;
+  const workspace = useWorkspace();
+  const currentUserTenantId = workspace.enabled ? workspace.tenant?.id ?? null : currentUser?.tenant_id ?? null;
 
   const canChooseDept = !readOnly && (isSuperAdmin || isTenantAdmin);
 
@@ -206,7 +204,12 @@ export default function SkillEditor({
   }, [departments, skill?.owner_tenant_id, currentUserTenantId]);
 
   return (
-    <Card>
+    <Card data-workspace-dirty={!readOnly && (
+      name !== (skill?.name || "") || displayName !== (skill?.display_name || "") ||
+      description !== (skill?.description || "") || content !== (skill ? skill.content || "" : SKILL_BODY_SCAFFOLD) ||
+      visibility !== (skill?.visibility || "tenant") || ownerDeptId !== (skill?.owner_dept_id ?? null) ||
+      JSON.stringify(requiresTools) !== JSON.stringify(normalizeRequiresList(skill?.requires?.tools))
+    ) ? "true" : undefined}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -245,19 +248,19 @@ export default function SkillEditor({
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {t("saveDraft")}
             </Button>
-            {canReview ? (
+            {canPublish ? (
               // 具备审核权：直接发布（自审即过，后端照写审计）
               <Button onClick={() => onPublish(payload)} disabled={!canSubmit}>
                 {t("publish")}
               </Button>
-            ) : isPending ? (
+            ) : canManageLifecycle && !canReview && (isPending ? (
               // 审核中：禁用提交按钮
               <Button disabled>{t("statusPendingReview")}</Button>
             ) : (
               <Button onClick={() => onSubmitReview(payload)} disabled={!canSubmit}>
                 {t("submitReview")}
               </Button>
-            )}
+            ))}
               </>
             )}
           </div>
@@ -412,16 +415,11 @@ export default function SkillEditor({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
           <RequiresToolsSelector
             options={requiresOptions.tools}
             selected={requiresTools}
             onChange={setRequiresTools}
-          />
-          <RequiresWorkflowsSelector
-            options={requiresOptions.workflows}
-            selected={requiresWorkflows}
-            onChange={setRequiresWorkflows}
           />
         </div>
         <p className="text-xs text-muted-foreground -mt-2">{t("requiresHelp")}</p>
@@ -429,6 +427,7 @@ export default function SkillEditor({
         {/* 范围与归属是同一个决定的两半：「本部门及以下」里的「本部门」指哪个，
             由下面的归属部门决定。所以放在一个块里，而不是页面上隔开的两处设置。 */}
         <VisibilitySelect
+          optionsClassName="lg:grid-cols-4"
           value={visibility}
           onChange={(value) => setVisibility(value as SkillVisibility)}
           disabled={readOnly}
@@ -461,7 +460,7 @@ export default function SkillEditor({
 
         {/* 新建时不显示：租户由后端按作者落定，这时候让人选一个反而能建出
             "作者不在该租户"的数据。只在编辑已有 skill 时提供迁移。 */}
-        {isSuperAdmin && skill && !readOnly && onTransferTenant && (
+        {!workspace.enabled && isSuperAdmin && skill && !readOnly && onTransferTenant && (
           <SkillTenantSelect
             currentTenantId={skill.owner_tenant_id ?? null}
             onTransfer={onTransferTenant}

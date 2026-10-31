@@ -268,6 +268,7 @@ export default function ChatInputComposite({
         <Textarea
           ref={textareaRef}
           value={input}
+          data-workspace-dirty={input.trim() || attachments.length > 0 || pendingAttachments.length > 0 ? "true" : undefined}
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(event) => pasteChatAttachments(event, onFileDrop, onInputChange)}

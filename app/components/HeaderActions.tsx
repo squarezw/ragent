@@ -3,6 +3,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Bell, RefreshCw } from "lucide-react";
+import TenantSwitcher from "./TenantSwitcher";
 import LocaleSwitcher from "@/components/LocaleSwitcher";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePendingReviewCount } from "@/hooks/useReviews";
@@ -30,6 +31,7 @@ export default function HeaderActions() {
 
   return (
     <div className="flex items-center gap-4">
+      <TenantSwitcher />
       {canReviewQueue && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -53,7 +55,7 @@ export default function HeaderActions() {
               {t("reviewQueue")} ({reviewCount})
             </DropdownMenuItem>
             {isSuperAdmin && (
-              <DropdownMenuItem onSelect={() => router.push("/user")}>
+              <DropdownMenuItem onSelect={() => router.push(user?.workspace_enabled ? "/organization?pending=1" : "/user")}>
                 {tenantError
                   ? t("pendingTenantUnavailable")
                   : t("pendingTenantCount", { count: tenantCount })}

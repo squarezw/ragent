@@ -17,6 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 调用 Python 后端的统计接口
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/statistics/graph`, {
       headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         accept: "application/json",
         // 监控接口可能不需要认证，但保持一致性
         Authorization: req.headers.authorization,

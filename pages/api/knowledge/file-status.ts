@@ -1,7 +1,9 @@
+import { getUserIdFromRequest } from "@/lib/auth";
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
 import { NextApiRequest, NextApiResponse } from "next";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -29,8 +31,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         u.username as uploader_name
        FROM knowledge_files kf
        LEFT JOIN users u ON kf.user_id = u.id
-       WHERE ${whereClause}`,
-      [queryParam]
+       WHERE ${whereClause} AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM datasets d WHERE d.id=kf.dataset_id AND (d.owner_tenant_id=$2 OR d.visibility='public') AND (can_access_dataset($3,d.id) OR d.visibility='public')))`,
+      [queryParam, knowledgeWorkspaceTenantId(req), getUserIdFromRequest(req)]
     );
 
     if (result.rows.length === 0) {
@@ -66,3 +68,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: "Internal server error" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "file");

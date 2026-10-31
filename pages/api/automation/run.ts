@@ -1,3 +1,5 @@
+import { requireWorkspaceTenant, workspaceHeaders } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import { requireAuth } from "@/lib/auth";
 import { extractSseErrorMessage, isSseCommentLine } from "@/lib/chatSse";
 import { logError } from "@/lib/logError";
@@ -17,7 +19,7 @@ function getRequestBaseUrl(req: NextApiRequest) {
   return `${protocol}://${host}`;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "POST") return res.status(405).end();
 
@@ -34,6 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      ...workspaceHeaders(req),
     };
 
     if (typeof req.headers.authorization === "string") {
@@ -163,4 +166,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           : undefined,
     });
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

@@ -1,12 +1,14 @@
 import { ensureSessionCurrent, renewSession } from "@/lib/sessionRenewal";
 import axios from "@/lib/axios";
 import {
+  parseWorkspaceBindingWarning,
+  type WorkspaceBindingWarning,
   extractSseErrorMessage,
   isSseCommentLine,
   parseToolStatusPayload,
   type ToolStatusEvent,
 } from "@/lib/chatSse";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { normalizeTurnUsage, type TurnUsage } from "@/types/token-usage";
 
 // 复用 axios 认证逻辑的辅助函数
@@ -24,114 +26,6 @@ const getAuthHeaders = () => {
 
   return headers;
 };
-
-/**
- * Scans a chat-side accumulating buffer for `{"_workflow_run_started": {...}}`
- * markers emitted by the backend `start_long_task` tool. Each call returns
- * detected workflow-run starts and the buffer slice that has not yet been
- * scanned (the caller should pass that back next time).
- *
- * Algorithm: linear scan; when we see "_workflow_run_started", we walk back
- * to find the opening `{`, then use a brace counter (respecting JSON strings)
- * to find the matching `}` and parse.
- *
- * Tolerant of partial chunks: if no closing brace yet, we return the buffer
- * unchanged so the next chunk can complete the scan.
- */
-function scanWorkflowRunStarts(buffer: string): {
-  runs: Array<{ runId: number; kind: string }>;
-  remaining: string;
-} {
-  const runs: Array<{ runId: number; kind: string }> = [];
-  let scanFrom = 0;
-  const marker = "_workflow_run_started";
-
-  while (true) {
-    const markerIdx = buffer.indexOf(marker, scanFrom);
-    if (markerIdx === -1) break;
-
-    // Walk back to find the opening brace before the marker.
-    let openIdx = -1;
-    for (let i = markerIdx; i >= 0; i--) {
-      if (buffer[i] === "{") {
-        openIdx = i;
-        break;
-      }
-    }
-    if (openIdx === -1) {
-      // Malformed; skip past the marker to avoid infinite loop.
-      scanFrom = markerIdx + marker.length;
-      continue;
-    }
-
-    // Brace-counter scan forward (respecting strings).
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    let closeIdx = -1;
-    for (let i = openIdx; i < buffer.length; i++) {
-      const ch = buffer[i];
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (inString) {
-        if (ch === "\\") {
-          escape = true;
-        } else if (ch === '"') {
-          inString = false;
-        }
-        continue;
-      }
-      if (ch === '"') {
-        inString = true;
-        continue;
-      }
-      if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) {
-          closeIdx = i;
-          break;
-        }
-      }
-    }
-
-    if (closeIdx === -1) {
-      // Incomplete JSON; keep buffer for next pass.
-      // We return whatever we have, but cut nothing — caller will retry.
-      return { runs, remaining: buffer.slice(scanFrom) };
-    }
-
-    const jsonStr = buffer.slice(openIdx, closeIdx + 1);
-    try {
-      const obj = JSON.parse(jsonStr) as {
-        _workflow_run_started?: { run_id?: number; kind?: string };
-      };
-      const inner = obj._workflow_run_started;
-      if (inner && typeof inner.run_id === "number") {
-        runs.push({ runId: inner.run_id, kind: String(inner.kind ?? "") });
-      }
-    } catch {
-      // ignore parse error and continue scanning past this point
-    }
-
-    scanFrom = closeIdx + 1;
-  }
-
-  return { runs, remaining: buffer.slice(scanFrom) };
-}
-
-/**
- * Public helper for renderers: strips a leading `_workflow_run_started` JSON
- * prefix from a ToolMessage / streaming-token blob, so the user sees only the
- * trailing natural-language portion ("已开始任务 #1234（类型 cad.review）...").
- *
- * Idempotent; safe to call on content that has no marker.
- */
-export function stripWorkflowRunStartedPrefix(content: string): string {
-  return content.replace(/^\s*\{\s*"_workflow_run_started"\s*:\s*\{[^}]*\}\s*\}\s*/g, "");
-}
 
 export function useChatSession() {
   const [chatId, setChatId] = useState<number | null>(null);
@@ -183,30 +77,13 @@ export function useChatSession() {
         }) => void;
         onError: (error: Error) => void;
         /**
-         * Fires when the backend dispatches a long task. Primary trigger is the
-         * named SSE event `event: workflow_run_started` whose `data` is
-         * `{run_id, kind, params}` — emitted by ragent-service after a
-         * `start_long_task` tool call succeeds.
-         *
-         * Fallback trigger: a `{"_workflow_run_started": {...}}` JSON marker
-         * detected inside the chat token-buffer (legacy path; in practice the
-         * LLM rewrites ToolMessage content, so this rarely fires).
-         *
-         * `seenRunIds` guarantees the callback fires at most once per run_id
-         * regardless of which path triggers first.
-         */
-        onWorkflowRunStarted?: (
-          runId: number,
-          kind: string,
-          params?: Record<string, unknown>
-        ) => void;
-        /**
          * Fires on each named SSE frame `event: tool_status` whose data is
          * `{name, skill?, phase: "started"|"finished", ok?}` — emitted by
          * ragent-service around every tool execution so the UI can show an
          * in-flight indicator between token bursts.
          */
         onToolStatus?: (status: ToolStatusEvent) => void;
+        onWorkspaceWarning?: (warning: WorkspaceBindingWarning) => void;
       }
     ) => {
       // 创建 AbortController 用于取消请求
@@ -284,48 +161,16 @@ export function useChatSession() {
           let segmentIds: number[] = [];
           let detailId: number | undefined;
           let usage: TurnUsage | undefined;
+          let workspaceWarningSent = false;
+          const handleWorkspaceWarning = (parsed: unknown) => {
+            const warning = parseWorkspaceBindingWarning(parsed);
+            if (warning && !workspaceWarningSent && !isAborted) {
+              workspaceWarningSent = true;
+              callbacks?.onWorkspaceWarning?.(warning);
+            }
+          };
           let currentEvent: string | null = null;
           let buffer = "";
-
-          // Workflow-run dispatch state.
-          //
-          // Primary trigger: backend emits a typed SSE frame
-          //   `event: workflow_run_started\ndata: {"run_id":..., "kind":..., "params":{}}\n\n`
-          // which we handle directly when `currentEvent === "workflow_run_started"`.
-          //
-          // Fallback trigger (legacy v1 protocol): scan the chat token-buffer for
-          // a `{"_workflow_run_started": {...}}` JSON marker emitted as a string
-          // prefix by the backend `start_long_task` tool. In practice the LLM
-          // rewrites ToolMessage content into markdown, so this rarely fires —
-          // but we keep it as belt-and-suspenders.
-          //
-          // `seenRunIds` ensures the callback fires at most once per run_id
-          // regardless of which path observes it first.
-          let tokenScanBuffer = "";
-          const seenRunIds = new Set<number>();
-          const dispatchWorkflowRun = (
-            runId: number,
-            kind: string,
-            params?: Record<string, unknown>
-          ) => {
-            if (!callbacks?.onWorkflowRunStarted) return;
-            if (seenRunIds.has(runId)) return;
-            seenRunIds.add(runId);
-            try {
-              callbacks.onWorkflowRunStarted(runId, kind, params);
-            } catch (cbErr) {
-              console.warn("[Stream Hook] onWorkflowRunStarted callback error", cbErr);
-            }
-          };
-          const scanForWorkflowRuns = (newChunk: string) => {
-            if (!callbacks?.onWorkflowRunStarted) return;
-            tokenScanBuffer += newChunk;
-            const { runs, remaining } = scanWorkflowRunStarts(tokenScanBuffer);
-            tokenScanBuffer = remaining;
-            for (const run of runs) {
-              dispatchWorkflowRun(run.runId, run.kind);
-            }
-          };
 
           try {
             while (true) {
@@ -380,32 +225,12 @@ export function useChatSession() {
                   try {
                     const parsed = JSON.parse(data);
 
-                    // 根据 event 类型处理不同的数据
-                    // Named SSE event: workflow_run_started (v2 协议)
-                    // Backend dispatches this once per start_long_task tool
-                    // call; payload is {run_id, kind, params}. We trust this
-                    // over the legacy JSON-prefix scanner — bypass `v` check.
-                    if (currentEvent === "workflow_run_started" && !isAborted) {
-                      const runId = parsed?.run_id;
-                      const kind = parsed?.kind;
-                      const params = parsed?.params as Record<string, unknown> | undefined;
-                      if (typeof runId === "number" && typeof kind === "string") {
-                        dispatchWorkflowRun(runId, kind, params);
-                      } else {
-                        console.warn(
-                          "[Stream Hook] workflow_run_started missing run_id/kind",
-                          parsed
-                        );
-                      }
-                      // Reset currentEvent so the next bare `data:` token frame
-                      // (no `event:` prefix per SSE spec) doesn't inherit this
-                      // event type.
+                    if (currentEvent === "workspace_warning") {
+                      handleWorkspaceWarning(parsed);
                       currentEvent = null;
+                      continue;
                     }
-                    // Named SSE event: tool_status — backend emits one frame
-                    // when a tool starts and one when it finishes, so the UI
-                    // can show an in-flight indicator between token bursts.
-                    else if (currentEvent === "tool_status") {
+                    if (currentEvent === "tool_status") {
                       if (!isAborted) {
                         const toolStatus = parseToolStatusPayload(parsed);
                         if (toolStatus) {
@@ -442,7 +267,6 @@ export function useChatSession() {
                     else if (parsed.v !== undefined && !isAborted) {
                       const content = parsed.v;
                       fullAnswer += content;
-                      scanForWorkflowRuns(content);
                       callbacks?.onChunk(content);
                     } else if (currentEvent === "finish") {
                       // event: finish 包含最终结果
@@ -489,7 +313,6 @@ export function useChatSession() {
                         const content = parsed.choices[0].delta.content;
                         if (content) {
                           fullAnswer += content;
-                          scanForWorkflowRuns(content);
                           callbacks?.onChunk(content);
                         }
                       }
@@ -535,11 +358,14 @@ export function useChatSession() {
                 const data = trimmedLine.slice(6);
                 try {
                   const parsed = JSON.parse(data);
+                  if (currentEvent === "workspace_warning") {
+                    handleWorkspaceWarning(parsed);
+                    currentEvent = null;
+                  }
                   // 如果 data 包含 "v" 字段，说明是消息内容
-                  if (parsed.v !== undefined && !isAborted) {
+                  else if (parsed.v !== undefined && !isAborted) {
                     const content = parsed.v;
                     fullAnswer += content;
-                    scanForWorkflowRuns(content);
                     callbacks?.onChunk(content);
                   } else if (currentEvent === "finish") {
                     if (parsed.references) reference = parsed.references;
@@ -627,6 +453,6 @@ export function useChatSession() {
     askStream,
     sendFeedback,
     setChatId, // 导出 setChatId，用于加载历史会话时设置 chat_id
-    chatId, // 暴露给 useTaskAttach 等订阅长任务进度的 hook
+    chatId,
   };
 }

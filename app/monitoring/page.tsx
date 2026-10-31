@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -11,11 +12,14 @@ import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 
 function ErrorLogCard() {
+  const workspace = useWorkspace();
   const t = useTranslations("monitoring");
   const [lines, setLines] = useState<string[]>([]);
   useEffect(() => {
+    if (workspace.enabled) return;
     axios.get("/api/logs/error").then((res) => setLines(res.data.lines || []));
-  }, []);
+  }, [workspace.enabled]);
+  if (workspace.enabled) return null;
   return (
     <Card>
       <CardHeader>

@@ -107,3 +107,11 @@ test("legacy files without an object key support safe reuse too", () => {
   assert.equal(second.url, first.url);
   assert.equal(second.expiresIn, 1799);
 });
+
+test("preview tokens are bound to operation tenant and cannot be reused across it", () => {
+  const a = createPreviewLink({ ...claims, operationTenantId: 10 }, undefined, secret, now);
+  const oldToken = new URL(a.url, "https://local.invalid").searchParams.get("token");
+  const b = createPreviewLink({ ...claims, operationTenantId: 20 }, oldToken, secret, now);
+  const nextToken = new URL(b.url, "https://local.invalid").searchParams.get("token");
+  assert.notEqual(oldToken, nextToken);
+});

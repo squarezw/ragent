@@ -1,3 +1,4 @@
+import { getTokenFromRequest } from "@/lib/auth";
 import axios, { type AxiosResponse } from "axios";
 import jwt from "jsonwebtoken";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -8,6 +9,7 @@ const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://local
 
 interface StreamTokenPayload {
   fileId: string;
+  operationTenantId?: number;
   userId: number;
   mimetype: string;
   objectKey?: string;
@@ -36,6 +38,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "invalid or expired token" });
   }
 
+  let backendHeaders: Record<string,string> = {};
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
+    const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
+    const ctx = await requireWorkspaceTenant(req, res);
+    if (!ctx) return;
+    const pool = (await import("@/lib/db")).default;
+    const file = await pool.query(`SELECT f.id FROM knowledge_files f JOIN datasets d ON d.id=f.dataset_id WHERE f.id::text=$1 AND (d.owner_tenant_id=$2 OR d.visibility='public') AND (can_access_dataset($3,d.id) OR d.visibility='public')`, [payload.fileId,ctx.tenantId,ctx.actorUserId]);
+    if (!file.rows.length) return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+    if (payload.operationTenantId !== ctx.tenantId || payload.userId !== ctx.actorUserId ||
+        (payload.objectKey && !await workspaceCanReadObject(ctx, payload.objectKey)))
+      return res.status(404).json({ error: "WORKSPACE_RESOURCE_NOT_FOUND" });
+    const actorToken = getTokenFromRequest(req);
+    if (!actorToken) return res.status(401).json({error:"Unauthorized"});
+    backendHeaders = {Authorization:`Bearer ${actorToken}`,"X-Workspace-Tenant-ID":String(ctx.tenantId)};
+  }
   const { fileId, mimetype, objectKey } = payload;
 
   if (!fileId) {
@@ -58,6 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else {
       // 无 object_key（旧文件）→ 从 Python 后端获取
       response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/files/${fileId}/download`, {
+        headers: backendHeaders,
         responseType: "stream",
         timeout: 300000,
       });
@@ -66,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 由代理控制 header，确保浏览器内联显示
     res.setHeader("Content-Type", mimetype || "application/octet-stream");
     res.setHeader("Content-Disposition", "inline");
-    res.setHeader("Cache-Control", "private, max-age=1800");
+    res.setHeader("Cache-Control", process.env.WORKSPACE_TENANT_ENABLED === "true" ? "private, no-store" : "private, max-age=1800");
 
     response.data.pipe(res);
   } catch (err) {

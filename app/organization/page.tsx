@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Plus, Building2, Users, Settings, Trash2, Edit, Network, Wallet } from "lucide-react";
 import TenantRechargeDialog from "./components/TenantRechargeDialog";
+import PendingTenantUsers from "./components/PendingTenantUsers";
 import { useCreditAccounts } from "@/hooks/useBilling";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
@@ -577,6 +578,8 @@ export default function OrganizationPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {isSuperAdmin && user?.workspace_enabled === true && <PendingTenantUsers tenants={tenants} />}
 
       {/* 租户列表（仅超管可见） */}
       {isSuperAdmin && (

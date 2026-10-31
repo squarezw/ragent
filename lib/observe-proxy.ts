@@ -30,6 +30,17 @@ export async function proxyObserveGet(
     return res.status(401).json({ code: 401, message: "未登录", data: null });
   }
 
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+    const ctx = await (await import("./workspaceTenant")).requireWorkspaceTenant(req,res);
+    if (!ctx) return;
+    // This upstream credential covers one customer, never all operation tenants.
+    const owner = process.env.ZD_OBSERVE_TENANT_ID;
+    if (!owner || !/^[1-9]\d*$/.test(owner))
+      return res.status(503).json({ code: 503, message: "WORKSPACE_OBSERVE_OWNER_REQUIRED", data: null });
+    if (ctx.tenantId !== Number(owner))
+      return res.status(404).json({ code: 404, message: "WORKSPACE_RESOURCE_NOT_FOUND", data: null });
+  }
+
   // 缺配置直接抛，不静默 fallback（对齐项目「早暴露错误」纪律）。
   if (!ZD_SERVICE_BASE_URL || !ZD_OBSERVE_TOKEN) {
     throw new Error("ZD_SERVICE_BASE_URL / ZD_OBSERVE_TOKEN 未配置");

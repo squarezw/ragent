@@ -186,5 +186,6 @@
   "autoSegmentStarted": "Auto-segmentation started",
   "autoSegmentFailed": "Auto-segmentation failed, please retry from the list",
   "uploadFilesButton": "Upload {count} file(s)",
-  "uploadFilesWithReplace": "Upload {count} file(s) (replace {replace} existing)"
+  "uploadFilesWithReplace": "Upload {count} file(s) (replace {replace} existing)",
+  "uploadContributionOnly": "You can add new documents, but cannot replace existing files."
 }

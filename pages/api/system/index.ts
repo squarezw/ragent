@@ -12,6 +12,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const userId = getUserIdFromRequest(req);
 
   try {
+    let workspaceSuper = false;
+    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && userId) {
+      workspaceSuper = await isSuperAdmin(userId);
+      if (workspaceSuper) {
+        const actor = await pool.query("SELECT id FROM users WHERE id=$1 AND status='active'", [userId]);
+        if (!actor.rows.length) return res.status(401).json({error:"Unauthorized"});
+      }
+    }
     // 构建透传的 headers
     const headers: any = {
       "Content-Type": "application/json",
@@ -31,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === "GET") {
       // GET 请求：未登录用户直接从数据库获取公开信息（登录页面需要），已登录用户从 Python 后端获取完整信息
-      if (!userId) {
+      if (!userId || (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspaceSuper)) {
         // 未登录用户：直接从数据库查询公开信息，绕过 Python 后端
         try {
           const client = await pool.connect();

@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -51,11 +52,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           FROM knowledge_files kf
           INNER JOIN knowledge_file_tags kft ON kf.id = kft.file_id
           INNER JOIN knowledge_tags kt ON kft.tag_id = kt.id
-          WHERE can_access_knowledge_file($1, kf.id)
+          WHERE (can_access_knowledge_file($1, kf.id) OR ($2::int IS NOT NULL AND EXISTS (SELECT 1 FROM datasets public_d WHERE public_d.id=kf.dataset_id AND public_d.visibility='public'))) AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM datasets d WHERE d.id=kf.dataset_id AND (d.owner_tenant_id=$2 OR d.visibility='public')))
           GROUP BY kt.id, kt.name, kt.color
           ORDER BY file_count DESC, kt.name
         `;
-        params = [userId];
+        params = [userId, knowledgeWorkspaceTenantId(req)];
         console.log("Using INNER JOIN general query with params:", params);
       }
 
@@ -77,3 +78,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "获取标签汇总失败" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

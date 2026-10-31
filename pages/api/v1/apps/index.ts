@@ -43,6 +43,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // 调用 Python 后端接口
     const response = await axios.get(url, {
       headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },
@@ -79,6 +80,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // 调用 Python 后端接口创建应用
     const response = await axios.post(`${EXTERNAL_API_BASE_URL}/api/v1/apps`, req.body, {
       headers: {
+        ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },

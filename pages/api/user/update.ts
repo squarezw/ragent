@@ -10,6 +10,14 @@ import {
 import pool from "@/lib/db";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const accountActor = getUserIdFromRequest(req);
+  const personalAccountOnly = accountActor && (!req.body?.id || Number(req.body.id) === accountActor) &&
+    Object.keys(req.body || {}).every((key) => ["id", "nickname", "email", "currentPassword", "password", "wechat_id"].includes(key));
+  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true" && !personalAccountOnly
+    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
+    : { enabled: false, tenantId: null };
+  if (!workspace) return;
+
   if (req.method !== "PUT") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -54,6 +62,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const email = rawEmail === undefined ? undefined : typeof rawEmail === "string" ? rawEmail.trim() || null : null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: "Invalid email" });
+    }
+
+    const selfAccountUpdate = (!id || Number(id) === tokenUserId) &&
+      ["tenant_id", "dept_id", "role", "status"].every((key) => !Object.prototype.hasOwnProperty.call(req.body || {},key));
+    if (workspace.enabled && !selfAccountUpdate) {
+      const target = await pool.query("SELECT tenant_id FROM users WHERE id = $1", [id || tokenUserId]);
+      if (!target.rows.length || Number(target.rows[0].tenant_id) !== workspace.tenantId)
+        return res.status(404).json({ error: "User not found" });
+      if (tenant_id !== undefined && Number(tenant_id) !== workspace.tenantId)
+        return res.status(403).json({ error: "WORKSPACE_TENANT_FORBIDDEN" });
+      if (dept_id != null) {
+        const dept = await pool.query("SELECT id FROM dept WHERE id = $1 AND tenant_id = $2", [dept_id, workspace.tenantId]);
+        if (!dept.rows.length) return res.status(403).json({ error: "WORKSPACE_TENANT_FORBIDDEN" });
+      }
     }
 
     // 判断目标 id

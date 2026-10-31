@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "未登录" });
@@ -17,8 +18,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const result = await client.query(`
             SELECT id, name, color, created_at, updated_at
             FROM knowledge_tags
+            ${knowledgeWorkspaceTenantId(req) === null ? "" : "WHERE owner_tenant_id=$1"}
             ORDER BY name
-          `);
+          `, knowledgeWorkspaceTenantId(req) === null ? [] : [knowledgeWorkspaceTenantId(req)]);
           res.status(200).json({ tags: result.rows });
           break;
         }
@@ -32,11 +34,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           const insertResult = await client.query(
             `
-            INSERT INTO knowledge_tags (name, color)
-            VALUES ($1, $2)
+            INSERT INTO knowledge_tags (name, color${knowledgeWorkspaceTenantId(req) === null ? "" : ", owner_tenant_id"})
+            VALUES ($1, $2${knowledgeWorkspaceTenantId(req) === null ? "" : ", $3"})
             RETURNING id, name, color, created_at, updated_at
           `,
-            [name.trim(), color]
+            knowledgeWorkspaceTenantId(req) === null ? [name.trim(),color] : [name.trim(),color,knowledgeWorkspaceTenantId(req)]
           );
 
           res.status(201).json({ tag: insertResult.rows[0] });
@@ -117,3 +119,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "操作失败" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "tag");

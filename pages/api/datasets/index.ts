@@ -1,3 +1,5 @@
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import axios from "axios";
@@ -5,7 +7,7 @@ import pool from "@/lib/db";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "未登录" });
@@ -37,14 +39,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         LEFT JOIN users u ON d.user_id = u.id
         LEFT JOIN knowledge_files kf
           ON d.id = kf.dataset_id AND kf.status <> 'deleted'
-        WHERE can_access_dataset($1, d.id)
+        WHERE (can_access_dataset($1, d.id) OR ($2::int IS NOT NULL AND d.visibility='public')) AND ($2::int IS NULL OR (d.owner_tenant_id=$2 OR d.visibility='public'))
         GROUP BY
           d.id, d.name, d.description, d.settings, d.created_at, d.updated_at,
           d.visibility, d.owner_dept_id, d.owner_tenant_id, d.user_id,
           dept.name, tenant.name, u.nickname
         ORDER BY d.created_at DESC
         `,
-        [userId]
+        [userId, knowledgeWorkspaceTenantId(req)]
       );
 
       const datasets = result.rows.map((row) => ({
@@ -91,10 +93,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           settings,
           visibility,
           owner_dept_id,
-          owner_tenant_id,
+          owner_tenant_id: knowledgeWorkspaceTenantId(req) ?? owner_tenant_id,
         },
         {
-          headers: {
+          headers: { ...workspaceHeaders(req),
             "Content-Type": "application/json",
             Authorization: req.headers.authorization,
           },
@@ -141,3 +143,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(405).json({ error: "Method not allowed" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

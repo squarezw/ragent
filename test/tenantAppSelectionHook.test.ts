@@ -18,7 +18,11 @@ const app = (id: number, tenant: number, extra = {}) => ({
   platform: "Web",
   ...extra,
 });
-function harness(initialUser = { id: 1, tenant_id: 10 }, saved: Record<string, string> = {}) {
+function harness(
+  initialUser = { id: 1, tenant_id: 10 },
+  saved: Record<string, string> = {},
+  workspace = { enabled: false, tenant: null as { id: number } | null }
+) {
   let user: typeof initialUser | null = initialUser;
   let cursor = 0,
     dirty = false,
@@ -71,6 +75,7 @@ function harness(initialUser = { id: 1, tenant_id: 10 }, saved: Record<string, s
   const module = { exports: {} as any };
   const mocks: Record<string, unknown> = {
     react: hooks,
+    "@/app/components/WorkspaceProvider": { useWorkspace: () => workspace },
     "@/hooks/useCurrentUser": { useCurrentUser: () => ({ user }) },
     "@/lib/tenantDefaultApp": { appSelectionKey, chooseTenantApp },
     "@/lib/axios": {
@@ -178,4 +183,13 @@ test("saved selections restore only from current scope and optional datasets are
   assert.equal(h.result.optionalDatasetSelections.size, 0);
   await h.resolve(0, { items: [app(3, 20)] });
   assert.equal(h.result.selectedAppId, "3");
+});
+
+test("workspace selection uses operation tenant without changing account identity", async () => {
+  const key = appSelectionKey(1, 20);
+  const h = harness({ id: 1, tenant_id: 10 }, {}, { enabled: true, tenant: { id: 20 } });
+  await h.resolve(0, { items: [app(2, 20)] });
+  assert.equal(h.result.selectedAppId, "2");
+  assert.equal(h.storage.get(key), "2");
+  assert.equal(h.storage.has(appSelectionKey(1, 10)), false);
 });

@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "@/lib/axios";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -26,7 +27,9 @@ const emptyDatasets: Dataset[] = [];
 
 export function useAppDatasets() {
   const { user } = useCurrentUser();
-  const key = user?.id ? appSelectionKey(user.id, user.tenant_id) : "";
+  const workspace = useWorkspace();
+  const operationTenantId = workspace.enabled ? workspace.tenant?.id : user?.tenant_id;
+  const key = user?.id ? appSelectionKey(user.id, operationTenantId) : "";
   const optionalKey = key ? `${key}:optional_datasets` : "";
   const [appState, setAppState] = useState<{ key: string; items: App[] }>({ key: "", items: [] });
   const apps = appState.key === key ? appState.items : emptyApps;
@@ -65,7 +68,7 @@ export function useAppDatasets() {
         const response = await axios.get("/api/apps/simple");
         if (!active) return;
         const items: App[] = response.data.items || [];
-        const id = chooseTenantApp(items, localStorage.getItem(key), user?.tenant_id);
+        const id = chooseTenantApp(items, localStorage.getItem(key), operationTenantId);
         setAppState({ key, items });
         setSelection({ key, id });
         previousAppIdRef.current = id;

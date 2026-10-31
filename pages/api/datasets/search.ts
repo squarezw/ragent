@@ -1,8 +1,9 @@
+import { withKnowledgeWorkspace, knowledgeWorkspaceTenantId } from "@/lib/workspaceKnowledge";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import pool from "@/lib/db";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -23,6 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let whereClause = "WHERE can_access_dataset($1, d.id)";
       const params: any[] = [userId];
       let paramIndex = 2;
+      const tenantId = knowledgeWorkspaceTenantId(req);
+      if (tenantId !== null) { whereClause = `WHERE (can_access_dataset($1, d.id) OR d.visibility='public') AND (d.owner_tenant_id=$${paramIndex++} OR d.visibility='public')`; params.push(tenantId); }
 
       if (q && typeof q === "string" && q.trim()) {
         whereClause += ` AND d.name ILIKE $${paramIndex}`;
@@ -99,3 +102,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ error: "搜索数据集失败" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

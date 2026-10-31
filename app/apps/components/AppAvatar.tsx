@@ -1,5 +1,7 @@
 "use client";
 
+import { workspaceUrl } from "@/lib/workspaceBrowser";
+
 import { avatarFallbackText } from "@/lib/appAvatar";
 
 interface Props {
@@ -34,7 +36,7 @@ export default function AppAvatar({ src, name, size = 40, className = "" }: Prop
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={src}
+        src={workspaceUrl(src)}
         alt=""
         style={{ ...box, borderRadius: radius }}
         className={`object-cover bg-muted shrink-0 ${className}`}

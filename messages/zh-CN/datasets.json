@@ -75,5 +75,6 @@
   "createSharedPermission": "创建组织共享或公开知识库需要租户管理员权限。您可以改为“个人”，或联系租户管理员协助创建。",
   "createOtherTenantDenied": "您无法在其他租户下创建知识库。请选择自己所属的租户，或联系管理员确认账号归属。",
   "createOtherDepartmentDenied": "您只能在自己所属的部门下创建知识库。请选择自己的部门，或联系租户管理员确认部门归属。",
-  "createPermissionDenied": "当前账号没有创建此知识库的权限。请检查可见范围及租户、部门选择，或联系租户管理员；已填写的内容会保留。"
+  "createPermissionDenied": "当前账号没有创建此知识库的权限。请检查可见范围及租户、部门选择，或联系租户管理员；已填写的内容会保留。",
+  "workspaceSharedReadOnly": "共享 · 只读"
 }

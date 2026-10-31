@@ -1,3 +1,4 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireAuth } from "@/lib/auth";
 import * as XLSX from "xlsx";
@@ -13,6 +14,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) {
       return;
     }
+    const workspace = await requireWorkspaceTenant(req, res);
+    if (!workspace) return;
 
     // 创建示例数据
     const headers = ["sn", "name", "category", "material", "spec", "description", "memo"];

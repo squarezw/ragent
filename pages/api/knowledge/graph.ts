@@ -1,10 +1,12 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { requireAuth, getUserIdFromRequest } from "@/lib/auth";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) {
     return;
   }
@@ -26,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const response = await axios.get(
         `${EXTERNAL_API_BASE_URL}/api/v1/datasets/${dataset_id}/graph`,
         {
-          headers: {
+          headers: { ...workspaceHeaders(req),
             accept: "application/json",
             Authorization: req.headers.authorization,
           },
@@ -82,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         `${EXTERNAL_API_BASE_URL}/api/v1/datasets/${id}/graph`,
         {},
         {
-          headers: {
+          headers: { ...workspaceHeaders(req),
             accept: "application/json",
             Authorization: req.headers.authorization,
           },
@@ -136,7 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         // 获取所有数据集列表
         const datasetsRes = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/datasets`, {
-          headers: {
+          headers: { ...workspaceHeaders(req),
             accept: "application/json",
             Authorization: req.headers.authorization,
           },
@@ -163,7 +165,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         for (const dataset of datasets) {
           try {
             await axios.delete(`${EXTERNAL_API_BASE_URL}/api/v1/datasets/${dataset.id}/graph`, {
-              headers: {
+              headers: { ...workspaceHeaders(req),
                 accept: "application/json",
                 Authorization: req.headers.authorization,
               },
@@ -205,7 +207,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const response = await axios.delete(
         `${EXTERNAL_API_BASE_URL}/api/v1/datasets/${dataset_id}/graph`,
         {
-          headers: {
+          headers: { ...workspaceHeaders(req),
             accept: "application/json",
             Authorization: req.headers.authorization,
           },
@@ -251,3 +253,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(405).json({ error: "Method not allowed" });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "none");

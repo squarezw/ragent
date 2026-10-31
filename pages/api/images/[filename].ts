@@ -67,7 +67,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // Prepare headers - pass through Authorization if present
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),};
     if (req.headers.authorization) {
       headers.Authorization = req.headers.authorization;
     }
@@ -94,7 +95,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Set response headers
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour
+    res.setHeader("Cache-Control", process.env.WORKSPACE_TENANT_ENABLED === "true" ? "private, no-store" : "public, max-age=3600"); // Cache for 1 hour
 
     // Pass through content-disposition if present
     const contentDisposition = response.headers["content-disposition"];

@@ -1,7 +1,9 @@
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import { requireAuth } from "@/lib/auth";
 import type { NextApiRequest, NextApiResponse } from "next";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAuth(req, res)) return;
 
   if (req.method !== "POST") {
@@ -76,4 +78,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
+  return withAutomationWorkspace(workspace, () => scopedHandler(req, res));
 }

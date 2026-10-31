@@ -1,10 +1,12 @@
+import { withKnowledgeWorkspace } from "@/lib/workspaceKnowledge";
+import { workspaceHeaders } from "@/lib/workspaceTenant";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest } from "@/lib/auth";
 import axios from "axios";
 
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "未登录" });
@@ -24,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 获取单个数据集详情
     try {
       const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/datasets/${id}`, {
-        headers: {
+        headers: { ...workspaceHeaders(req),
           accept: "application/json",
           Authorization: authHeader,
         },
@@ -48,7 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 更新数据集
     try {
       const response = await axios.put(`${EXTERNAL_API_BASE_URL}/api/v1/datasets/${id}`, req.body, {
-        headers: {
+        headers: { ...workspaceHeaders(req),
           "Content-Type": "application/json",
           Authorization: authHeader,
         },
@@ -72,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 删除数据集
     try {
       const response = await axios.delete(`${EXTERNAL_API_BASE_URL}/api/v1/datasets/${id}`, {
-        headers: {
+        headers: { ...workspaceHeaders(req),
           Authorization: authHeader,
         },
         timeout: 30000,
@@ -124,3 +126,5 @@ function handleAxiosError(error: any, res: NextApiResponse, defaultMessage: stri
     });
   }
 }
+
+export default withKnowledgeWorkspace(handler, "dataset");

@@ -34,6 +34,10 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
     {
       module,
       userLoading,
+      workspace: { enabled: false },
+      platformPage: false,
+      setSavedSystemSettings() {},
+      setSavedSmtpSettings() {},
       isSuperAdmin,
       axios: {
         get: () => {

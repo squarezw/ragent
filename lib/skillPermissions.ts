@@ -8,8 +8,7 @@
  * 但界面在骗人：它先告诉你"你可以改"，再在你动手之后说"不行"。用户会以为是系统坏了，
  * 而不是自己没权限。
  *
- * 内置技能（`is_managed`）是第三条规则，且优先于前两条：平台维护、随镜像更新，
- * 改了会被下次同步静默覆盖，所以连超管也不放行。
+ * 超级管理员可编辑、删除和发布平台维护及跨租户技能；其他操作保留原权限。
  *
  * 角色布尔值由调用方传入（与 `canEditApp` 同形态），不在这里 import clientPermissions：
  * 那个模块是给组件用的，跨 lib 引它会让这个纯函数变得没法单测。
@@ -34,12 +33,51 @@ export function canEditSkill(
   skill: SkillLike | null | undefined,
   user: UserLike | null | undefined,
   isSuperAdmin: boolean,
-  isTenantAdmin: boolean
+  isTenantAdmin: boolean,
+  operationTenantId?: number | null
 ): boolean {
   if (!skill) return false;
-  // 内置技能：**谁都不能改**，超管也不行。判在最前面——它的答案对所有人一样，
-  // 而且比"你没权限"更有信息量（后者会让用户去找管理员要一个谁都没有的权限）。
-  // 后端同判据见 app/utils/skill_permissions.py::require_not_managed。
+  if (isSuperAdmin) return true;
+  return canManageSkillLifecycle(skill, user, false, isTenantAdmin, operationTenantId);
+}
+
+/** 删除独立授权，不能据此放开发布、同步或迁移。 */
+export function canDeleteSkill(
+  skill: SkillLike | null | undefined,
+  user: UserLike | null | undefined,
+  isSuperAdmin: boolean,
+  isTenantAdmin: boolean,
+  operationTenantId?: number | null
+): boolean {
+  if (!skill) return false;
+  if (isSuperAdmin) return true;
+  return canManageSkillLifecycle(skill, user, false, isTenantAdmin, operationTenantId);
+}
+
+/** 发布独立授权，不扩大 Git 同步、迁移及提交审核权限。 */
+export function canPublishSkill(
+  skill: SkillLike | null | undefined,
+  user: UserLike | null | undefined,
+  isSuperAdmin: boolean,
+  isTenantAdmin: boolean,
+  operationTenantId?: number | null
+): boolean {
+  if (!skill) return false;
+  if (isSuperAdmin) return true;
+  return isTenantAdmin && canManageSkillLifecycle(skill, user, false, true, operationTenantId);
+}
+
+/** Git 同步、迁移、提交审核等操作保留原权限。 */
+export function canManageSkillLifecycle(
+  skill: SkillLike | null | undefined,
+  user: UserLike | null | undefined,
+  isSuperAdmin: boolean,
+  isTenantAdmin: boolean,
+  operationTenantId?: number | null
+): boolean {
+  if (!skill) return false;
+  if (operationTenantId !== undefined && skill.owner_tenant_id !== operationTenantId) return false;
+  // 平台维护技能的 Git 同步等操作仍禁止；编辑、删除和发布使用各自的判定。
   if (skill.is_managed) return false;
   if (isSuperAdmin) return true;
   if (!user) return false;

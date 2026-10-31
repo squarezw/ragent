@@ -1,3 +1,4 @@
+import { officeRequestScope } from "@/lib/workspaceOnlyOffice";
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -50,6 +51,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Session keys upload to the handbook backend (no document_drafts row),
   // so the barrier only applies to doc keys.
   const { type: keyType, id: docId } = parseOnlyOfficeKey(key);
+  const scope = await officeRequestScope(req,res,keyType,docId);
+  if (scope === false) return;
   const shouldConfirmDraft = keyType === "doc" && !!docId;
   const beforeUpdatedAt = shouldConfirmDraft ? await getDraftUpdatedAtForLatest(docId) : null;
 

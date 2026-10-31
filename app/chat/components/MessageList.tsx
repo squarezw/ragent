@@ -5,10 +5,7 @@ import { Bot, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import FeedbackUI from "@/app/chat/components/FeedbackUI";
 import ReferencesDisplay from "@/app/chat/components/ReferencesDisplay";
-import TaskProgressCard from "@/app/chat/components/TaskProgressCard";
-import { stripWorkflowRunStartedPrefix } from "@/hooks/useChatSession";
 import type { Attachment } from "@/app/chat/hooks/useFileAttachments";
-import type { TaskState } from "@/types/workflow-run";
 import type { TurnUsage } from "@/types/token-usage";
 import type { PreviewResource } from "@/lib/chatResourcePreview";
 
@@ -54,11 +51,6 @@ interface MessageListProps {
   sendFeedback: (detailId: number, feedbackType: string, feedbackText?: string) => Promise<any>;
   messagesContainerRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
-  /** runId → TaskState; rendered as a TaskProgressCard list at the top of the
-   *  message scroll area. Empty when there are no active long-tasks. */
-  activeRuns?: Record<number, TaskState>;
-  /** Cancel callback passed to running task cards. */
-  onCancelRun?: (runId: number) => void;
   /** This turn's tool calls, accumulated from `event: tool_status` frames.
    *  Rendered as a collapsible list — expanded while running, collapsed after. */
   toolSteps?: ToolStep[];
@@ -79,8 +71,6 @@ export default function MessageList({
   sendFeedback,
   messagesContainerRef,
   messagesEndRef,
-  activeRuns,
-  onCancelRun,
   toolSteps,
   toolsRunning,
   onPreviewResource,
@@ -91,26 +81,6 @@ export default function MessageList({
     toolSteps && toolSteps.length > 0 ? (
       <ToolActivity steps={toolSteps} running={Boolean(toolsRunning)} />
     ) : null;
-  // Long-task cards rendered at the top so users always see in-flight progress
-  // when scrolled to the latest message (which auto-anchors to bottom).
-  // Sort: running/queued first (most relevant), terminal last; within each
-  // bucket sort by runId DESC (newest first).
-  const taskCards = React.useMemo(() => {
-    if (!activeRuns) return [] as TaskState[];
-    const entries = Object.values(activeRuns);
-    const ranking: Record<TaskState["status"], number> = {
-      running: 0,
-      queued: 1,
-      failed: 2,
-      succeeded: 3,
-      cancelled: 4,
-    };
-    return entries.sort((a, b) => {
-      const r = ranking[a.status] - ranking[b.status];
-      if (r !== 0) return r;
-      return b.runId - a.runId;
-    });
-  }, [activeRuns]);
 
   return (
     <div
@@ -118,13 +88,6 @@ export default function MessageList({
       className="flex-1 min-h-0 min-w-0 flex flex-col gap-4 overflow-y-auto pb-4 pr-2"
       style={{ overflowAnchor: "none" }}
     >
-      {taskCards.length > 0 && (
-        <div className="flex flex-col gap-3" data-testid="active-task-list">
-          {taskCards.map((state) => (
-            <TaskProgressCard key={state.runId} taskState={state} onCancel={onCancelRun} />
-          ))}
-        </div>
-      )}
 
       {messages.map((msg, i) =>
         msg.role === "user" ? (
@@ -162,7 +125,7 @@ export default function MessageList({
               <div className="py-3 min-w-0 w-full">
                 <div className="break-words">
                   <MarkdownRenderer
-                    content={stripWorkflowRunStartedPrefix(msg.content)}
+                    content={msg.content}
                     onPreviewResource={onPreviewResource}
                   />
                 </div>
@@ -245,7 +208,7 @@ export default function MessageList({
             <div className="py-3 min-w-0 w-full">
               <div className="break-words">
                 <MarkdownRenderer
-                  content={stripWorkflowRunStartedPrefix(streamingMessage)}
+                  content={streamingMessage}
                   onPreviewResource={onPreviewResource}
                 />
                 <span className="inline-flex items-center gap-1 ml-1 align-middle">

@@ -1,3 +1,4 @@
+import { withProcessWorkspace } from "@/lib/workspaceProcess";
 import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 import { getUserIdFromRequest } from "@/lib/auth";
@@ -13,7 +14,7 @@ export const config = {
   api: { bodyParser: false },
 };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const userId = getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ detail: "Unauthorized" });
@@ -21,7 +22,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // 从 token 派生 company_code：后端在缺参时不会按公司过滤，会跨公司返回全部数据
-    const tenantId = await resolveTenantId(userId);
+    const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+      ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res) : null;
+    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspace) return;
+    const tenantId = workspace?.enabled ? workspace.tenantId! : await resolveTenantId(userId);
     const companyCode = getCompanyCodeByTenantId(tenantId);
     if (!companyCode) {
       return res.status(403).json({
@@ -127,3 +131,5 @@ async function handleImport(req: NextApiRequest, res: NextApiResponse, companyCo
 
   return res.status(response.status).json(response.data);
 }
+
+export default withProcessWorkspace(handler);

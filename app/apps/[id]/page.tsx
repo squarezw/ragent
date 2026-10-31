@@ -1,6 +1,8 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
+import Link from "next/link";
+import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { useTranslations } from "next-intl";
 import { presentationModeLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,16 +69,13 @@ import axios from "@/lib/axios";
 import { toast } from "sonner";
 
 /**
- * 工具类型对应的文案键。workflow 行原先没有分支，`native ? 原生 : MCP` 把长任务
- * 标成了「MCP」。它是第三类：绑定它不是"给一个工具"，而是收窄这个数字员工的
- * 长任务范围（后端 Phase 3）。
+ * 工具类型对应的文案键。
  *
  * 返回键而不是接收 t：next-intl 的 translator 类型不是 `(k: string) => string`，
  * 传进来会类型不兼容；返回字面量联合则天然是合法键。
  */
-function toolTypeKey(toolType: string): "nativeTool" | "workflowTool" | "mcpTool" {
+function toolTypeKey(toolType: string): "nativeTool" | "mcpTool" {
   if (toolType === "native") return "nativeTool";
-  if (toolType === "workflow") return "workflowTool";
   return "mcpTool";
 }
 
@@ -87,6 +86,14 @@ function toolTypeClass(toolType: string) {
 }
 
 interface AppInfo {
+  dataset_ids?: string[];
+  dataset_bindings?: Array<{
+    dataset_id: string;
+    name: string;
+    available: boolean;
+    owner_tenant_name?: string | null;
+    unavailable_reason?: string | null;
+  }>;
   id: number;
   name: string;
   description: string;
@@ -124,6 +131,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [loadingApp, setLoadingApp] = useState(true);
+  const [cleaningDatasets, setCleaningDatasets] = useState(false);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [unbindDialogOpen, setUnbindDialogOpen] = useState(false);
   const [selectedAppToolId, setSelectedAppToolId] = useState<number | null>(null);
@@ -156,6 +164,23 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       toast.error(t("loadAppInfoFailed"));
     } finally {
       setLoadingApp(false);
+    }
+  };
+
+  const handleCleanupDatasets = async () => {
+    if (cleaningDatasets) return;
+    setCleaningDatasets(true);
+    try {
+      const { data } = await axios.post<{ removed_count: number }>(
+        `/api/v1/apps/${appId}/datasets/cleanup-unavailable`
+      );
+      await loadAppInfo();
+      toast.success(t("cleanupUnavailableDatasetsSuccess", { count: data.removed_count }));
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : t("cleanupUnavailableDatasetsFailed"));
+    } finally {
+      setCleaningDatasets(false);
     }
   };
 
@@ -242,7 +267,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
     return (
       <div className="container mx-auto p-6">
         <div className="text-center py-12">
-          <p className="text-muted-foreground">{t("appNotFound")}</p>
+          <p className="text-muted-foreground">{t("loadAppInfoFailed")}</p>
           <Button onClick={() => router.push("/apps")} className="mt-4">
             {t("backToAppList")}
           </Button>
@@ -270,6 +295,60 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   // 空的分隔线。rejected 仍要留：那里有"查看驳回理由"的链接，塞不进 hover。
   const reviewFooterVisible =
     status === "rejected" || (status === "pending_review" && canReview);
+  const fixedDatasetIds = appInfo.dataset_bindings?.length
+    ? appInfo.dataset_bindings.map((binding) => binding.dataset_id)
+    : appInfo.dataset_ids;
+  const autoSelectKnowledge = resolveAutoSelectDatasets(appInfo.settings, fixedDatasetIds);
+
+  const knowledgeBindingsCard = (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+            <CardTitle className="text-base">{t("workspaceKnowledgeBindings")}</CardTitle>
+            {canEditThisApp && appInfo.dataset_bindings?.some((binding) => !binding.available) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCleanupDatasets}
+                disabled={cleaningDatasets}
+              >
+                {cleaningDatasets ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                {t("cleanupUnavailableDatasets")}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!appInfo.dataset_bindings?.length && (
+              <p className="text-sm text-muted-foreground">
+                {t(autoSelectKnowledge ? "autoKnowledgeStatus" : "noKnowledgeBindings")}
+              </p>
+            )}
+            {appInfo.dataset_bindings?.map((binding) => (
+              <div key={binding.dataset_id} className="text-sm">
+                <div className="flex items-center gap-2">
+                  {binding.available ? (
+                    <Link
+                      href={`/knowledge?dataset=${encodeURIComponent(binding.dataset_id)}`}
+                      className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      {binding.name}
+                    </Link>
+                  ) : (
+                    <span>{t("workspaceUnavailableDataset")}</span>
+                  )}
+                  {!binding.available && <Badge variant="secondary">{ts("workspaceUnavailableStatus")}</Badge>}
+                </div>
+                {binding.owner_tenant_name && <p className="text-xs text-muted-foreground">{ts("workspaceSource", { tenant: binding.owner_tenant_name })}</p>}
+                {!binding.available && <p className="text-xs text-muted-foreground">{ts("workspaceUnavailable")}</p>}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+  );
 
   return (
     <div
@@ -305,6 +384,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           <span className="font-semibold">{appInfo.name}</span>
         </nav>
       </div>
+
+      {appInfo.app_type === "Custom" && !!appInfo.dataset_bindings?.length && knowledgeBindingsCard}
 
       {/* 应用基本信息（Custom 应用直接进自定义视图，不展示这块元信息）*/}
       {appInfo.app_type !== "Custom" && (
@@ -443,7 +524,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
       {/* 以下工具统计 / 绑定列表仅非 Custom 应用展示 */}
         {appInfo.app_type !== "Custom" && (
-          /* 四个 tab 取代原先六块竖排。此前要看 Agent.md 得滚过工具表和
+          /* 各能力分 tab 展示。此前要看 Agent.md 得滚过工具表和
              Skill 列表；分 tab 后每一块都在第一屏，切换成本一次点击。
              每块内部的数据获取、权限判断、保存逻辑逐行原样搬，未改动。 */
           <Tabs defaultValue="persona" className="w-full">
@@ -456,6 +537,10 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
               <TabsTrigger value="tools">
                 {t("tabTools")}
                 <span className="ml-1.5 text-muted-foreground">{appTools.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="knowledge">
+                {t("tabKnowledge")}
+                <span className="ml-1.5 text-muted-foreground">{appInfo.dataset_bindings?.length ?? 0}</span>
               </TabsTrigger>
               <TabsTrigger value="memory">{t("tabMemory")}</TabsTrigger>
             </TabsList>
@@ -599,6 +684,10 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
             </TabsContent>
 
+            <TabsContent value="knowledge" className="mt-4">
+              {knowledgeBindingsCard}
+            </TabsContent>
+
             <TabsContent value="memory" className="mt-4">
               {/* 平台尚无「记忆」概念。占位而不是留白：让用户知道这一块
                   是规划中的，而不是加载失败或权限不足 */}
@@ -616,7 +705,6 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         open={bindDialogOpen}
         onClose={() => setBindDialogOpen(false)}
         boundToolIds={appTools.map((t) => t.tool_id)}
-        boundHasWorkflow={appTools.some((t) => t.tool_type === "workflow")}
         onBind={handleBindTools}
       />
 
@@ -659,14 +747,11 @@ function BindToolsDialog({
   open,
   onClose,
   boundToolIds,
-  boundHasWorkflow,
   onBind,
 }: {
   open: boolean;
   onClose: () => void;
   boundToolIds: number[];
-  /** 这个应用是否已经绑过长任务——决定要不要提示"绑了就只剩绑定的" */
-  boundHasWorkflow: boolean;
   onBind: (toolIds: number[]) => void;
 }) {
   const t = useTranslations("apps");
@@ -682,7 +767,7 @@ function BindToolsDialog({
         .get("/api/tools?is_enabled=true")
         .then((res) => {
           const boundSet = new Set(boundToolIds);
-          setAvailableTools((res.data?.tools || []).filter((t: any) => !boundSet.has(t.id)));
+          setAvailableTools((res.data?.tools || []).filter((t: any) => !boundSet.has(t.id) && (t.tool_type === "mcp" || t.tool_type === "native")));
         })
         .catch(() => {
           setAvailableTools([]);
@@ -723,20 +808,6 @@ function BindToolsDialog({
             <div className="text-center py-8 text-muted-foreground">{t("allToolsBound")}</div>
           ) : (
             <div className="space-y-2">
-              {/*
-                绑第一个长任务会把这个数字员工从"全部长任务"切成"只有已绑定的"
-                （后端 Phase 3：未绑 = 不限制）。不说出来就是个静默陷阱——管理员
-                以为在加一项能力，实际上同时移除了其余所有长任务。
-                只在真要发生这件事时才提示：本次选中了长任务、且原先一个都没绑。
-              */}
-              {selectedToolIds.some(
-                (id) => availableTools.find((x) => x.id === id)?.tool_type === "workflow"
-              ) &&
-                !boundHasWorkflow && (
-                  <p className="text-xs rounded-md border border-amber-500/50 text-amber-600 dark:text-amber-400 px-3 py-2">
-                    {t("workflowBindNotice")}
-                  </p>
-                )}
               {availableTools.map((tool) => (
                 <div
                   key={tool.id}

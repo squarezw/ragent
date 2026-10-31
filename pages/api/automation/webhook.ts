@@ -1,8 +1,13 @@
+import { requireWorkspaceTenant, workspaceEnabled } from "@/lib/workspaceTenant";
+import { getAutomation } from "@/lib/automation/store";
+import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import { requireAuth } from "@/lib/auth";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 type WebhookEvent = {
   id: string;
+  tenant_id?: number | null;
+  actor_user_id?: number | null;
   automation_id: number;
   payload: unknown;
   received_at: string;
@@ -21,6 +26,11 @@ function getQueue() {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // The legacy anonymous webhook has no verifiable credential/resource binding.
+  // When workspaces are enabled it fails closed; authenticated callers must own
+  // the target automation in the selected workspace.
+  const workspace = workspaceEnabled() ? await requireWorkspaceTenant(req, res) : null;
+  if (workspaceEnabled() && !workspace) return;
   if (req.method === "POST") {
     const rawAutomationId = req.query.automation_id ?? req.body?.automation_id;
     const automationId = Number(rawAutomationId);
@@ -32,7 +42,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    if (workspace?.enabled) {
+      const task = await withAutomationWorkspace(workspace, () =>
+        getAutomation(workspace.actorUserId!, automationId));
+      if (!task) return res.status(404).json({ error: "Automation not found" });
+    }
+
     const event: WebhookEvent = {
+      tenant_id: workspace?.tenantId,
+      actor_user_id: workspace?.actorUserId,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       automation_id: automationId,
       payload: req.body?.payload ?? req.body ?? {},
@@ -55,7 +73,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!requireAuth(req, res)) return;
 
     const queue = getQueue();
-    const events = queue.splice(0, queue.length);
+    const events = workspace?.enabled
+      ? queue.filter((event) => event.tenant_id === workspace.tenantId && event.actor_user_id === workspace.actorUserId)
+      : queue.splice(0, queue.length);
+    if (workspace?.enabled) {
+      const claimed = new Set(events.map((event) => event.id));
+      globalThis.__ragentAutomationWebhookQueue = queue.filter((event) => !claimed.has(event.id));
+    }
 
     return res.status(200).json({ success: true, events });
   }

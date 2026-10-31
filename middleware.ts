@@ -1,3 +1,4 @@
+import { workspaceRoutePolicy } from "./lib/workspaceRoutePolicy";
 import { LOCAL_LOGOUT_COOKIE } from "./lib/localLogout";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -22,7 +23,23 @@ export function middleware(request: NextRequest) {
   ) {
     headers.set("authorization", `Bearer ${token}`);
   }
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && request.nextUrl.pathname.startsWith("/api/")) {
+    const policy = workspaceRoutePolicy(request.nextUrl.pathname);
+    if (policy === "blocked") return NextResponse.json({ detail: { code: "WORKSPACE_ROUTE_NOT_READY" } }, { status: 501 });
+    if (policy === "covered") {
+      const header = headers.get("x-workspace-tenant-id");
+      const query = request.nextUrl.searchParams.get("workspace_tenant_id");
+      if (header && query && header !== query) return NextResponse.json({ detail: { code: "WORKSPACE_TENANT_INVALID" } }, { status: 403 });
+      const selected = header || query;
+      if (!selected || !/^[1-9]\d*$/.test(selected)) return NextResponse.json({ detail: { code: "WORKSPACE_TENANT_REQUIRED" } }, { status: 409 });
+      headers.set("x-workspace-tenant-id", selected);
+    }
+  }
   const response = NextResponse.next({ request: { headers } });
+  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && request.nextUrl.pathname.startsWith("/api/")) {
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("Vary", "X-Workspace-Tenant-ID, Authorization, Cookie");
+  }
 
   // Check if locale cookie exists
   const localeCookie = request.cookies.get(LOCALE_COOKIE)?.value as Locale | undefined;

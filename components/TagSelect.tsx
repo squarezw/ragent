@@ -192,12 +192,13 @@ export default function TagSelect({
               type="button"
               disabled={disabled}
               onClick={() => handleSelectTag(tag)}
+              aria-pressed={isSelected}
               className={`
                 group inline-flex items-center gap-1 px-2 py-1 rounded-full border text-sm leading-none transition-all
                 ${
                   isSelected
-                    ? "border-blue-500 bg-blue-50 text-primary"
-                    : "border-gray-200 hover:border-border text-foreground"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50 text-foreground"
                 }
                 ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
               `}
@@ -206,20 +207,15 @@ export default function TagSelect({
               <span>{tag.name}</span>
               {isSelected && (
                 <>
-                  <span className="ml-0.5 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-primary">
+                  <span className="ml-0.5 text-[10px] px-1 py-0.5 rounded bg-primary/15 text-primary">
                     {t("selected")}
                   </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveTag(tag.id);
-                    }}
-                    className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-200"
-                    aria-label={t("deselectTag")}
+                  <span
+                    aria-hidden="true"
+                    className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity group-focus-visible:opacity-100"
                   >
                     <X className="h-3 w-3" />
-                  </button>
+                  </span>
                 </>
               )}
             </button>

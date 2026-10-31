@@ -40,6 +40,7 @@ async function update(
   const exports: Record<string, any> = {};
   vm.runInNewContext(compiled, {
     exports,
+    process: { env: {} },
     console: { error() {} },
     require(name: string) {
       if (name === "@/lib/auth") return { getUserIdFromRequest: () => 1 };
