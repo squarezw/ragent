@@ -367,5 +367,7 @@
   "workspaceUnavailable": "当前租户无权使用此资源，请调整共享范围或移除绑定。",
   "workspaceUnavailableStatus": "当前租户不可用",
   "contentAccessRestricted": "此 Skill 的正文和内部配置仅创建者、所属租户的租户管理员或系统超级管理员可查看；共享使用不受影响。",
-  "diagnosticsDetailsRestricted": "当前用户无法查看内部依赖详情，请联系创建者或管理员处理。"
+  "diagnosticsDetailsRestricted": "当前用户无法查看内部依赖详情，请联系创建者或管理员处理。",
+  "skillUnavailable": "当前用户无权使用此 Skill，请联系创建者或管理员调整共享范围，或移除绑定。",
+  "skillUnavailableStatus": "当前用户不可用"
 }

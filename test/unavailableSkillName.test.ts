@@ -31,5 +31,5 @@ for (const path of paths) {
 test('unavailable bindings remain non-navigable and do not expose descriptions', () => {
   const source = readFileSync(paths[0], 'utf8');
   assert.match(source, /disabled=\{row\.available === false\}/);
-  assert.match(source, /row\.available === false \? t\("workspaceUnavailable"\) : info\.description/);
+  assert.match(source, /row\.available === false \? t\("skillUnavailable"\) : info\.description/);
 });

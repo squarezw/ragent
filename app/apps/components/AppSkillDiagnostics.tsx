@@ -105,7 +105,7 @@ function BlockedSkill({
       {item.reason && (
         <p className="mt-1 text-xs text-muted-foreground">
           {item.reason === "workspace_unavailable"
-            ? t("workspaceUnavailable")
+            ? t("skillUnavailable")
             : item.can_view_content === true ? t("diagnosticsReasonTools") : t("diagnosticsDetailsRestricted")}
         </p>
       )}

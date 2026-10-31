@@ -130,12 +130,12 @@ export default function AppSkillsSection({
                     </TableCell>
                     <TableCell className="max-w-md">
                       <span className="line-clamp-2 text-sm text-muted-foreground">
-                        {row.available === false ? t("workspaceUnavailable") : info.description}
+                        {row.available === false ? t("skillUnavailable") : info.description}
                       </span>
                     </TableCell>
                     <TableCell>
                       {row.available === false ? (
-                        <Badge variant="secondary">{t("workspaceUnavailableStatus")}</Badge>
+                        <Badge variant="secondary">{t("skillUnavailableStatus")}</Badge>
                       ) : info.isPublished ? (
                         <Badge>{t("statusPublished")}</Badge>
                       ) : (
