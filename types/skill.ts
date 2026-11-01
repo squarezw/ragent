@@ -209,6 +209,8 @@ export interface AppSkillDiagnostics {
 
 /** 应用-Skill 绑定行（GET /api/v1/apps/{appId}/skills，含 skill 摘要） */
 export interface AppSkill {
+  /** Safe binding metadata; absent for deleted or legacy targets. */
+  visibility?: SkillVisibility | null;
   available?: boolean;
   unavailable_reason?: string | null;
   owner_tenant_id?: number | null;

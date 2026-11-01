@@ -3,7 +3,7 @@ import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
 import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
-import type { AppSkill, Skill } from "@/types/skill";
+import type { AppSkill, Skill, SkillVisibility } from "@/types/skill";
 
 /** 兼容后端列表包裹形状：数组或 {items}/{skills} */
 function unwrapAppSkillList(data: unknown): AppSkill[] {
@@ -17,10 +17,12 @@ export function normalizeAppSkill(row: AppSkill): {
   skillId: number;
   name: string;
   displayName: string;
+  visibility: SkillVisibility | null;
   description: string;
   isPublished: boolean;
 } {
   const skill = (row.skill || {}) as Partial<Skill>;
+  const visibility = row.visibility ?? skill.visibility;
   const published =
     row.is_published ??
     (row.published_content !== undefined
@@ -32,6 +34,7 @@ export function normalizeAppSkill(row: AppSkill): {
     skillId: row.skill_id ?? (skill.id as number),
     name: row.skill_name || skill.name || "",
     displayName: row.display_name || row.skill_display_name || skill.display_name || row.skill_name || skill.name || "",
+    visibility: ["public", "tenant", "dept", "private"].includes(visibility as string) ? visibility as SkillVisibility : null,
     description: row.description || skill.description || "",
     isPublished: published,
   };

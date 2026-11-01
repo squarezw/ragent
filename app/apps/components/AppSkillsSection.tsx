@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import VisibilityIcon from "@/components/VisibilityIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -117,6 +118,10 @@ export default function AppSkillsSection({
                 return (
                   <TableRow key={info.skillId}>
                     <TableCell>
+                      <div className="flex items-center gap-2">
+                      {info.visibility && <span title={t(`visibility_${info.visibility}`)} role="img" aria-label={t(`visibility_${info.visibility}`)} className="inline-flex shrink-0">
+                        <VisibilityIcon visibility={info.visibility} />
+                      </span>}
                       <button
                         type="button"
                         disabled={row.available === false}
@@ -125,6 +130,7 @@ export default function AppSkillsSection({
                       >
                         {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
+                      </div>
                       {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
                       {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
                     </TableCell>
