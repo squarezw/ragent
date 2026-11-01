@@ -118,7 +118,7 @@ export default function AppSkillsSection({
                 return (
                   <TableRow key={info.skillId}>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-start gap-2">
                       {info.visibility && <span title={t(`visibility_${info.visibility}`)} role="img" aria-label={t(`visibility_${info.visibility}`)} className="inline-flex shrink-0">
                         <VisibilityIcon visibility={info.visibility} />
                       </span>}
