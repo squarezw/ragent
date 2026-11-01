@@ -42,6 +42,9 @@ function ReplacementDialog({ skillId, onRefresh }: { skillId: number; onRefresh:
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -55,8 +58,30 @@ function ReplacementDialog({ skillId, onRefresh }: { skillId: number; onRefresh:
       setError(t("replacePackageUnsaved"));
       return;
     }
+    dragDepth.current = 0;
+    setDragging(false);
     setError("");
     setOpen(true);
+  }
+  function selectFiles(files: File[], invalidTransfer = false) {
+    if (busy || uncertain) return;
+    // Canceling the picker or dropping invalid input must preserve an existing valid selection.
+    if (!invalidTransfer && files.length === 0) return;
+    const selected = files[0];
+    if (
+      invalidTransfer ||
+      files.length !== 1 ||
+      !selected.name.toLowerCase().endsWith(".zip") ||
+      selected.size > 25 * 1024 * 1024
+    ) {
+      setError(t("replacePackageSingleZip"));
+      return;
+    }
+    setFile(selected);
+    setPreview(null);
+    setAck([]);
+    setConfirmed(false);
+    setError("");
   }
   async function validate() {
     if (!file || busy || uncertain) return;
@@ -149,34 +174,97 @@ function ReplacementDialog({ skillId, onRefresh }: { skillId: number; onRefresh:
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!busy && !uncertain) setOpen(next);
+          if (!busy && !uncertain) {
+            dragDepth.current = 0;
+            setDragging(false);
+            setOpen(next);
+          }
         }}
       >
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent
+          className="max-h-[85vh] overflow-y-auto"
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t("replacePackageTitle")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t("replacePackageHint")}</p>
-          <input
-            aria-label={t("replacePackageSelect")}
-            type="file"
-            accept=".zip"
-            disabled={busy || uncertain}
-            onChange={(event) => {
-              const selected = event.target.files?.[0] || null;
-              setPreview(null);
-              setAck([]);
-              setConfirmed(false);
-              setError("");
-              if (
-                selected &&
-                (!selected.name.toLowerCase().endsWith(".zip") || selected.size > 25 * 1024 * 1024)
-              ) {
-                setFile(null);
-                setError(t("replacePackageInvalidFile"));
-              } else setFile(selected);
+          <div
+            role="group"
+            aria-label={t("replacePackageDropzone")}
+            aria-disabled={busy || uncertain}
+            className={`rounded-md border border-dashed p-6 text-center space-y-3 ${dragging ? "border-primary bg-primary/5" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (busy || uncertain) return;
+              dragDepth.current += 1;
+              setDragging(true);
             }}
-          />
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = busy || uncertain ? "none" : "copy";
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              dragDepth.current = Math.max(0, dragDepth.current - 1);
+              if (dragDepth.current === 0) setDragging(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              dragDepth.current = 0;
+              setDragging(false);
+              if (busy || uncertain) return;
+              const files = Array.from(event.dataTransfer.files || []);
+              const items = Array.from(event.dataTransfer.items || []);
+              let invalid = files.length !== 1;
+              try {
+                invalid ||= items.some(
+                  (item) => item.kind !== "file" || item.webkitGetAsEntry?.()?.isDirectory === true
+                );
+              } catch {
+                invalid = true;
+              }
+              selectFiles(files, invalid);
+            }}
+          >
+            <p className="text-sm text-muted-foreground">{t("replacePackageDropzone")}</p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || uncertain}
+              onClick={() => {
+                if (!busy && !uncertain) fileInput.current?.click();
+              }}
+            >
+              {t("replacePackageSelect")}
+            </Button>
+            <p role="status" className="break-all text-sm">
+              {file ? file.name : t("replacePackageNoFile")}
+            </p>
+            <input
+              ref={fileInput}
+              aria-label={t("replacePackageSelect")}
+              type="file"
+              accept=".zip"
+              hidden
+              disabled={busy || uncertain}
+              onChange={(event) => {
+                selectFiles(Array.from(event.target.files || []));
+                event.target.value = "";
+              }}
+            />
+          </div>
           <Button disabled={!file || busy || uncertain} onClick={validate}>
             {t("replacePackagePreview")}
           </Button>

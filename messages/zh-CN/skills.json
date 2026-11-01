@@ -388,5 +388,8 @@
   "replacePackageChange_removed": "删除",
   "replacePackageConfirmDeletion": "我确认替换草稿正文与全部文件，并删除 ZIP 中缺失的原草稿文件。",
   "replacePackageApply": "确认全量替换草稿",
-  "replacePackageReadDraft": "重新读取草稿核对"
+  "replacePackageReadDraft": "重新读取草稿核对",
+  "replacePackageDropzone": "将一个 ZIP 文件拖到这里，或点击下方选择文件",
+  "replacePackageNoFile": "尚未选择文件",
+  "replacePackageSingleZip": "请仅选择一个不超过 25 MiB 的 ZIP 文件，不支持文件夹或多个文件。"
 }

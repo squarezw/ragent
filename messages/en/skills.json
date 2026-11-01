@@ -388,5 +388,8 @@
   "replacePackageChange_removed": "Remove",
   "replacePackageConfirmDeletion": "I confirm replacing the draft body and full file set, including removing old draft files absent from the ZIP.",
   "replacePackageApply": "Confirm full draft replacement",
-  "replacePackageReadDraft": "Reload draft to verify"
+  "replacePackageReadDraft": "Reload draft to verify",
+  "replacePackageDropzone": "Drop one ZIP file here, or choose a file below",
+  "replacePackageNoFile": "No file selected",
+  "replacePackageSingleZip": "Choose one ZIP file of at most 25 MiB. Folders and multiple files are not supported."
 }
