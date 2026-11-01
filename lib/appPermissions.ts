@@ -1,7 +1,8 @@
 /**
  * 数字员工的写权限 —— 前端**唯一实现**，与后端 app/utils/app_permissions.py 同一条规矩。
  *
- * 规矩：改一个 app 的任何东西（配置 / 角色设定 / 绑工具 / 绑 skill）= **owner 或超管**。
+ * 配置写入优先使用服务端 can_manage_config（含转入资源的定向管理授权）。
+ * 旧响应未带 capability 时仅保留既有 owner / 超管显示规则；不能据此授权转移。
  * 其他人只读。
  *
  * 为什么单独抽出来：这个判断会出现在列表、卡片、详情页、各个绑定区，散着写就会长成
@@ -15,18 +16,22 @@
 
 interface AppLike {
   user_id?: number | null;
+  can_manage_config?: boolean;
 }
 
 interface UserLike {
   id?: number | null;
 }
 
-/** 能改这个 app 吗（owner 或超管） */
+/** 能配置这个 app 吗。后端仍是最终权限边界。 */
 export function canEditApp(
   app: AppLike | null | undefined,
   user: UserLike | null | undefined,
   isSuperAdmin: boolean
 ): boolean {
+  // New service responses explicitly include tenant-scoped management authority.
+  // Only legacy responses without the field retain the old presentation fallback.
+  if (typeof app?.can_manage_config === "boolean") return !!user?.id && app.can_manage_config;
   if (isSuperAdmin) return true;
   // 两边都要有 id 才谈得上"是同一个人"：任一为空时按无权限处理，
   // 否则 undefined === undefined 会让未登录用户看起来像每个无主应用的 owner

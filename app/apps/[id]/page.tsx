@@ -54,6 +54,8 @@ import { useRouter } from "next/navigation";
 import { useAppTools, useAppToolsStatistics, type AppTool } from "@/hooks/useAppTools";
 import { Textarea } from "@/components/ui/textarea";
 import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
+import AppTenantTransfer, { TransferRequestRecovery } from "../components/AppTenantTransfer";
 import AppSkillsSection from "../components/AppSkillsSection";
 import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
 import AgentMdEditor from "../components/AgentMdEditor";
@@ -86,6 +88,9 @@ function toolTypeClass(toolType: string) {
 }
 
 interface AppInfo {
+  can_transfer_tenant?: boolean;
+  can_manage_config?: boolean;
+  tenant_transfer?: { transfer_id: string; rollback_eligible: boolean } | null;
   dataset_ids?: string[];
   dataset_bindings?: Array<{
     dataset_id: string;
@@ -129,6 +134,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   // 请求被 dedupe，父子各调一次不会多打一轮。
   const { appSkills } = useAppSkills(appId);
 
+  const [transferCompletion, setTransferCompletion] = useState<{ scope: string; tenant: number } | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [loadingApp, setLoadingApp] = useState(true);
   const [cleaningDatasets, setCleaningDatasets] = useState(false);
@@ -149,6 +155,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   } = useAppTools(appId);
   const { statistics } = useAppToolsStatistics(appId);
   const { user } = useCurrentUser();
+  const workspace = useWorkspace();
+  const accessScope = `${user?.id ?? "anonymous"}:${workspace.tenant?.id ?? "legacy"}:${appId}`;
   const invalidateSkillDiagnostics = useInvalidateAppSkillDiagnostics();
 
   useEffect(() => {
@@ -268,6 +276,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       <div className="container mx-auto p-6">
         <div className="text-center py-12">
           <p className="text-muted-foreground">{t("loadAppInfoFailed")}</p>
+          <TransferRequestRecovery appId={appId} />
           <Button onClick={() => router.push("/apps")} className="mt-4">
             {t("backToAppList")}
           </Button>
@@ -350,6 +359,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         </Card>
   );
 
+  if (transferCompletion?.scope === accessScope) return <div className="container mx-auto p-6 space-y-4"><p role="status">{t("transferSuccess", { tenant: transferCompletion.tenant })}</p><Button onClick={() => router.push("/apps")}>{t("back")}</Button></div>;
+
   return (
     <div
       className={
@@ -384,6 +395,8 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
           <span className="font-semibold">{appInfo.name}</span>
         </nav>
       </div>
+
+      <AppTenantTransfer key={appInfo.id} app={appInfo} onComplete={result => setTransferCompletion({ scope: accessScope, tenant: result.to_tenant_id })} />
 
       {appInfo.app_type === "Custom" && !!appInfo.dataset_bindings?.length && knowledgeBindingsCard}
 
@@ -549,7 +562,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             {/* Agent.md 编辑区块 */}
             <AgentMdEditor
               appId={appId}
-              ownerUserId={appInfo.user_id}
+              ownerUserId={appInfo.user_id} canManageConfig={appInfo.can_manage_config}
               platform={appInfo.platform}
               onChanged={loadAppInfo}
             />
@@ -558,7 +571,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
 
             <TabsContent value="skills" className="mt-4 space-y-4">
             {/* Skills 绑定区 */}
-            <AppSkillsSection appId={appId} ownerUserId={appInfo.user_id} />
+            <AppSkillsSection appId={appId} ownerUserId={appInfo.user_id} canManageConfig={appInfo.can_manage_config} />
             {/* Skill 生效诊断（requires 门控去静默） */}
             <AppSkillDiagnostics appId={appId} onBindTools={() => setBindDialogOpen(true)} />
 
