@@ -122,6 +122,7 @@ export default function AppSkillsSection({
                       {info.visibility && <span title={t(`visibility_${info.visibility}`)} role="img" aria-label={t(`visibility_${info.visibility}`)} className="inline-flex shrink-0">
                         <VisibilityIcon visibility={info.visibility} />
                       </span>}
+                      <div className="min-w-0">
                       <button
                         type="button"
                         disabled={row.available === false}
@@ -130,9 +131,10 @@ export default function AppSkillsSection({
                       >
                         {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
-                      </div>
                       {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
                       {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
+                      </div>
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-md">
                       <span className="line-clamp-2 text-sm text-muted-foreground">
