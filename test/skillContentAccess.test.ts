@@ -58,6 +58,7 @@ for (const capability of [false, undefined, true]) test(`diagnostic tool depende
     exports: api, require(name: string) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === 'react') return { useMemo: (fn: () => unknown) => fn() };
+      if (name === 'next/navigation') return { useRouter: () => ({ push() {} }) };
       if (name === 'next-intl') return { useTranslations: () => (key: string) => key };
       if (name === '@/lib/skillRequires') return { buildGapGroups: () => { gapReads++; return [{ kind: 'tool', gaps: [{ kind: 'tool', name: 'PRIVATE-DEPENDENCY' }] }]; } };
       return new Proxy({}, { get: (_, key) => String(key) });

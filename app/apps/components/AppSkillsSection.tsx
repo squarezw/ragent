@@ -59,6 +59,7 @@ export default function AppSkillsSection({
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
+  const canInspectUnavailable = checkSuperAdmin(user) && user?.roles?.some((role: { name?: string; isSystem?: boolean }) => role?.isSystem === true && role.name === "超级管理员") === true;
   // owner 或超管（与后端 require_app_owner_or_super 同一条规矩）；租户管理员沿用既有权限
   const canManage =
     canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user)) || checkTenantAdmin(user);
@@ -115,6 +116,7 @@ export default function AppSkillsSection({
             <TableBody>
               {appSkills.map((row) => {
                 const info = normalizeAppSkill(row);
+                const canOpenUnavailable = canInspectUnavailable && info.visibility !== null && Number.isSafeInteger(info.skillId) && info.skillId > 0;
                 return (
                   <TableRow key={info.skillId}>
                     <TableCell>
@@ -125,9 +127,9 @@ export default function AppSkillsSection({
                       <div className="min-w-0">
                       <button
                         type="button"
-                        disabled={row.available === false}
+                        disabled={row.available === false && !canOpenUnavailable}
                         className="font-medium hover:underline text-left disabled:no-underline disabled:text-muted-foreground"
-                        onClick={() => router.push(`/skills/${info.skillId}`)}
+                        onClick={() => { if (row.available !== false || canOpenUnavailable) router.push(`/skills/${info.skillId}`); }}
                       >
                         {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
