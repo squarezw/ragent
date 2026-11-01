@@ -4,6 +4,7 @@ import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { useTranslations } from "next-intl";
 import axios from "@/lib/axios";
 import { toast } from "sonner";
+import SkillPackageReplacement from "./SkillPackageReplacement";
 import SkillAssetPreviewDialog from "./SkillAssetPreviewDialog";
 import { planExecCancel } from "@/lib/skillAssets";
 import {
@@ -433,7 +434,7 @@ export default function SkillAssetsPanel({
   return (
     <>
       {/* 参考文档与资产文件：与「是否可执行」解耦，知识型 skill 也能只用这一块 */}
-      <Card>
+      <Card data-workspace-dirty={staged.length > 0 ? "true" : undefined} data-skill-config-dirty={staged.length > 0 ? "true" : undefined}>
         <CardHeader>
           <CardTitle>
             <button
@@ -627,7 +628,7 @@ export default function SkillAssetsPanel({
                 >
                   <Upload className="h-5 w-5 mx-auto text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">{t("uploadDropzone")}</p>
-                  <div className="flex justify-center gap-2">
+                  <div className="flex flex-wrap items-start justify-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
                       {t("uploadBrowseFiles")}
                     </Button>
@@ -638,6 +639,19 @@ export default function SkillAssetsPanel({
                     >
                       {t("uploadBrowseFolder")}
                     </Button>
+                    {canEdit && skill.can_view_content === true && (
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        onDragOver={(event) => event.stopPropagation()}
+                        onDrop={(event) => event.stopPropagation()}
+                      >
+                        <SkillPackageReplacement
+                          skillId={skill.id}
+                          enabled={canEdit && skill.can_view_content === true}
+                          onRefresh={onSkillChanged}
+                        />
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {t("uploadHint", { max: formatBytes(ASSET_MAX_FILE_BYTES) })}

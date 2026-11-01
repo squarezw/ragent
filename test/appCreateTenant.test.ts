@@ -45,7 +45,7 @@ test("changing creation tenant clears resource bindings while preserving other i
 
 test("normal and template creation validate tenant; edits use explicit change detection", () => {
   const page = readFileSync(new URL("../app/apps/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /tenantSelector = !workspace.enabled && isSuperAdmin && \(!editingApp \|\| canEditApp/);
+  assert.match(page, /tenantSelector = !workspace.enabled && isSuperAdmin && !editingApp/);
   assert.match(page, /setCreateTenantId\(operationTenantId \? String\(operationTenantId\) : ""\)/);
   assert.match(
     page,
@@ -55,7 +55,7 @@ test("normal and template creation validate tenant; edits use explicit change de
     page,
     /axios\.post\("\/api\/v1\/apps", \{ \.\.\.qualityAgentData, \.\.\.createTenantFields\(isSuperAdmin, createTenantId\) \}\)/
   );
-  assert.match(page, /editTenantFields\(isSuperAdmin, editingApp.owner_tenant_id, editTenantId\)/);
+  assert.doesNotMatch(page, /\.\.\.editTenantFields\(/);
 });
 
 // Execute the page's actual submission callback, rather than a second payload implementation.

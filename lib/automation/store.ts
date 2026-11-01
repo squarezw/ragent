@@ -1,3 +1,4 @@
+import { lockAppTenant, withAppTenantFence } from "@/lib/appTenantFence";
 import { automationTenantClause, automationWorkspaceTenant, automationWorkspaceContext } from "@/lib/automation/workspace";
 import pool from "@/lib/db";
 import {
@@ -544,7 +545,7 @@ export async function createAutomation(userId: number, input: any) {
     callbackAuth: input.callbackAuth || "无需验证",
   };
 
-  const result = await pool.query(
+  const result = await withAppTenantFence(pool, appId, tenantId, client => client.query(
     `INSERT INTO automation_tasks (
       tenant_id, created_by_user_id, name, app_id, agent_name, task,
       trigger_type, trigger_config, strategy, status, result_config, next_run_at
@@ -564,7 +565,7 @@ export async function createAutomation(userId: number, input: any) {
       JSON.stringify(resultConfig),
       nextRunAt,
     ]
-  );
+  ));
 
   return result.rows[0];
 }
@@ -729,7 +730,7 @@ export async function updateAutomation(userId: number, id: number, input: any) {
     throw new Error("UPSTREAM_AUTOMATION_NOT_FOUND");
   }
 
-  const result = await pool.query(
+  const result = await withAppTenantFence(pool, appId, current.tenant_id, client => client.query(
     `UPDATE automation_tasks SET
       name=$1, app_id=$2, agent_name=$3, task=$4, trigger_type=$5,
       trigger_config=$6::jsonb, strategy=$7, status=$8,
@@ -750,7 +751,7 @@ export async function updateAutomation(userId: number, id: number, input: any) {
       id,
       userId,
     ]
-  );
+  ));
 
   return result.rows[0] || null;
 }
@@ -788,6 +789,8 @@ async function insertRunRow(
   status: "running" | "pending",
   triggerContext: Record<string, any> = {}
 ) {
+  // Caller must hold a transaction; shared lock spans this run insertion.
+  await lockAppTenant(queryable, Number(task.app_id), task.tenant_id);
   const needsReview = task.strategy === "需要确认后执行";
   const result = await queryable.query(
     `INSERT INTO automation_runs (
@@ -822,7 +825,8 @@ export async function createRun(
   triggerContext: Record<string, any> = {}
 ) {
   await assertAutomationTablesReady();
-  return insertRunRow(pool, task, status, triggerContext);
+  return withAppTenantFence(pool, Number(task.app_id), task.tenant_id, client =>
+    insertRunRow(client, task, status, triggerContext));
 }
 
 /**

@@ -30,6 +30,7 @@ interface AgentMdEditorProps {
   appId: number;
   /** app 的创建者。后端的 agent-md 写入一直是 owner 或超管，UI 此前只放超管 */
   ownerUserId?: number | null;
+  canManageConfig?: boolean;
   platform: string;
   /** Agent.md 状态变化（升级 / 回退）后通知父组件刷新应用信息 */
   onChanged?: () => void;
@@ -45,13 +46,14 @@ interface AgentMdEditorProps {
 export default function AgentMdEditor({
   appId,
   ownerUserId,
+  canManageConfig,
   platform,
   onChanged,
 }: AgentMdEditorProps) {
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
-  const canManage = canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user));
+  const canManage = canEditApp({ user_id: ownerUserId, can_manage_config: canManageConfig }, user, checkSuperAdmin(user));
 
   const { agentMd, loading, save, generate, fetchExport } = useAgentMd(appId);
 

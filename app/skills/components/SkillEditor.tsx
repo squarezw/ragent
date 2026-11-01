@@ -165,7 +165,8 @@ export default function SkillEditor({
   // 已保存或本地编辑未保存，与已发布版本有差异都算「有未发布修改」
   const showUnpublishedChanges =
     skill != null &&
-    (computeUnpublishedChanges(skill.content, skill.published_content) ||
+    (skill.has_unpublished_changes === true ||
+      computeUnpublishedChanges(skill.content, skill.published_content) ||
       computeUnpublishedChanges(content, skill.published_content));
 
   const payload = useMemo<SkillPayload>(

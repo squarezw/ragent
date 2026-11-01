@@ -27,3 +27,12 @@ test("超管即便没有可比的 id 也能改", () => {
   // 超管判定不依赖 owner 是谁；无主应用（user_id 为空）也得能管
   assert.equal(canEditApp({ user_id: null }, { id: null }, true), true);
 });
+
+
+test("server capability false overrides creator and super shortcuts; transferred grant is per-app", () => {
+ assert.equal(canEditApp({user_id:7,can_manage_config:false},{id:7},false),false);
+ assert.equal(canEditApp({user_id:7,can_manage_config:false},{id:999},true),false);
+ assert.equal(canEditApp({user_id:7,can_manage_config:true},{id:999},false),true);
+ assert.equal(canEditApp({user_id:7,can_manage_config:true},null,false),false);
+ assert.equal(canEditApp({user_id:7},{id:999},false),false);
+});

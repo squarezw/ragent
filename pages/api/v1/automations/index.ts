@@ -43,6 +43,7 @@ async function scopedHandler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ detail: `Method ${req.method} Not Allowed` });
   } catch (error: any) {
     const code = error?.message || "";
+    if (code === "APP_TENANT_CHANGED") return res.status(409).json({ detail: { code: "APP_TENANT_CHANGED" } });
     if (code === "INVALID_APP_ID") return res.status(400).json({ detail: "请选择有效的数字员工" });
     if (code === "APP_NOT_FOUND") return res.status(404).json({ detail: "数字员工不存在" });
     if (code === "UPSTREAM_AUTOMATION_NOT_FOUND") return res.status(400).json({ detail: "上游自动化不存在或不在当前工作区" });

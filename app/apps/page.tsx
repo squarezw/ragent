@@ -63,7 +63,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { appSelectionKey, canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
 import { modelCatalogAccess } from "@/lib/tenantModels";
 import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
-import { editTenantFields, datasetsForEditTenant } from "@/lib/appEditTenant";
+import { datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
@@ -74,6 +74,8 @@ import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
 // 类型定义
 interface App {
+  can_manage_config?: boolean;
+  can_transfer_tenant?: boolean;
   id: number;
   name: string;
   description: string;
@@ -232,7 +234,7 @@ export default function AppsPage() {
       setAutoSelectDatasets(true);
     }
   };
-  const tenantSelector = !workspace.enabled && isSuperAdmin && (!editingApp || canEditApp(editingApp, user, isSuperAdmin)) ? (
+  const tenantSelector = !workspace.enabled && isSuperAdmin && !editingApp ? (
     <div className="space-y-2">
       <Label htmlFor="create-tenant">{t("createTenantLabel")}</Label>
       <Select value={editingApp ? editTenantId : createTenantId} onValueChange={handleCreateTenantChange}>
@@ -564,10 +566,8 @@ export default function AppsPage() {
         Boolean(submitData.is_default) === Boolean(editingApp.is_default)) delete submitData.is_default;
       if (editingApp) {
         // 更新
-        if (tenantChanged) delete submitData.is_default;
         await axios.put(`/api/v1/apps/${editingApp.id}`, {
           ...submitData,
-          ...editTenantFields(isSuperAdmin, editingApp.owner_tenant_id, editTenantId),
         });
         toast.success(t("appUpdated"));
       } else {

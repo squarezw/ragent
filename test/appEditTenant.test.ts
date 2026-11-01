@@ -24,10 +24,9 @@ test("new tenant candidates preserve selected cross-tenant and missing bindings 
   );
 });
 
-test("actual edit callback sends changed tenant without default or silently replacing workflow", async () => {
+test("actual edit callback never transfers tenant via ordinary PUT", async () => {
   const changed = await submitFromPage(true, "9", true);
-  assert.equal(changed.calls[0].payload.owner_tenant_id, 9);
-  assert.equal("is_default" in changed.calls[0].payload, false);
+  assert.equal("owner_tenant_id" in changed.calls[0].payload, false);
   assert.equal((changed.workflowInputs[0] as { source: string }).source, "form");
   const ordinary = await submitFromPage(false, "9", true);
   assert.equal("owner_tenant_id" in ordinary.calls[0].payload, false);

@@ -93,8 +93,11 @@ export default function SkillExecConfigForm({
 
   const canSave = !saving && !timeoutInvalid && !imageMissing;
 
+  const configDirty = image !== selection.value || timeout !== String(config?.timeout_sec ?? DEFAULT_TIMEOUT) ||
+    needsNetwork !== (config?.needs_network ?? false) || warmPool !== (config?.warm_pool ?? false) ||
+    artifactExclude !== (config?.artifact_exclude ?? []).join("\n") || writableSubdirs !== (config?.writable_subdirs ?? []).join("\n");
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-workspace-dirty={configDirty ? "true" : undefined} data-skill-config-dirty={configDirty ? "true" : undefined}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="exec-image">{t("execImage")} *</Label>

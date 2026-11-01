@@ -50,10 +50,12 @@ import type { AppSkill } from "@/types/skill";
 export default function AppSkillsSection({
   appId,
   ownerUserId,
+  canManageConfig,
 }: {
   appId: number;
   /** app 的创建者。owner 也能绑/解绑（后端同规矩），不传则只有管理员能管 */
   ownerUserId?: number | null;
+  canManageConfig?: boolean;
 }) {
   const router = useRouter();
   const t = useTranslations("skills");
@@ -62,7 +64,7 @@ export default function AppSkillsSection({
   const canInspectUnavailable = checkSuperAdmin(user) && user?.roles?.some((role: { name?: string; isSystem?: boolean }) => role?.isSystem === true && role.name === "超级管理员") === true;
   // owner 或超管（与后端 require_app_owner_or_super 同一条规矩）；租户管理员沿用既有权限
   const canManage =
-    canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user)) || checkTenantAdmin(user);
+    canEditApp({ user_id: ownerUserId, can_manage_config: canManageConfig }, user, checkSuperAdmin(user)) || (canManageConfig === undefined && checkTenantAdmin(user));
 
   const { appSkills, loading, bindSkill, unbindSkill } = useAppSkills(appId);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);

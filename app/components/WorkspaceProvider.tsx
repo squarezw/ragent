@@ -43,7 +43,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [readyFor, setReadyFor] = useState("");
   const enabled = user?.workspace_enabled === true;
   const isSuperAdmin = checkSuperAdmin(user);
-  const key = `ragent:workspace:${user?.id}`;
+  // Preference only: origin/account scoped, always revalidated against server catalog.
+  const origin = typeof window === "undefined" ? "server" : window.location.origin;
+  const key = `ragent:workspace:${origin}:${user?.id}`;
   const identity = `${user?.id}:${user?.tenant_id}:${user?.dept_id}:${user?.status}:${enabled}:${isSuperAdmin}:${JSON.stringify(user?.roles || [])}`;
   const effectiveReady = !loading && ready && readyFor === identity;
   useLayoutEffect(() => {
@@ -67,9 +69,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         if (!active) return;
         const available: WorkspaceTenant[] = data.tenants || [];
         setTenants(available);
-        const stored = sessionStorage.getItem(key);
+        let stored: string | null = null;
+        try { stored = localStorage.getItem(key); } catch { /* storage may be disabled */ }
         const selected = isSuperAdmin
-          ? available.find((t) => String(t.id) === stored)
+          ? available.find((t) => String(t.id) === stored) ||
+            available.find((t) => t.id === Number(user.tenant_id))
           : available.find((t) => t.id === Number(user.tenant_id));
         setWorkspaceOperation(true, user.id, selected?.id || null);
         setTenant(selected || null);
@@ -89,9 +93,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [enabled, loading, user?.id, user?.tenant_id, isSuperAdmin, key, identity]);
   const selectTenant = (next: WorkspaceTenant) => {
-    if (!isSuperAdmin || workspaceBusy() || !tenants.some((t) => t.id === next.id)) return false;
+    if (!effectiveReady || !user || !isSuperAdmin || workspaceBusy() || !tenants.some((t) => t.id === next.id)) return false;
     setWorkspaceOperation(true, user.id, next.id);
-    sessionStorage.setItem(key, String(next.id));
+    try { localStorage.setItem(key, String(next.id)); } catch { /* selection still works */ }
     setTenant(next);
     return true;
   };
