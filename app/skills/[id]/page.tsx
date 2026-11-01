@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { canPublishSavedPackage } from "@/lib/skillPackageReplacement";
-import SkillPackageReplacement from "../components/SkillPackageReplacement";
 import SkillEditor from "../components/SkillEditor";
 import SkillDiffDialog from "../components/SkillDiffDialog";
 import SkillAssetsPanel from "../components/SkillAssetsPanel";
@@ -136,8 +135,6 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
           {t("exportSkillMd")}
         </Button>}
       </div>
-
-      {canEditAssets && <SkillPackageReplacement skillId={skill.id} enabled={canEditAssets} onRefresh={() => refresh()} />}
 
       {canViewContent ? <>
       <SkillEditor

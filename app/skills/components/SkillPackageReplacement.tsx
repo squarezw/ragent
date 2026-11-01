@@ -138,7 +138,7 @@ function ReplacementDialog({ skillId, onRefresh }: { skillId: number; onRefresh:
   }
   return (
     <div className="space-y-2">
-      <Button variant="outline" onClick={openDialog}>
+      <Button variant="outline" size="sm" onClick={openDialog}>
         {t("replacePackageTitle")}
       </Button>
       {!open && error && (
