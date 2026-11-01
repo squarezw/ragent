@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+// @ts-expect-error Node native TypeScript tests require explicit .ts source imports.
 import { withAppTenantFence } from "../lib/appTenantFence.ts";
 function fake(owner = 1) {
   const calls: string[] = [];

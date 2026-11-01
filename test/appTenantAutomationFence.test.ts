@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import ts from "typescript";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+// @ts-expect-error Node native TypeScript tests require explicit .ts source imports.
 import { lockAppTenant, withAppTenantFence } from "../lib/appTenantFence.ts";
 const source = readFileSync(new URL("../lib/automation/store.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("store.ts", source, ts.ScriptTarget.Latest, true);

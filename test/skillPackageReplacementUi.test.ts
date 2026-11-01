@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import ts from "typescript";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+// @ts-expect-error Node native TypeScript tests require explicit .ts source imports.
 import { canReplacePackage } from "../lib/skillPackageReplacement.ts";
 function harness() {
   const state: any[] = [],

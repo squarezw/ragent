@@ -4,6 +4,7 @@ import {
   canReplacePackage,
   canPublishSavedPackage,
   type PackageReplacementPreview,
+// @ts-expect-error Node native TypeScript tests require explicit .ts source imports.
 } from "../lib/skillPackageReplacement.ts";
 const preview = (): PackageReplacementPreview => ({
   skill_id: 9,

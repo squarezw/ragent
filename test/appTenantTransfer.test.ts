@@ -4,6 +4,7 @@ import {
   canConfirmTransfer,
   transferPayload,
   type TransferPreview,
+// @ts-expect-error Node native TypeScript tests require explicit .ts source imports.
 } from "../lib/appTenantTransfer.ts";
 const preview = (): TransferPreview => ({
   app_id: 1,
