@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import VisibilityIcon from "@/components/VisibilityIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +59,7 @@ export default function AppSkillsSection({
   const t = useTranslations("skills");
   const tc = useTranslations("common");
   const { user } = useCurrentUser();
+  const canInspectUnavailable = checkSuperAdmin(user) && user?.roles?.some((role: { name?: string; isSystem?: boolean }) => role?.isSystem === true && role.name === "超级管理员") === true;
   // owner 或超管（与后端 require_app_owner_or_super 同一条规矩）；租户管理员沿用既有权限
   const canManage =
     canEditApp({ user_id: ownerUserId }, user, checkSuperAdmin(user)) || checkTenantAdmin(user);
@@ -114,19 +116,30 @@ export default function AppSkillsSection({
             <TableBody>
               {appSkills.map((row) => {
                 const info = normalizeAppSkill(row);
+                const canOpenUnavailable = canInspectUnavailable && info.visibility !== null && Number.isSafeInteger(info.skillId) && info.skillId > 0;
                 return (
                   <TableRow key={info.skillId}>
                     <TableCell>
+                      <div className="flex items-start gap-2">
+                      {info.visibility && <span title={t(`visibility_${info.visibility}`)} role="img" aria-label={t(`visibility_${info.visibility}`)} className="inline-flex shrink-0">
+                        <VisibilityIcon visibility={info.visibility} />
+                      </span>}
+                      <div className="min-w-0">
                       <button
                         type="button"
-                        disabled={row.available === false}
+                        disabled={row.available === false && !canOpenUnavailable}
                         className="font-medium hover:underline text-left disabled:no-underline disabled:text-muted-foreground"
-                        onClick={() => router.push(`/skills/${info.skillId}`)}
+                        onClick={() => { if (row.available !== false || canOpenUnavailable) router.push(`/skills/${info.skillId}`); }}
                       >
                         {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
                       {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
-                      {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
+                      {(row.owner_tenant_name || (info.visibility === "private" && info.ownerUsernameMasked)) && <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        {row.owner_tenant_name && <span className="break-all">{t("boundTenant", { tenant: row.owner_tenant_name })}</span>}
+                        {info.visibility === "private" && info.ownerUsernameMasked && <span className="break-all">{t("boundUser", { user: info.ownerUsernameMasked })}</span>}
+                      </div>}
+                      </div>
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-md">
                       <span className="line-clamp-2 text-sm text-muted-foreground">

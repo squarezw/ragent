@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useAppSkills, normalizeAppSkill } from "@/hooks/useAppSkills";
 import { useAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
@@ -27,8 +28,10 @@ export default function AppSkillDiagnostics({
 }) {
   const t = useTranslations("skills");
   const { summary, loading } = useAppSkillDiagnostics(appId);
+  const { appSkills } = useAppSkills(appId);
   const { user } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
+  const canInspectUnavailable = isSuperAdmin && user?.roles?.some((role: { name?: string; isSystem?: boolean }) => role?.isSystem === true && role.name === "超级管理员") === true;
 
   if (loading || summary.tone === "empty") return null;
 
@@ -65,6 +68,7 @@ export default function AppSkillDiagnostics({
           <BlockedSkill
             key={item.skill_id}
             item={item}
+            canNavigate={canInspectUnavailable && Number.isSafeInteger(item.skill_id) && item.skill_id > 0 && appSkills.some((row) => row.skill_id === item.skill_id && normalizeAppSkill(row).visibility !== null)}
             isSuperAdmin={isSuperAdmin}
             onBindTools={onBindTools}
           />
@@ -76,14 +80,17 @@ export default function AppSkillDiagnostics({
 
 function BlockedSkill({
   item,
+  canNavigate = false,
   isSuperAdmin,
   onBindTools,
 }: {
   item: AppSkillDiagnosticItem;
+  canNavigate?: boolean;
   isSuperAdmin: boolean;
   onBindTools?: () => void;
 }) {
   const t = useTranslations("skills");
+  const router = useRouter();
   const groups = useMemo(
     () => item.can_view_content === true ? buildGapGroups(item.missing, { isSuperAdmin }) : [],
     [item.missing, item.can_view_content, isSuperAdmin]
@@ -92,7 +99,7 @@ function BlockedSkill({
   return (
     <section className="rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{item.display_name || item.skill_name || `${t("workspaceUnavailableSkill")} (#${item.skill_id})`}</span>
+        {canNavigate ? <button type="button" className="font-medium break-all text-left hover:underline focus-visible:underline" onClick={() => router.push(`/skills/${item.skill_id}`)}>{item.display_name || item.skill_name || `${t("workspaceUnavailableSkill")} (#${item.skill_id})`}</button> : <span className="font-medium break-all">{item.display_name || item.skill_name || `${t("workspaceUnavailableSkill")} (#${item.skill_id})`}</span>}
         {item.reason !== "workspace_unavailable" && <span className="font-mono text-xs text-muted-foreground break-all">{item.skill_name}</span>}
         <Badge
           variant="outline"
