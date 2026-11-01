@@ -211,6 +211,8 @@ export interface AppSkillDiagnostics {
 export interface AppSkill {
   /** Safe binding metadata; absent for deleted or legacy targets. */
   visibility?: SkillVisibility | null;
+  /** Server-masked creator username only; never the full username. */
+  owner_username_masked?: string | null;
   available?: boolean;
   unavailable_reason?: string | null;
   owner_tenant_id?: number | null;

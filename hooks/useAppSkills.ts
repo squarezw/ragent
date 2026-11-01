@@ -18,11 +18,14 @@ export function normalizeAppSkill(row: AppSkill): {
   name: string;
   displayName: string;
   visibility: SkillVisibility | null;
+  ownerUsernameMasked: string | null;
   description: string;
   isPublished: boolean;
 } {
   const skill = (row.skill || {}) as Partial<Skill>;
   const visibility = row.visibility ?? skill.visibility;
+  const ownerUsernameMasked = typeof row.owner_username_masked === "string" && /^\S\*{4}$/u.test(row.owner_username_masked)
+    ? row.owner_username_masked : null;
   const published =
     row.is_published ??
     (row.published_content !== undefined
@@ -35,6 +38,7 @@ export function normalizeAppSkill(row: AppSkill): {
     name: row.skill_name || skill.name || "",
     displayName: row.display_name || row.skill_display_name || skill.display_name || row.skill_name || skill.name || "",
     visibility: ["public", "tenant", "dept", "private"].includes(visibility as string) ? visibility as SkillVisibility : null,
+    ownerUsernameMasked: visibility === "private" ? ownerUsernameMasked : null,
     description: row.description || skill.description || "",
     isPublished: published,
   };

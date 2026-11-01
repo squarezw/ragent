@@ -132,7 +132,10 @@ export default function AppSkillsSection({
                         {info.displayName || info.name || `${t("workspaceUnavailableSkill")} (#${info.skillId})`}
                       </button>
                       {row.available !== false && <div className="font-mono text-xs text-muted-foreground">{info.name}</div>}
-                      {row.owner_tenant_name && <div className="text-xs text-muted-foreground">{t("workspaceSource", { tenant: row.owner_tenant_name })}</div>}
+                      {(row.owner_tenant_name || (info.visibility === "private" && info.ownerUsernameMasked)) && <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        {row.owner_tenant_name && <span className="break-all">{t("boundTenant", { tenant: row.owner_tenant_name })}</span>}
+                        {info.visibility === "private" && info.ownerUsernameMasked && <span className="break-all">{t("boundUser", { user: info.ownerUsernameMasked })}</span>}
+                      </div>}
                       </div>
                       </div>
                     </TableCell>
