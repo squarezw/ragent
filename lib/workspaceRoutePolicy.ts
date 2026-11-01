@@ -13,6 +13,8 @@ export const workspaceProxyRoutes = [
   "/api/v1/github/oauth/config",
   "/api/v1/skills/requires-options",
   "/api/v1/skills",
+  "/api/v1/skills/[id]/package-replacement/validate",
+  "/api/v1/skills/[id]/package-replacement",
   "/api/v1/skills/[id]/publish",
   "/api/v1/skills/[id]/diff",
   "/api/v1/skills/[id]/git-sync",

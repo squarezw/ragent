@@ -26,6 +26,8 @@ export interface SkillsProxyOptions {
    * 路由侧还要各自配 `api.bodyParser.sizeLimit`，Next 默认 1mb 会先一步 413。
    */
   largeBody?: boolean;
+  /** Original multipart ZIP stream; only dedicated package-replacement routes use this. */
+  multipartBody?: boolean;
 }
 
 export async function proxySkillsApi(
@@ -61,6 +63,30 @@ export async function proxySkillsApi(
     return res.status(401).json({ detail: "Authorization header required" });
   }
 
+  let multipartBody: Buffer | undefined;
+  if (options.multipartBody) {
+    const contentType = req.headers["content-type"];
+    if (typeof contentType !== "string" || !/^multipart\/form-data\s*;.*boundary=/i.test(contentType))
+      return res.status(415).json({ detail: "Multipart ZIP required" });
+    const length = req.headers["content-length"];
+    if (length && (!/^\d+$/.test(String(length)) || Number(length) > 26 * 1024 * 1024))
+      return res.status(413).json({ detail: "Package upload too large" });
+    headers["Content-Type"] = contentType;
+    // ZIP is capped at 25 MiB by the service; allow at most 1 MiB multipart overhead.
+    // Buffer only this bounded new endpoint so no over-limit request reaches the service.
+    const chunks: Buffer[] = [];
+    let total = 0;
+    try {
+      for await (const chunk of req) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += bytes.length;
+        if (total > 26 * 1024 * 1024) return res.status(413).json({ detail: "Package upload too large" });
+        chunks.push(bytes);
+      }
+    } catch { return res.status(400).json({ detail: "Package upload interrupted" }); }
+    multipartBody = Buffer.concat(chunks, total);
+  }
+
   const params = new URLSearchParams();
   for (const key of options.passQuery || []) {
     const value = req.query[key];
@@ -75,11 +101,12 @@ export async function proxySkillsApi(
       url,
       method,
       headers,
-      data: method === "GET" || method === "DELETE" ? undefined : req.body,
+      data: options.multipartBody ? multipartBody : method === "GET" || method === "DELETE" ? undefined : req.body,
+      transformRequest: options.multipartBody ? [(data) => data] : undefined,
       responseType: options.binary ? "arraybuffer" : options.text ? "text" : "json",
       // text 模式下禁用 axios 的 JSON 自动解析
       transformResponse: options.text ? [(data) => data] : undefined,
-      maxBodyLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
+      maxBodyLength: options.multipartBody ? 26 * 1024 * 1024 : options.largeBody ? Number.POSITIVE_INFINITY : undefined,
       maxContentLength: options.largeBody ? Number.POSITIVE_INFINITY : undefined,
     });
 

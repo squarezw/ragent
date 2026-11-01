@@ -433,7 +433,7 @@ export default function SkillAssetsPanel({
   return (
     <>
       {/* 参考文档与资产文件：与「是否可执行」解耦，知识型 skill 也能只用这一块 */}
-      <Card>
+      <Card data-workspace-dirty={staged.length > 0 ? "true" : undefined} data-skill-config-dirty={staged.length > 0 ? "true" : undefined}>
         <CardHeader>
           <CardTitle>
             <button

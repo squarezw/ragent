@@ -371,5 +371,22 @@
   "skillUnavailable": "当前用户无权使用此 Skill，请联系创建者或管理员调整共享范围，或移除绑定。",
   "skillUnavailableStatus": "当前用户不可用",
   "boundTenant": "租户：{tenant}",
-  "boundUser": "用户：{user}"
+  "boundUser": "用户：{user}",
+  "replacePackageTitle": "用 ZIP 全量替换草稿",
+  "replacePackageHint": "只替换 SKILL.md 正文和草稿文件，ZIP 中缺失的原草稿文件将删除。名称、描述、依赖、运行配置、环境变量、Git、共享范围及归属保持不变。已发布版本继续运行，替换后需手动发布。",
+  "replacePackageUnsaved": "有未保存的编辑，请先保存或放弃后再替换。",
+  "replacePackageValidateFailed": "ZIP 校验失败，请检查文件后重试。",
+  "replacePackageConflict": "内容已变化或请求被拒绝，请重新预览确认。",
+  "replacePackageUnknown": "提交结果尚不确定，未自动重试。请重新读取草稿核对后再操作。",
+  "replacePackageSelect": "选择替换 ZIP",
+  "replacePackageInvalidFile": "请选择不超过 25 MB 的 ZIP 文件。",
+  "replacePackagePreview": "预览替换和删除",
+  "replacePackageCounts": "新增 {added}，覆盖 {modified}，不变 {unchanged}，删除 {removed}",
+  "replacePackageChange_added": "新增",
+  "replacePackageChange_modified": "覆盖",
+  "replacePackageChange_unchanged": "不变",
+  "replacePackageChange_removed": "删除",
+  "replacePackageConfirmDeletion": "我确认替换草稿正文与全部文件，并删除 ZIP 中缺失的原草稿文件。",
+  "replacePackageApply": "确认全量替换草稿",
+  "replacePackageReadDraft": "重新读取草稿核对"
 }
