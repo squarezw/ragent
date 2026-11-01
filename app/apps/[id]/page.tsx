@@ -367,10 +367,11 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         isCustom ? "container mx-auto px-6 pt-0 pb-6 space-y-3" : "container mx-auto p-6 space-y-6"
       }
     >
-      {/* 顶部：只有一个返回图标 + 面包屑。
+      {/* 顶部：返回图标、面包屑与右侧操作。
           头像和描述都下沉到下面那张卡里 —— 同一个员工的身份信息散在两处，
           页头和卡片会重复显示一遍名字和描述。 */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
         <Button
           variant="outline"
           size="icon"
@@ -383,7 +384,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         </Button>
         {/* 面包屑：两级同字号，靠颜色和字重分主次。
             text-sm 太轻，压不住下面那张卡的标题，页面读起来没有层级 */}
-        <nav className="flex items-center gap-2 text-lg">
+        <nav className="flex min-w-0 flex-wrap items-center gap-2 text-lg">
           <button
             type="button"
             className="text-muted-foreground hover:text-foreground"
@@ -392,11 +393,13 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
             {t("title")}
           </button>
           <span className="text-muted-foreground">/</span>
-          <span className="font-semibold">{appInfo.name}</span>
+          <span className="min-w-0 break-words font-semibold">{appInfo.name}</span>
         </nav>
+        </div>
+        <div className="ml-auto flex max-w-full flex-wrap justify-end gap-2">
+          <AppTenantTransfer key={appInfo.id} app={appInfo} onComplete={result => setTransferCompletion({ scope: accessScope, tenant: result.to_tenant_id })} />
+        </div>
       </div>
-
-      <AppTenantTransfer key={appInfo.id} app={appInfo} onComplete={result => setTransferCompletion({ scope: accessScope, tenant: result.to_tenant_id })} />
 
       {appInfo.app_type === "Custom" && !!appInfo.dataset_bindings?.length && knowledgeBindingsCard}
 
