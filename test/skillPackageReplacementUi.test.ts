@@ -146,7 +146,7 @@ async function ready(h: ReturnType<typeof harness>) {
 }
 function acknowledge(h: ReturnType<typeof harness>, tree: any) {
   for (const node of nodes(tree).filter((node) => node.type === "Checkbox"))
-    node.props.onCheckedChange(true);
+    if (node.props.checked !== true) node.props.onCheckedChange(true);
   return h.render();
 }
 test("replacement entry denies missing permission and scopes actor/workspace/skill", () => {
@@ -159,7 +159,13 @@ test("replacement entry denies missing permission and scopes actor/workspace/ski
 test("actual preview and full replacement use one CAS multipart apply, no per-file delete/save/publish", async () => {
   const h = harness();
   let tree = await ready(h);
-  assert.equal(button(tree, "replacePackageApply").props.disabled, true);
+  assert.equal(button(tree, "replacePackageApply").props.disabled, false);
+  assert.equal(h.calls.filter((call) => call.path).length, 1); // preview alone never mutates
+  assert.ok(
+    nodes(tree)
+      .filter((node) => node.type === "Checkbox")
+      .every((node) => node.props.checked === true)
+  );
   tree = acknowledge(h, tree);
   assert.equal(button(tree, "replacePackageApply").props.disabled, false);
   await button(tree, "replacePackageApply").props.onClick();
@@ -190,11 +196,18 @@ test("unsaved body/config blocks opening and committing", async () => {
   await button(tree, "replacePackageApply").props.onClick();
   assert.equal(h.calls.filter((call) => call.path).length, 1);
 });
-test("unacknowledged slug warning or deletion prevents actual handler write", async () => {
-  const h = harness();
-  const tree = await ready(h);
-  await button(tree, "replacePackageApply").props.onClick();
-  assert.equal(h.calls.length, 1);
+test("unchecking any default warning or final confirmation prevents actual handler write", async () => {
+  for (const index of [0, 1]) {
+    const h = harness();
+    let tree = await ready(h);
+    nodes(tree)
+      .filter((node) => node.type === "Checkbox")
+      [index].props.onCheckedChange(false);
+    tree = h.render();
+    assert.equal(button(tree, "replacePackageApply").props.disabled, true);
+    await button(tree, "replacePackageApply").props.onClick();
+    assert.equal(h.calls.length, 1);
+  }
 });
 test("changing selected ZIP invalidates preview and acknowledgements", async () => {
   const h = harness();
@@ -314,7 +327,7 @@ test("valid new drop invalidates old preview/token/acknowledgements", async () =
   assert.equal(button(tree, "replacePackageApply"), undefined);
   await button(tree, "replacePackagePreview").props.onClick();
   tree = h.render();
-  assert.equal(button(tree, "replacePackageApply").props.disabled, true);
+  assert.equal(button(tree, "replacePackageApply").props.disabled, false);
   assert.equal(h.calls.at(-1).body.fields.get("file").name, "new.zip");
 });
 test("nested drag enter/leave counts avoid highlight flicker and all events are contained", () => {
@@ -425,4 +438,41 @@ test("closing and reopening dialog clears unfinished nested drag highlight", () 
   button(tree, "replacePackageTitle").props.onClick();
   tree = h.render();
   assert.ok(!zone(tree).props.className.includes("bg-primary/5"));
+});
+
+test("each successful preview defaults only its fresh server warning set, never auto-applies", async () => {
+  const h = harness();
+  let tree = await ready(h);
+  nodes(tree)
+    .filter((node) => node.type === "Checkbox")[0]
+    .props.onCheckedChange(false);
+  h.preview.warnings = [
+    { code: "ASSETS_REMOVED", message: "removed", confirmation_required: true },
+    { code: "ENV_CHANGED", message: "template", confirmation_required: true },
+  ];
+  tree = h.render();
+  await button(tree, "replacePackagePreview").props.onClick();
+  tree = h.render();
+  assert.equal(h.calls.filter((call) => call.path).length, 2);
+  assert.ok(
+    nodes(tree)
+      .filter((node) => node.type === "Checkbox")
+      .every((node) => node.props.checked === true)
+  );
+  assert.equal(button(tree, "replacePackageApply").props.disabled, false);
+  await button(tree, "replacePackageApply").props.onClick();
+  assert.equal(h.calls.filter((call) => call.path).length, 3);
+  assert.equal(
+    h.calls[2].body.fields.get("confirmed_warning_codes"),
+    '["ASSETS_REMOVED","ENV_CHANGED"]'
+  );
+});
+test("failed new preview clears the former preview and confirmations", async () => {
+  const h = harness();
+  let tree = await ready(h);
+  h.preview.skill_id = 10;
+  await button(tree, "replacePackagePreview").props.onClick();
+  tree = h.render();
+  assert.equal(button(tree, "replacePackageApply"), undefined);
+  assert.equal(h.calls.filter((call) => call.path).length, 2);
 });

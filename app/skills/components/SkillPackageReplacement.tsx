@@ -107,6 +107,8 @@ function ReplacementDialog({ skillId, onRefresh }: { skillId: number; onRefresh:
       )
         throw Error("INVALID_REPLACEMENT_PREVIEW");
       setPreview(value);
+      setAck(value.warnings.map((warning) => warning.code));
+      setConfirmed(true);
     } catch {
       if (mounted.current) setError(t("replacePackageValidateFailed"));
     } finally {
