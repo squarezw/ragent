@@ -29,7 +29,7 @@ function fixture(
   superAdmin = false,
   accountTenantId: number | null = 10,
   active = true,
-  enabled = true
+  flag: string | undefined = undefined
 ) {
   const calls: any[] = [];
   const module = load(
@@ -56,7 +56,7 @@ function fixture(
         },
       },
     },
-    enabled ? { WORKSPACE_TENANT_ENABLED: "true" } : {}
+    flag === undefined ? {} : { WORKSPACE_TENANT_ENABLED: flag }
   );
   let status = 200;
   let body: any;
@@ -73,13 +73,22 @@ function fixture(
   return { module, calls, res, status: () => status, body: () => body };
 }
 
-test("default-off preserves legacy calls without database work", async () => {
-  const f = fixture(false, 10, true, false);
-  assert.equal(
-    (await f.module.requireWorkspaceTenant({ headers: {}, query: {} }, f.res)).enabled,
-    false
-  );
-  assert.equal(f.calls.length, 0);
+test("workspace isolation is mandatory with absent, false or true legacy environment values", async () => {
+  for (const flag of [undefined, "false", "true"]) {
+    const f = fixture(false, 10, true, flag);
+    assert.equal(f.module.workspaceEnabled(), true);
+    assert.equal(await f.module.requireWorkspaceTenant({ headers: {}, query: {} }, f.res), null);
+    assert.equal(f.status(), 409);
+    const context = await f.module.requireWorkspaceTenant(
+      { headers: { "x-workspace-tenant-id": "10" }, query: {} }, f.res
+    );
+    assert.equal(context.enabled, true);
+    assert.equal(context.tenantId, 10);
+    assert.equal(await f.module.requireWorkspaceTenant(
+      { headers: { "x-workspace-tenant-id": "20" }, query: {} }, f.res
+    ), null);
+    assert.equal(f.status(), 403);
+  }
 });
 test("super administrator must select active tenant; real account remains unchanged", async () => {
   const f = fixture(true, 10);
@@ -190,7 +199,8 @@ test("route inventory denies new unknown business endpoints and keeps credential
   assert.equal(module.workspaceRoutePolicy("/api/business-added-later"), "blocked");
 });
 
-test("actual middleware refuses unknown/missing/conflicting context before handlers and forwards valid native query", () => {
+for (const legacyFlag of [undefined, "false", "true"]) {
+test(`actual middleware enforces context with legacy flag ${legacyFlag}`, () => {
   const policy = load("../lib/workspaceRoutePolicy.ts", {});
   const module = load(
     "../middleware.ts",
@@ -210,7 +220,7 @@ test("actual middleware refuses unknown/missing/conflicting context before handl
         },
       },
     },
-    { WORKSPACE_TENANT_ENABLED: "true" }
+    legacyFlag === undefined ? {} : { WORKSPACE_TENANT_ENABLED: legacyFlag }
   );
   const request = (path: string, headers = {}) => ({
     headers: new Headers(headers),
@@ -236,3 +246,5 @@ test("actual middleware refuses unknown/missing/conflicting context before handl
   assert.equal(scoped.headers.get("cache-control"), "private, no-store");
   assert.match(scoped.headers.get("vary"), /X-Workspace-Tenant-ID/);
 });
+
+}

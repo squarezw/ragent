@@ -98,9 +98,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return deptResult.rows[0]?.dept_name || "";
     };
 
-    const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+    const workspace = true
       ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res) : null;
-    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspace) return;
+    if (true && !workspace) return;
     const tenantId = workspace?.enabled ? workspace.tenantId! : await resolveTenantId(userId);
     const [{ urls: source_file_urls, names: source_file_names }, primary_department, departments] = await Promise.all([
       resolveFilesWithNames(),

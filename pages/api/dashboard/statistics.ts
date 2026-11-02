@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/statistics`, {
       timeout: 10000,
-      ...(process.env.WORKSPACE_TENANT_ENABLED === "true" ? { headers: {
+      ...(true ? { headers: {
         Authorization: req.headers.authorization || "",
         "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"] || ""),
       } } : {}),

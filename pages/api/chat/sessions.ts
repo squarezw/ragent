@@ -4,7 +4,7 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import { buildVisibilityScope, deptIdsAtOrBelow } from "@/lib/visibilityScope";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const workspace = true
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   let backendHeaders: Record<string,string> = {};
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
     const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
     const ctx = await requireWorkspaceTenant(req, res);
@@ -85,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 由代理控制 header，确保浏览器内联显示
     res.setHeader("Content-Type", mimetype || "application/octet-stream");
     res.setHeader("Content-Disposition", "inline");
-    res.setHeader("Cache-Control", process.env.WORKSPACE_TENANT_ENABLED === "true" ? "private, no-store" : "private, max-age=1800");
+    res.setHeader("Cache-Control", true ? "private, no-store" : "private, max-age=1800");
 
     response.data.pipe(res);
   } catch (err) {

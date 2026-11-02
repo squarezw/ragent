@@ -85,6 +85,7 @@ async function lifecycle(
     process: { env: {} },
     console: { error() {} },
     require(name: string) {
+      if (name === "@/lib/workspaceTenant") return { requireWorkspaceTenant: async () => ({ enabled: true, tenantId: 9, actorUserId: 1 }) };
       if (name === "@/lib/auth") return { getUserIdFromRequest: () => 1 };
       if (name === "@/lib/permissions")
         return {
@@ -109,13 +110,13 @@ async function lifecycle(
     },
   };
   await exports.default(
-    { method, body: method === "PUT" ? { id: 2, tenant_id: opts.tenant ?? 10 } : { id: 2 } },
+    { method, headers: { "x-workspace-tenant-id": "9" }, body: method === "PUT" ? { id: 2, tenant_id: opts.tenant ?? 10 } : { id: 2 } },
     res
   );
   return { res, queries, released };
 }
 
-for (const method of ["PUT", "DELETE"] as const) {
+for (const method of ["DELETE"] as const) {
   test(`${method}: nonzero or in-flight personal account blocks lifecycle and rolls back`, async () => {
     const { res, queries, released } = await lifecycle(method, { blocked: true });
     assert.equal(res.statusCode, 409);
@@ -151,4 +152,19 @@ test("a non-super administrator cannot delete or prepare a credit account", asyn
   const { res, queries } = await lifecycle("DELETE", { superAdmin: false });
   assert.equal(res.statusCode, 403);
   assert.ok(!queries.includes("BEGIN"));
+});
+
+test("workspace rejects user tenant reassignment before credit lifecycle or writes", async () => {
+  for (const options of [{}, { blocked: true }, { failWrite: true }]) {
+    const { res, queries } = await lifecycle("PUT", options);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body?.error, "WORKSPACE_TENANT_FORBIDDEN");
+    assert.ok(!queries.includes("BEGIN"));
+    assert.ok(!queries.some(q => q.includes("prepare_user_credit_lifecycle") || q.startsWith("UPDATE users")));
+  }
+});
+test("same-tenant user update failure leaves credits intact", async () => {
+  const { res, queries } = await lifecycle("PUT", { tenant: 9, failWrite: true });
+  assert.equal(res.statusCode, 500);
+  assert.ok(!queries.some(q => q.includes("prepare_user_credit_lifecycle")));
 });

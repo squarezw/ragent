@@ -5,7 +5,7 @@ import { buildVisibilityScope } from "@/lib/visibilityScope";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const workspace = true
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

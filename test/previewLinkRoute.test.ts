@@ -44,6 +44,7 @@ test("preview renewal authenticates and checks live dataset access before accept
     exports: {} as Record<string, (req: MockRequest, res: MockResponse) => Promise<unknown>>,
   };
   const imports: Record<string, unknown> = {
+    "@/lib/workspaceTenant": { requireWorkspaceTenant: async () => ({ enabled: true, tenantId: 10, actorUserId: userId }) },
     "@/lib/auth": {
       requireAuth: (_req: unknown, res: MockResponse) => {
         if (!userId) {
@@ -61,7 +62,8 @@ test("preview renewal authenticates and checks live dataset access before accept
             queries++;
             assert.match(sql, /can_access_dataset\(\$2, dataset_id\)/);
             assert.match(sql, /status <> 'deleted'/);
-            assert.deepEqual(Array.from(args), ["2", userId]);
+            assert.deepEqual(Array.from(args), ["2", userId, 10]);
+            assert.match(sql, /owner_tenant_id=\$3/);
             return { rows };
           },
           release: () => {

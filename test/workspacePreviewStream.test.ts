@@ -8,7 +8,7 @@ function harness(){
  let upstream:any;let pipes=0;
  const source=fs.readFileSync(new URL("../pages/api/file-preview/stream.ts",import.meta.url),"utf8");
  const module={exports:{} as any};
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{module,exports:module.exports,process:{env:{WORKSPACE_TENANT_ENABLED:"true",PREVIEW_TOKEN_SECRET:"preview-test"}},console,require(name:string){
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{module,exports:module.exports,process:{env:{PREVIEW_TOKEN_SECRET:"preview-test"}},console,require(name:string){
   if(name==="jsonwebtoken")return jwt;
   if(name==="axios")return {get:async(_url:string,options:any)=>{upstream=options;return {data:{pipe(){pipes++;}}};}};
   if(name==="@/lib/auth")return {getTokenFromRequest:()=>"actor-test-token"};

@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing keys array" });
   }
 
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
     const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
     const ctx = await requireWorkspaceTenant(req, res);

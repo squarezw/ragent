@@ -33,7 +33,7 @@ async function invoke({ authenticated = true, status = 200, result = {}, unavail
     status(code: number) { this.code = code; return this; },
     json(value: any) { this.body = value; return this; },
   };
-  await module.exports.default({ method, body }, res);
+  await module.exports.default({ method, body, headers: { "x-workspace-tenant-id": "10" } }, res);
   return { res, calls };
 }
 
@@ -44,6 +44,7 @@ test("presign forwards the resolved session token and preserves upload headers a
   assert.deepEqual(res.body, result);
   assert.equal(calls[0][0], "http://backend.test:8010/api/v1/files/presign");
   assert.equal(calls[0][1].headers.Authorization, "Bearer session-token");
+  assert.equal(calls[0][1].headers["X-Workspace-Tenant-ID"], "10");
   assert.deepEqual(JSON.parse(calls[0][1].body), body);
 });
 

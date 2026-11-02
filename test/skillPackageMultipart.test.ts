@@ -13,7 +13,7 @@ function harness() {
     {
       module,
       exports: module.exports,
-      process: { env: { WORKSPACE_TENANT_ENABLED: "true" } },
+      process: { env: {  } },
       URLSearchParams,
       console,
       Buffer,

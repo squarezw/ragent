@@ -76,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   let operationTenantId: number | undefined;
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const { requireWorkspaceTenant } = await import("@/lib/workspaceTenant");
     const { workspaceCanReadObject } = await import("@/lib/workspaceFiles");
     const ctx = await requireWorkspaceTenant(req, res);

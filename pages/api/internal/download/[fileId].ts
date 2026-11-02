@@ -24,9 +24,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const fid = fileId as string;
   const exp = parseInt(expires as string, 10);
 
-  const scope = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const scope = true
     ? await verifyOfficeScope(req.query.cap,"file",fid) : null;
-  if(process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if(true) {
     if(!scope)return res.status(403).json({error:"Invalid workspace capability"});
   } else {
   // Validate token

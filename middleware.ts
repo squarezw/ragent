@@ -23,7 +23,7 @@ export function middleware(request: NextRequest) {
   ) {
     headers.set("authorization", `Bearer ${token}`);
   }
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && request.nextUrl.pathname.startsWith("/api/")) {
+  if (true && request.nextUrl.pathname.startsWith("/api/")) {
     const policy = workspaceRoutePolicy(request.nextUrl.pathname);
     if (policy === "blocked") return NextResponse.json({ detail: { code: "WORKSPACE_ROUTE_NOT_READY" } }, { status: 501 });
     if (policy === "covered") {
@@ -36,7 +36,7 @@ export function middleware(request: NextRequest) {
     }
   }
   const response = NextResponse.next({ request: { headers } });
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true" && request.nextUrl.pathname.startsWith("/api/")) {
+  if (true && request.nextUrl.pathname.startsWith("/api/")) {
     response.headers.set("Cache-Control", "private, no-store");
     response.headers.set("Vary", "X-Workspace-Tenant-ID, Authorization, Cookie");
   }

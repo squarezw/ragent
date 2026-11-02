@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "未登录" });
   }
 
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const workspace = true
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

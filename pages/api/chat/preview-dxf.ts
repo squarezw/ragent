@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const raw = req.query.url;
   if (typeof raw !== "string") return res.status(400).json({ error: "url is required" });
 
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const local = raw.startsWith("/api/oss/");
     const allowed = local || isAllowedArtifactUrl(raw);
     if (!allowed) return res.status(400).json({ error: "unsupported artifact URL" });

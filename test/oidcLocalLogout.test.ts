@@ -78,8 +78,8 @@ test('in-flight user cache promise cannot repopulate after successful logout; fa
 test('middleware removes both stale bearer and session cookie while preserving non-auth cookies; off mode is untouched',()=>{
  for(const enabled of ['true','false']){
   let headers:any;
-  const middleware=load('middleware.ts',{'next/server':{NextResponse:{next:(options:any)=>{headers=options.request.headers;return{cookies:{set:()=>{}}}}}},'./i18n/config':{locales:['en'],defaultLocale:'en'}},{...env,OIDC_ENABLED:enabled});
-  middleware.middleware({headers:new Headers({authorization:'Bearer stale',cookie:'ragent_token=stale; ragent_signed_out=1; locale=en'}),cookies:{get:(key:string)=>({value:{ragent_token:'stale',ragent_signed_out:'1',locale:'en'}[key]})},nextUrl:{pathname:'/api/user/me'}});
+  const middleware=load('middleware.ts',{'next/server':{NextResponse:{next:(options:any)=>{headers=options.request.headers;return{headers:new Headers(),cookies:{set:()=>{}}}}}},'./i18n/config':{locales:['en'],defaultLocale:'en'}},{...env,OIDC_ENABLED:enabled});
+  middleware.middleware({headers:new Headers({authorization:'Bearer stale',cookie:'ragent_token=stale; ragent_signed_out=1; locale=en'}),cookies:{get:(key:string)=>({value:{ragent_token:'stale',ragent_signed_out:'1',locale:'en'}[key]})},nextUrl:new URL('/api/user/me','https://app.test')});
   assert.equal(headers.get('authorization'),enabled==='true'?null:'Bearer stale');
   assert.equal(headers.get('cookie').includes('ragent_token='),enabled==='false');
   assert.ok(headers.get('cookie').includes('locale=en'));

@@ -126,7 +126,7 @@ function callbackHarness() {
     URL,
     console,
     process: {
-      env: { WORKSPACE_TENANT_ENABLED: "true", NEXT_PUBLIC_ONLYOFFICE_URL: "http://office" },
+      env: { NEXT_PUBLIC_ONLYOFFICE_URL: "http://office" },
     },
     require(name: string) {
       if (name === "jsonwebtoken") return require(name);

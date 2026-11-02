@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).end();
 
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const workspace = true
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

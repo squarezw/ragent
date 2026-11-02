@@ -59,7 +59,7 @@ test("middleware only bridges same-app Cookie auth in OIDC mode, leaving auth en
           NextResponse: {
             next: (options: any) => {
               forwarded = options.request.headers;
-              return { cookies: { set: () => {} } };
+              return { headers: new Headers(), cookies: { set: () => {} } };
             },
           },
         },
@@ -68,9 +68,9 @@ test("middleware only bridges same-app Cookie auth in OIDC mode, leaving auth en
       { OIDC_ENABLED: enabled }
     );
     m.middleware({
-      headers: new Headers({ authorization: "Bearer old" }),
+      headers: new Headers({ authorization: "Bearer old", "x-workspace-tenant-id": "10" }),
       cookies: { get: (name: string) => name === "locale" ? { value: "en" } : name === "ragent_token" ? { value: "cookie-jwt" } : undefined },
-      nextUrl: { pathname: path },
+      nextUrl: new URL(path, "https://app.test"),
     });
     assert.equal(forwarded.get("authorization"), expected);
   }

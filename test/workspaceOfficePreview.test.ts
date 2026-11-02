@@ -11,7 +11,7 @@ function harness(allowed = true, payload?: any) {
   const route=payload ? "file" : "create-link";
   const source=fs.readFileSync(`pages/api/file-preview/${route}.ts`,"utf8");
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{
-    module,exports:module.exports,URL,Buffer,console,process:{env:{WORKSPACE_TENANT_ENABLED:"true",PREVIEW_TOKEN_SECRET:"offline-test",FILE_PREVIEW_BASE_URL:"http://preview.internal:3000",KKFILEVIEW_BASE_URL:"http://office.invalid"}},
+    module,exports:module.exports,URL,Buffer,console,process:{env:{PREVIEW_TOKEN_SECRET:"offline-test",FILE_PREVIEW_BASE_URL:"http://preview.internal:3000",KKFILEVIEW_BASE_URL:"http://office.invalid"}},
     require(name:string){
       if(name==="axios")return {__esModule:true,default:{get:async(url:any,options:any)=>{
         calls.push({url,options});if(!allowed)throw Error("denied");

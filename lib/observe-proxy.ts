@@ -30,7 +30,7 @@ export async function proxyObserveGet(
     return res.status(401).json({ code: 401, message: "未登录", data: null });
   }
 
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const ctx = await (await import("./workspaceTenant")).requireWorkspaceTenant(req,res);
     if (!ctx) return;
     // This upstream credential covers one customer, never all operation tenants.

@@ -4,8 +4,9 @@ import { getUserPermissions } from "./permissions";
 import pool from "./db";
 
 export const WORKSPACE_HEADER = "X-Workspace-Tenant-ID";
+/** Compatibility capability helper: tenant isolation is mandatory, not configurable. */
 export function workspaceEnabled(): boolean {
-  return process.env.WORKSPACE_TENANT_ENABLED === "true";
+  return true;
 }
 export interface WorkspaceContext {
   enabled: boolean;

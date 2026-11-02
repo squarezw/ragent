@@ -29,9 +29,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const exp = parseInt(expires as string, 10);
 
   const parts = /^(doc|session):(.+)$/.exec(docKey);
-  const scope = process.env.WORKSPACE_TENANT_ENABLED === "true" && parts
+  const scope = true && parts
     ? await verifyOfficeScope(req.query.cap,parts[1] as "doc"|"session",parts[2]) : null;
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     if (!scope) return res.status(403).json({error:"Invalid workspace capability"});
   } else {
   if (!token || !expires || isNaN(exp)) {

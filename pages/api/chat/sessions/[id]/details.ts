@@ -5,7 +5,7 @@ import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
 import { normalizeSessionAttachments } from "@/lib/sessionAttachments";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
+  const workspace = true
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { objectKey, originalFilename, contentType } = req.body;
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  if (true) {
     const ctx = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
     if (!ctx) return;
     const { verifyWorkspaceUploadReceipt } = await import("@/lib/workspaceUploadReceipt");

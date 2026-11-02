@@ -43,6 +43,7 @@ async function update(
     process: { env: {} },
     console: { error() {} },
     require(name: string) {
+      if (name === "@/lib/workspaceTenant") return { requireWorkspaceTenant: async () => ({ enabled: true, tenantId: options.tenantId ?? 99, actorUserId: 1 }) };
       if (name === "@/lib/auth") return { getUserIdFromRequest: () => 1 };
       if (name === "@/lib/permissions")
         return {
@@ -73,7 +74,7 @@ async function update(
       return this;
     },
   };
-  await exports.default({ method: "PUT", body }, response);
+  await exports.default({ method: "PUT", body, headers: { "x-workspace-tenant-id": String(options.tenantId ?? 99) } }, response);
   return { response, queries, released };
 }
 
@@ -103,7 +104,7 @@ test("omitted phone is preserved when editing ordinary profile fields", async ()
 test("ordinary and cross-tenant users remain unable to edit another user's profile", async () => {
   for (const options of [{}, { tenantId: 2 }]) {
     const r = await update({ id: 2, nickname: "new" }, options);
-    assert.equal(r.response.statusCode, 403);
+    assert.equal(r.response.statusCode, options.tenantId === 2 ? 404 : 403);
     assert.equal(r.queries.length, 0);
   }
 });
