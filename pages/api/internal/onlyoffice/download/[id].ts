@@ -29,23 +29,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const exp = parseInt(expires as string, 10);
 
   const parts = /^(doc|session):(.+)$/.exec(docKey);
-  const scope = true && parts
+  const scope = parts
     ? await verifyOfficeScope(req.query.cap,parts[1] as "doc"|"session",parts[2]) : null;
-  if (true) {
+  {
     if (!scope) return res.status(403).json({error:"Invalid workspace capability"});
-  } else {
-  if (!token || !expires || isNaN(exp)) {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-  if (Date.now() > exp) {
-    return res.status(403).json({ error: "Token expired" });
-  }
-
-  const expected = crypto.createHmac("sha256", SECRET).update(`${docKey}:${expires}`).digest("hex");
-  if (token !== expected) {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-
   }
 
   try {

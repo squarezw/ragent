@@ -39,7 +39,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // 调用 Python 后端接口
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/preference/`, {
       headers: {
-        ...(true && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
+        ...(typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },
@@ -91,7 +91,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     // 调用 Python 后端接口
     const response = await axios.put(`${EXTERNAL_API_BASE_URL}/api/v1/preference/`, requestData, {
       headers: {
-        ...(true && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
+        ...(typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },
@@ -132,7 +132,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
     // 调用 Python 后端接口
     await axios.delete(`${EXTERNAL_API_BASE_URL}/api/v1/preference/`, {
       headers: {
-        ...(true && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
+        ...(typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },

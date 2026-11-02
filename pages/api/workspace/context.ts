@@ -1,15 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getUserIdFromRequest, getTokenFromRequest } from "@/lib/auth";
 import { getUserPermissions } from "@/lib/permissions";
-import { workspaceEnabled } from "@/lib/workspaceTenant";
 import { getCompanyCodeByTenantId } from "@/lib/tenantMapping";
 import pool from "@/lib/db";
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") return res.status(405).end();
   const userId = getUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const enabled = workspaceEnabled();
-  if (!enabled) return res.json({ enabled, tenants: [] });
   try {
     const base = (process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010").replace(/\/$/, "");
     const response = await fetch(`${base}/api/v1/workspace/context`, {
@@ -32,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   );
   res.setHeader("Cache-Control", "no-store");
   return res.json({
-    enabled,
+    enabled: true,
     tenants: result.rows.map((tenant) => ({
       ...tenant,
       company_code: getCompanyCodeByTenantId(tenant.id) || null,

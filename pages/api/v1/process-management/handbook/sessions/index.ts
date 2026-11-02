@@ -20,7 +20,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const response = await axios.get(`${PROCESS_MGMT_BASE_URL}/api/v1/handbook/sessions`, {
       params: { node_id },
     });
-    if (true) {
+    {
       const ctx = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
       if (!ctx) return;
       const pool = (await import("@/lib/db")).default;

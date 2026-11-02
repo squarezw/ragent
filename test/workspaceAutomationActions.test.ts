@@ -12,7 +12,7 @@ function harness() {
     fetch:async(url:any,init:any)=>{calls.push({url,init});return {ok:true,text:async()=>"{}"};},
     require(name:string){
       if(name==="jsonwebtoken")return {default:{sign:()=>"offline-token"},__esModule:true};
-      if(name==="@/lib/workspaceTenant")return {workspaceEnabled:()=>true,WORKSPACE_HEADER:"X-Workspace-Tenant-ID"};
+      if(name==="@/lib/workspaceTenant")return {WORKSPACE_HEADER:"X-Workspace-Tenant-ID"};
       if(name==="@/lib/automation/store")return {};
       throw Error(name);
     },

@@ -76,7 +76,6 @@ function fixture(
 test("workspace isolation is mandatory with absent, false or true legacy environment values", async () => {
   for (const flag of [undefined, "false", "true"]) {
     const f = fixture(false, 10, true, flag);
-    assert.equal(f.module.workspaceEnabled(), true);
     assert.equal(await f.module.requireWorkspaceTenant({ headers: {}, query: {} }, f.res), null);
     assert.equal(f.status(), 409);
     const context = await f.module.requireWorkspaceTenant(

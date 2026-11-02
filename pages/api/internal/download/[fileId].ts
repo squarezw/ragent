@@ -24,26 +24,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const fid = fileId as string;
   const exp = parseInt(expires as string, 10);
 
-  const scope = true
-    ? await verifyOfficeScope(req.query.cap,"file",fid) : null;
-  if(true) {
+  const scope = await verifyOfficeScope(req.query.cap,"file",fid);
+  {
     if(!scope)return res.status(403).json({error:"Invalid workspace capability"});
-  } else {
-  // Validate token
-  if (!token || !expires || isNaN(exp)) {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-
-  if (Date.now() > exp) {
-    return res.status(403).json({ error: "Token expired" });
-  }
-
-  const expected = crypto.createHmac("sha256", SECRET).update(`${fid}:${expires}`).digest("hex");
-
-  if (token !== expected) {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-
   }
 
   // Fetch file from Python backend (no auth needed — we verified the token)

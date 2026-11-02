@@ -9,7 +9,7 @@ import { getMimeTypeFromExtension, shouldInlineDisplay } from "@/lib/mimeTypes";
 const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://localhost:8010";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (true) {
+  {
     const ctx = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
     if (!ctx) return;
     const file = await pool.query(`SELECT f.id FROM knowledge_files f JOIN datasets d ON d.id=f.dataset_id WHERE f.id::text=$1 AND (d.owner_tenant_id=$2 OR d.visibility='public') AND (can_access_dataset($3,d.id) OR d.visibility='public')`, [String(req.query.file_id || ""),ctx.tenantId,ctx.actorUserId]);
@@ -108,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.setHeader("Content-Disposition", "inline");
     }
 
-    res.setHeader("Cache-Control", true ? "private, no-store" : "public, max-age=3600");
+    res.setHeader("Cache-Control", "private, no-store");
 
     response.data.on("error", (error: Error) => {
       console.error("[File Download] Stream error:", error);

@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 调用 Python 后端接口
     const response = await axios.get(`${EXTERNAL_API_BASE_URL}/api/v1/wechat/agents`, {
       headers: {
-        ...(true && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
+        ...(typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),
         Authorization: authHeader,
         "Content-Type": "application/json",
       },

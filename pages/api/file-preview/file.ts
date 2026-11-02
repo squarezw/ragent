@@ -90,11 +90,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  if (true && (!Number.isSafeInteger(payload.operationTenantId) || Number(payload.operationTenantId) <= 0))
+  if ((!Number.isSafeInteger(payload.operationTenantId) || Number(payload.operationTenantId) <= 0))
     return res.status(403).json({ error: "WORKSPACE_PREVIEW_TOKEN_REQUIRED" });
   let { fileUrl } = payload;
   const { sourceAuthHeader, timestamp, fileId } = payload;
-  if (true) {
+  {
     const base = process.env.FILE_PREVIEW_BASE_URL;
     const source = base && workspacePreviewSource(fileUrl, [new URL(base).origin]);
     if (!source || !base) return res.status(403).json({ error: "WORKSPACE_PREVIEW_SOURCE_INVALID" });
@@ -131,7 +131,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       targetUrl = targetUrl.replace(":3001", ":3000");
     }
 
-    if (true && payload.operationTenantId) {
+    if (payload.operationTenantId) {
       const fixed = new URL(targetUrl);
       fixed.searchParams.set("workspace_tenant_id", String(payload.operationTenantId));
       targetUrl = fixed.href;
@@ -140,9 +140,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       responseType: "stream",
       headers: {
         ...(sourceAuthHeader ? { Authorization: sourceAuthHeader } : {}),
-        ...(true ? { "X-Workspace-Tenant-ID": String(payload.operationTenantId) } : {}),
+        ...({ "X-Workspace-Tenant-ID": String(payload.operationTenantId) }),
       },
-      ...(true ? { maxRedirects: 0 } : {}),
+      ...({ maxRedirects: 0 }),
       timeout: 30000, // 30秒超时
     });
 

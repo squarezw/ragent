@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { WorkspaceContext } from "@/lib/workspaceTenant";
-import { workspaceEnabled } from "@/lib/workspaceTenant";
 
 // Request-local operation tenant. Schedulers use the task/run's persisted tenant,
 // never a browser selection or the creator's current account tenant.
@@ -13,7 +12,7 @@ export function automationWorkspaceContext() {
 }
 export function automationWorkspaceTenant(): number | null {
   const context = scope.getStore();
-  if (!workspaceEnabled() || !context?.enabled) return null;
+  if (!context?.enabled) return null;
   if (!Number.isSafeInteger(context.tenantId) || Number(context.tenantId) <= 0)
     throw new Error("WORKSPACE_TENANT_REQUIRED");
   return context.tenantId;

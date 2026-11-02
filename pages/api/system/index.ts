@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     let workspaceSuper = false;
-    if (true && userId) {
+    if (userId) {
       workspaceSuper = await isSuperAdmin(userId);
       if (workspaceSuper) {
         const actor = await pool.query("SELECT id FROM users WHERE id=$1 AND status='active'", [userId]);
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === "GET") {
       // GET 请求：未登录用户直接从数据库获取公开信息（登录页面需要），已登录用户从 Python 后端获取完整信息
-      if (!userId || (true && !workspaceSuper)) {
+      if (!userId || (!workspaceSuper)) {
         // 未登录用户：直接从数据库查询公开信息，绕过 Python 后端
         try {
           const client = await pool.connect();

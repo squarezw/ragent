@@ -110,7 +110,6 @@ export async function bindProcessWorkspaceSession(
   res: import("next").NextApiResponse,
   result: any
 ): Promise<boolean> {
-  if (false) return true;
   const ctx = await requireWorkspaceTenant(req, res);
   if (!ctx) return false;
   const id = result?.session_id || result?.data?.session_id;

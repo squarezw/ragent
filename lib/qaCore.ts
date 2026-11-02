@@ -31,7 +31,7 @@ export async function runQA(
   try {
     signal?.throwIfAborted();
     const headers: any = {
-      ...(true && req?.headers?.["x-workspace-tenant-id"] ? { "X-Workspace-Tenant-ID": req.headers["x-workspace-tenant-id"] } : {}),
+      ...(req?.headers?.["x-workspace-tenant-id"] ? { "X-Workspace-Tenant-ID": req.headers["x-workspace-tenant-id"] } : {}),
       "Content-Type": "application/json",
     };
 

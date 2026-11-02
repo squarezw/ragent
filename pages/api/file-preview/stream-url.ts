@@ -27,9 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "未登录" });
   }
 
-  const workspace = true
-    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
-    : { enabled: false, tenantId: null };
+  const workspace = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
   if (!workspace) return;
   const rawFileId = req.body?.fileId;
 

@@ -51,10 +51,7 @@ function response() {
   };
 }
 test("products and automation isolate operation tenants and retain creator ownership", async () => {
-  let enabled = true;
-  const contexts = load("lib/automation/workspace.ts", {
-    "@/lib/workspaceTenant": { workspaceEnabled: () => enabled },
-  });
+  const contexts = load("lib/automation/workspace.ts");
   const ctx = (tenant) => ({ enabled: true, tenantId: tenant, actorUserId: 3, isSuperAdmin: true });
   await Promise.all(
     [1, 2].map((t) =>
@@ -92,7 +89,7 @@ test("products and automation isolate operation tenants and retain creator owner
     "@/lib/db": { default: pool },
     "@/lib/auth": { requireAuth: () => true, getUserIdFromRequest: () => 3 },
     "@/lib/workspaceTenant": {
-      requireWorkspaceTenant: async () => (enabled ? ctx(2) : { enabled: false }),
+      requireWorkspaceTenant: async () => ctx(2),
       workspaceHeaders: () => ({ "X-Workspace-Tenant-ID": "2" }),
     },
   };
@@ -120,12 +117,6 @@ test("products and automation isolate operation tenants and retain creator owner
   assert.equal(res.code, 404);
   assert.equal(JSON.stringify(queries[0].params), JSON.stringify(["44", 2]));
   assert.match(queries[0].sql, /owner_tenant_id = \$2/);
-  enabled = false;
-  queries = [];
-  h = load("pages/api/products/index.ts", deps).default;
-  await h({ method: "GET", query: {}, headers: {} }, response());
-  assert(queries.every((q) => !q.sql.includes("owner_tenant_id")));
-  enabled = true;
   const store = load("lib/automation/store.ts", {
     "@/lib/db": { default: pool },
     "@/lib/automation/workspace": contexts,
@@ -159,7 +150,6 @@ test("products and automation isolate operation tenants and retain creator owner
   let active = ctx(1);
   const webhook = load("pages/api/automation/webhook.ts", {
     "@/lib/workspaceTenant": {
-      workspaceEnabled: () => true,
       requireWorkspaceTenant: async (_req, res) => {
         if (!active) {
           res.status(401).json({ error: "unauthorized" });
@@ -207,7 +197,6 @@ test("products and automation isolate operation tenants and retain creator owner
     $process: { env: { JWT_SECRET: secret } },
   });
   const uploads = load("lib/automation/task-upload.ts", {
-    "@/lib/workspaceTenant": { workspaceEnabled: () => enabled },
     "@/lib/workspaceUploadReceipt": receipt,
   });
   const attachment = {
@@ -228,18 +217,11 @@ test("products and automation isolate operation tenants and retain creator owner
     () => uploads.taskUploadAttachment({ created_by_user_id: 23, tenant_id: null }, attachment),
     /SNAPSHOT/
   );
-  enabled = false;
-  assert.equal(
-    uploads.taskUploadAttachment({ created_by_user_id: 23, tenant_id: null }, attachment),
-    attachment
-  );
-  enabled = true;
   // Runtime headers are fixed to the persisted run/task tenant; JWT actor remains real.
   let outgoing;
   const payloads = load("lib/automation/agent-payload.ts");
   const execute = load("lib/automation/execute.ts", {
     "@/lib/workspaceTenant": {
-      workspaceEnabled: () => enabled,
       WORKSPACE_HEADER: "X-Workspace-Tenant-ID",
     },
     "@/lib/automation/agent-payload": payloads,
@@ -269,6 +251,6 @@ test("products and automation isolate operation tenants and retain creator owner
   );
 
   console.log(
-    "PASS: concurrent request tenants, invalid context, product count/list/detail/create/deletion boundary, flag-off old-schema compatibility, automation task/run/actions/history creator + tenant, foreign task cannot delete."
+    "PASS: concurrent request tenants, invalid context, product count/list/detail/create/deletion boundary, automation task/run/actions/history creator + tenant, foreign task cannot delete."
   );
 });

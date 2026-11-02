@@ -5,9 +5,7 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).end();
 
-  const workspace = true
-    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
-    : { enabled: false, tenantId: null };
+  const workspace = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
   if (!workspace) return;
   const user_id = getUserIdFromRequest(req);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 3, 1), 100);

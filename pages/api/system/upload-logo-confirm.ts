@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    if (true) {
+    {
       const actor=await pool.query("SELECT id FROM users WHERE id=$1 AND status='active'",[userId]);
       if(!actor.rows.length)return res.status(401).json({error:"Unauthorized"});
     }
