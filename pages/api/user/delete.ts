@@ -9,9 +9,7 @@ import {
 import pool from "@/lib/db";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
-    ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
-    : { enabled: false, tenantId: null };
+  const workspace = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
   if (!workspace) return;
 
   if (req.method !== "DELETE") {

@@ -52,7 +52,7 @@ function fixture(options: { company?: string; mapped?: boolean; enabled?: boolea
     ).outputText,
     {
       exports,
-      process: { env: { WORKSPACE_TENANT_ENABLED: "true" } },
+      process: { env: {  } },
       Buffer,
       require: (id: string) => {
         assert.ok(id in imports, id);

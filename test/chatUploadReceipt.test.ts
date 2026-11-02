@@ -119,6 +119,7 @@ test("authenticated presign relays only the backend-authorized key and receipt",
     },
   };
   const req = {
+    headers: { "x-workspace-tenant-id": "10" },
     method: "POST",
     body: {
       filename: "new.png",

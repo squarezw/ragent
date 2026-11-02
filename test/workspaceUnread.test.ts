@@ -27,7 +27,6 @@ function harness(tenant: number | null) {
   let connections = 0;
   const workspace = compile("lib/automation/workspace.ts", (name) => {
     if (name === "node:async_hooks") return { AsyncLocalStorage };
-    if (name === "@/lib/workspaceTenant") return { workspaceEnabled: () => true };
     throw Error(name);
   });
   const mailboxes = compile("lib/automation/mailboxes.ts", (name) => {

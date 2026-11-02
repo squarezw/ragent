@@ -158,6 +158,7 @@ test("proxy forwards only the authenticated original-file JWT and preserves back
     json: () => res,
   };
   const req = {
+    headers: { "x-workspace-tenant-id": "10" },
     method: "POST",
     query: { fileId: "4" },
     body: { retry: true, objectKey: "untrusted" },
@@ -166,6 +167,7 @@ test("proxy forwards only the authenticated original-file JWT and preserves back
   assert.equal(status, 403);
   assert.equal(headers["Cache-Control"], "no-store");
   assert.equal(calls[0].headers.Authorization, "Bearer offline-jwt");
+  assert.equal(calls[0].headers["X-Workspace-Tenant-ID"], "10");
   assert.equal(calls[0].data.retry, true);
   assert.equal(calls[0].data.objectKey, undefined);
   authenticated = false;

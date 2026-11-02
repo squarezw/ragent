@@ -1,4 +1,3 @@
-import { workspaceEnabled } from "@/lib/workspaceTenant";
 import { signWorkspaceUploadReceipt } from "@/lib/workspaceUploadReceipt";
 import type { AutomationAgentAttachment } from "@/lib/automation/agent-payload";
 
@@ -7,7 +6,6 @@ export function taskUploadAttachment(
   task: { created_by_user_id?: unknown; tenant_id?: unknown },
   attachment: AutomationAgentAttachment
 ): AutomationAgentAttachment {
-  if (!workspaceEnabled()) return attachment;
   const actorUserId = Number(task.created_by_user_id);
   const tenantId = Number(task.tenant_id);
   if (

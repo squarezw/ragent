@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const accountActor = getUserIdFromRequest(req);
   const personalAccountOnly = accountActor && (!req.body?.id || Number(req.body.id) === accountActor) &&
     Object.keys(req.body || {}).every((key) => ["id", "nickname", "email", "currentPassword", "password", "wechat_id"].includes(key));
-  const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true" && !personalAccountOnly
+  const workspace = !personalAccountOnly
     ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res)
     : { enabled: false, tenantId: null };
   if (!workspace) return;

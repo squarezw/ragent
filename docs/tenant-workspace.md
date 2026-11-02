@@ -1,6 +1,6 @@
 # Tenant workspace implementation
 
-`WORKSPACE_TENANT_ENABLED=false` is the default. Both Next.js and ragent-service must be compatible, migrated and explicitly enabled before the UI is available. This change does not edit a deployed environment or start/restart a service.
+Tenant workspace is always enabled. The former `WORKSPACE_TENANT_ENABLED` environment variable is no longer read, even if an existing environment sets it to `false`. Both Next.js and ragent-service must be compatible and migrated before deployment; backend capability checks remain fail-closed. This source change does not edit a deployed environment or start/restart a service.
 
 ## Identity and requests
 
@@ -30,9 +30,9 @@ External process resources are checked against the operation tenant's existing c
 
 ## Deployment prerequisites and remaining restrictions
 
-Apply the reviewed backend `tenant_workspace.sql` and frontend migrations under `deploy/migrations/` in the deployment's own database before enabling the feature. No migration is automatically executed by importing the application. Historical NULL ownership is not backfilled from current account membership.
+Apply the reviewed backend `tenant_workspace.sql` and frontend migrations under `deploy/migrations/` in the deployment's own database before deploying this version. No migration is automatically executed by importing the application. Historical NULL ownership is not backfilled from current account membership.
 
-The fixed observation-service credential requires an explicit `ZD_OBSERVE_TENANT_ID` owner when the feature is enabled; missing configuration returns 503, and another tenant cannot read its data. Existing external process company mappings must also resolve the selected tenant.
+The fixed observation-service credential requires an explicit `ZD_OBSERVE_TENANT_ID` owner for the observation integration; missing configuration returns 503, and another tenant cannot read its data. Existing external process company mappings must also resolve the selected tenant.
 
 The raw `/api/logs/error` filesystem feed has no trustworthy per-line tenant attribution and is deliberately unavailable in enabled mode. It is not allowed to fall back to a global log dump.
 
@@ -40,13 +40,13 @@ The raw `/api/logs/error` filesystem feed has no trustworthy per-line tenant att
 
 Offline tests exercise actor/tenant validation, forged selectors, stale responses, per-operation upload receipts, resource reads, external-job mapping and signed Office callbacks. A complete frontend suite passed before the final small boundary additions; the final focused boundary suite is also green. The three migration files were run twice against an isolated empty schema clone; the business database was not changed.
 
-Tenant selection was inspected with mocked API responses. No real tenant data was migrated and no live backend end-to-end business acceptance, paid model request, upload or external Office/process conversion was performed by these checks. Keep the feature off until the intended environment's cross-tenant and integration acceptance matrix has passed.
+Tenant selection was inspected with mocked API responses. No real tenant data was migrated and no live backend end-to-end business acceptance, paid model request, upload or external Office/process conversion was performed by these checks. Complete the intended environment's cross-tenant and integration acceptance matrix before deploying this version.
 
 Platform branding remains readable through a public-field projection for ordinary users; full settings remain active-super-only. Workspace-mode logo uploads use the separate `/api/system/logo-presign` endpoint and do not require a selected business tenant. Native iframe/image/download URLs carry workspace query context, and workspace API/file responses use private no-store caching.
 
 ### Configuration and rollback boundary
 
-Keep frontend and backend flags identical. Frontend-on/backend-off is rejected through the capability check; frontend-off/backend-on is not a complete fail-closed protocol because direct Next PostgreSQL routes still use legacy behavior. Never enable or roll back one side alone. Once workspace-owned data exists, simply switching the flag off is not a complete data rollback. Preserve ownership and audit columns, inventory new private records and retain the pre-activation Skill environment snapshot. The current new backend's disabled-mode environment resolver excludes operation-specific credentials, but old application artifacts still need a data-aware rollback review.
+Deploy compatible frontend and backend versions together. There is no supported disabled mode or environment-switch rollback. Backend capability checks reject an incompatible backend rather than falling back to legacy access. Preserve ownership and audit columns, inventory private records and retain the pre-activation Skill environment snapshot. Rolling back to an older application artifact requires a data-aware review; setting the former environment variable to false does not disable workspace isolation.
 
 ## Unavailable historical bindings during execution
 

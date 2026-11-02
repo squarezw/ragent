@@ -61,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const body: CallbackPayload = req.body;
   const { key, status, url } = body;
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  {
     const parsed = parseOnlyOfficeKey(key || "");
     const scope = ["doc","session"].includes(parsed.type)
       ? await verifyOfficeScope(req.query.cap,parsed.type as "doc"|"session",parsed.id,key) : null;
@@ -133,6 +133,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         `msg=${error?.message} stack=${error?.stack?.split("\n").slice(0, 3).join(" | ")}`
     );
     // Workspace mode must surface a failed save to the editor.
-    return res.status(200).json({ error: process.env.WORKSPACE_TENANT_ENABLED === "true" ? 1 : 0 });
+    return res.status(200).json({ error: 1 });
   }
 }

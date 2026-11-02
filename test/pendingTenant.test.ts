@@ -24,6 +24,7 @@ async function invoke(
   };
   const pool = { query, connect: async () => ({ query, release() {} }) };
   const imports: Record<string, unknown> = {
+    "@/lib/workspaceTenant": { requireWorkspaceTenant: async () => ({ enabled: true, tenantId: 10, actorUserId: options.userId }) },
     "@/lib/auth": { getUserIdFromRequest: () => options.userId },
     "@/lib/db": { default: pool },
     "@/lib/permissions": { isSuperAdmin: async () => options.superAdmin },
@@ -95,6 +96,7 @@ test("count uses the shared predicate and reports query failure instead of zero"
 test("list prioritizes the same pending population only for platform administrators", async () => {
   const admin = await invoke("list", { userId: 1 });
   assert.ok(admin.queries[0].includes(PENDING_TENANT_SQL));
+  assert.match(admin.queries[0], /u.tenant_id = \$1/);
   assert.match(admin.queries[0], /ORDER BY pending_tenant DESC, u.id ASC/);
   const tenantAdmin = await invoke("list", { userId: 1, tier: "tenant" });
   assert.match(tenantAdmin.queries[0], /false AS pending_tenant/);

@@ -1,4 +1,4 @@
-import { requireWorkspaceTenant, workspaceEnabled } from "@/lib/workspaceTenant";
+import { requireWorkspaceTenant } from "@/lib/workspaceTenant";
 import { getAutomation } from "@/lib/automation/store";
 import { withAutomationWorkspace } from "@/lib/automation/workspace";
 import { requireAuth } from "@/lib/auth";
@@ -27,10 +27,10 @@ function getQueue() {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // The legacy anonymous webhook has no verifiable credential/resource binding.
-  // When workspaces are enabled it fails closed; authenticated callers must own
+  // It fails closed; authenticated callers must own
   // the target automation in the selected workspace.
-  const workspace = workspaceEnabled() ? await requireWorkspaceTenant(req, res) : null;
-  if (workspaceEnabled() && !workspace) return;
+  const workspace = await requireWorkspaceTenant(req, res);
+  if (!workspace) return;
   if (req.method === "POST") {
     const rawAutomationId = req.query.automation_id ?? req.body?.automation_id;
     const automationId = Number(rawAutomationId);

@@ -22,9 +22,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     // 从 token 派生 company_code：后端在缺参时不会按公司过滤，会跨公司返回全部数据
-    const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
-      ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res) : null;
-    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspace) return;
+    const workspace = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
+    if (!workspace) return;
     const tenantId = workspace?.enabled ? workspace.tenantId! : await resolveTenantId(userId);
     const companyCode = getCompanyCodeByTenantId(tenantId);
     if (!companyCode) {

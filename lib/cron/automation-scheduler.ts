@@ -1,6 +1,5 @@
 import { withoutAutomationWorkspace } from "@/lib/automation/workspace";
 import { taskUploadAttachment } from "@/lib/automation/task-upload";
-import { workspaceEnabled } from "@/lib/workspaceTenant";
 import cron, { type ScheduledTask } from "node-cron";
 import pool from "@/lib/db";
 import { assertAutomationTablesReady } from "@/lib/automation/schema";
@@ -312,7 +311,7 @@ async function prepareEmailAttachments(
       Number(task.created_by_user_id),
       requireMailboxId(task.trigger_config?.mailboxId)
     );
-    if (!mailbox || (workspaceEnabled() && (Number(mailbox.tenant_id) <= 0 || Number(mailbox.tenant_id) !== Number(task.tenant_id)))) return nothingDelivered;
+    if (!mailbox || ((Number(mailbox.tenant_id) <= 0 || Number(mailbox.tenant_id) !== Number(task.tenant_id)))) return nothingDelivered;
 
     files = await fetchMessageAttachments(
       mailboxConnectionFromRow(mailbox),
@@ -479,7 +478,7 @@ async function processEmailMailboxGroup(tasks: any[]) {
   const config = tasks[0].trigger_config || {};
   // 遗留数据缺少整数 mailboxId 时直接抛错（不再回退 system），错误由 scanEmailAutomations 按分组记录。
   const mailboxId = requireMailboxId(config.mailboxId);
-  if (workspaceEnabled()) {
+  {
     const mailbox = await getAutomationMailboxForUser(userId, mailboxId);
     if (!mailbox || !Number.isSafeInteger(Number(mailbox.tenant_id)) || Number(mailbox.tenant_id) <= 0)
       throw new Error("AUTOMATION_TENANT_SNAPSHOT_REQUIRED");

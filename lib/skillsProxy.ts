@@ -49,7 +49,7 @@ export async function proxySkillsApi(
   const authHeader = req.headers.authorization;
   const apiKey = req.headers["x-api-key"];
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (process.env.WORKSPACE_TENANT_ENABLED === "true") {
+  {
     const selected = req.headers["x-workspace-tenant-id"];
     if (typeof selected !== "string" || !/^[1-9]\d*$/.test(selected))
       return res.status(409).json({ detail: { code: "WORKSPACE_TENANT_REQUIRED" } });

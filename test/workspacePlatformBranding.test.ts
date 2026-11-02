@@ -18,7 +18,7 @@ function harness(file: string, superadmin = false, active = true) {
   vm.runInNewContext(code, {
     module,
     exports: module.exports,
-    process: { env: { WORKSPACE_TENANT_ENABLED: "true" } },
+    process: { env: {  } },
     URLSearchParams,
     AbortSignal,
     console,

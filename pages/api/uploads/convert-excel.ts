@@ -7,7 +7,7 @@ const EXTERNAL_API_BASE_URL = process.env.EXTERNAL_API_BASE_URL || "http://local
 
 async function getFileBuffer(fileId: string, req: NextApiRequest): Promise<Buffer> {
   const headers: Record<string, string> = {
-      ...(process.env.WORKSPACE_TENANT_ENABLED === "true" && typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),};
+      ...(typeof req.headers["x-workspace-tenant-id"] === "string" ? { "X-Workspace-Tenant-ID": String(req.headers["x-workspace-tenant-id"]) } : {}),};
   if (req.headers?.authorization) {
     headers["Authorization"] = req.headers.authorization;
   }

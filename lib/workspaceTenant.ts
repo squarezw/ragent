@@ -4,9 +4,6 @@ import { getUserPermissions } from "./permissions";
 import pool from "./db";
 
 export const WORKSPACE_HEADER = "X-Workspace-Tenant-ID";
-export function workspaceEnabled(): boolean {
-  return process.env.WORKSPACE_TENANT_ENABLED === "true";
-}
 export interface WorkspaceContext {
   enabled: boolean;
   tenantId: number | null;
@@ -15,7 +12,6 @@ export interface WorkspaceContext {
   accountTenantId?: number | null;
 }
 export function workspaceHeaders(req: NextApiRequest): Record<string, string> {
-  if (!workspaceEnabled()) return {};
   const value = req.headers["x-workspace-tenant-id"] || req.query.workspace_tenant_id;
   return typeof value === "string" && /^[1-9]\d*$/.test(value) ? { [WORKSPACE_HEADER]: value } : {};
 }
@@ -24,7 +20,6 @@ export async function requireWorkspaceTenant(
   res: NextApiResponse
 ): Promise<WorkspaceContext | null> {
   const actorUserId = getUserIdFromRequest(req);
-  if (!workspaceEnabled()) return { enabled: false, tenantId: null, actorUserId };
   const fail = (status: number, code: string) => {
     res.status(status).json({ detail: { code, message: code } });
     return null;

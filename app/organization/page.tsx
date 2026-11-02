@@ -57,9 +57,9 @@ export default function OrganizationPage() {
 
   // 余额由后端从流水现算；前端只显示，不做任何加减 —— 两边各算一次，
   // 迟早有一次算得不一样，而不一样的那个数是钱。
-  const { accounts, recharge } = useCreditAccounts();
+  const { accounts, recharge } = useCreditAccounts(undefined, user?.isSuperAdmin ? "platform" : "workspace");
   const balanceOf = (tenantId: number) =>
-    accounts.find((a) => a.tenant_id === tenantId)?.balance ?? 0;
+    accounts.find((a) => a.tenant_id === tenantId)?.balance ?? null;
   const [depts, setDepts] = useState<Dept[]>([]);
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [showCreateDept, setShowCreateDept] = useState(false);
@@ -676,7 +676,9 @@ export default function OrganizationPage() {
                       <Badge className="bg-muted text-muted-foreground">{t("inactive")}</Badge>
                     )}
                     <Badge variant="secondary" title={t("balanceTooltip")}>
-                      {t("balanceLabel", { balance: balanceOf(tenant.id) })}
+                      {balanceOf(tenant.id) === null
+                        ? t("balanceUnavailable")
+                        : t("balanceLabel", { balance: balanceOf(tenant.id)! })}
                     </Badge>
                     <Button
                       size="sm"

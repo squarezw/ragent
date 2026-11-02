@@ -7,6 +7,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return proxySkillsApi(req, res, {
     path: "/api/v1/billing/accounts",
     allow: ["GET"],
-    passQuery: ["tenant_id"],
+    passQuery: ["tenant_id", "scope"],
   });
 }

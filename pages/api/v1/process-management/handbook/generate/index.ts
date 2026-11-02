@@ -16,9 +16,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    const workspace = process.env.WORKSPACE_TENANT_ENABLED === "true"
-      ? await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res) : null;
-    if (process.env.WORKSPACE_TENANT_ENABLED === "true" && !workspace) return;
+    const workspace = await (await import("@/lib/workspaceTenant")).requireWorkspaceTenant(req, res);
+    if (!workspace) return;
     const tenantId = workspace?.enabled ? workspace.tenantId! : await resolveTenantId(userId);
     const departments = await getLeafDepartmentNames(tenantId);
     if (departments.length === 0) {

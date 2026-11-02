@@ -1,6 +1,6 @@
 # RAgent AI Platform
 
-Current version: **0.5.3**. See the [release notes](docs/RELEASE_NOTES.md#053---2026-10-19) for highlights and changes.
+Current version: **0.5.4**. See the [release notes](docs/RELEASE_NOTES.md#054---2026-11-02) for highlights and changes.
 
 An enterprise AI agent platform (智能体中台) built with Next.js. It lets organizations build and operate AI agent applications on top of their own knowledge and business processes — from RAG-powered knowledge bases and intelligent Q&A to visual workflow orchestration, process management, and multi-tenant administration.
 
