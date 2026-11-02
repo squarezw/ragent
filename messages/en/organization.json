@@ -71,6 +71,7 @@
   "recharging": "Adding…",
   "confirmRecharge": "Confirm",
   "cancel": "Cancel",
+  "balanceUnavailable": "Balance unavailable",
   "balanceLabel": "{balance} credits",
   "balanceTooltip": "Derived from the transaction ledger, not a cached value",
   "rechargeTitle": "Add credits to {name}",

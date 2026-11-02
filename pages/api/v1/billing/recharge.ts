@@ -10,5 +10,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return proxySkillsApi(req, res, {
     path: "/api/v1/billing/recharge",
     allow: ["POST"],
+    passQuery: ["scope"],
   });
 }

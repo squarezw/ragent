@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/lib/axios";
 import useSWR from "swr";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -266,32 +266,39 @@ export interface RechargeRecord {
  * 租户积分账户。余额由后端从流水现算，前端不做任何加减 ——
  * 两边各算一次，迟早有一次算得不一样，而不一样的那个数是钱。
  */
-export function useCreditAccounts(tenantId?: number) {
+export function useCreditAccounts(tenantId?: number, scope: "workspace" | "platform" = "workspace") {
   const [accounts, setAccounts] = useState<CreditAccount[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [loading, setLoading] = useState(false);
+  const requestGeneration = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     try {
-      const url = tenantId
-        ? `/api/v1/billing/accounts?tenant_id=${tenantId}`
-        : "/api/v1/billing/accounts";
-      const res = await axios.get(url);
+      const query = new URLSearchParams();
+      if (tenantId) query.set("tenant_id", String(tenantId));
+      if (scope === "platform") query.set("scope", "platform");
+      const suffix = query.toString();
+      const res = await axios.get(`/api/v1/billing/accounts${suffix ? `?${suffix}` : ""}`);
+      if (generation !== requestGeneration.current) return;
       setAccounts(res.data?.items ?? []);
       setTotalBalance(res.data?.total_balance ?? 0);
     } catch {
-      // 没有组织账目知情范围的人拿到的是空集而不是错误（后端如此设计），
-      // 真出错时也降级成「不显示余额」，不该让整页挂掉。
+      if (generation !== requestGeneration.current) return;
+      // Unknown or denied balances must not be presented as a successful zero balance.
       setAccounts([]);
       setTotalBalance(0);
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, scope]);
 
   useEffect(() => {
+    setAccounts([]);
+    setTotalBalance(0);
     load();
+    return () => { requestGeneration.current++; };
   }, [load]);
 
   /**
@@ -300,16 +307,17 @@ export function useCreditAccounts(tenantId?: number) {
    */
   const recharge = useCallback(
     async (tenant_id: number, amount: number, note: string, idempotencyKey: string) => {
-      const res = await axios.post("/api/v1/billing/recharge", {
+      const generation = requestGeneration.current;
+      const res = await axios.post(`/api/v1/billing/recharge${scope === "platform" ? "?scope=platform" : ""}`, {
         tenant_id,
         amount,
         note: note || null,
         idempotency_key: idempotencyKey,
       });
-      await load();
+      if (generation === requestGeneration.current) await load();
       return res.data as { id: number; amount: number; balance: number; duplicate: boolean };
     },
-    [load]
+    [load, scope]
   );
 
   return { accounts, totalBalance, loading, reload: load, recharge };

@@ -71,6 +71,7 @@
   "recharging": "充值中…",
   "confirmRecharge": "确认充值",
   "cancel": "取消",
+  "balanceUnavailable": "余额暂不可用",
   "balanceLabel": "{balance} 积分",
   "balanceTooltip": "由充值与消耗流水现算，非缓存值",
   "rechargeTitle": "给「{name}」充值积分",
