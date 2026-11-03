@@ -165,5 +165,9 @@
   "loadReportListFailed": "Failed to load report list",
   "noReports": "No reports",
   "modelUnavailable": "This model is unavailable in the selected tenant. Choose another model.",
-  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models."
+  "customModelOwnerMismatch": "This employee is outside your current tenant. Only platform models are available. Create an employee in your tenant or ask a super administrator to change its tenant to use your tenant models.",
+  "bindDefaultWorkflow": "Bind Default Workflow",
+  "clearWorkflow": "Clear Workflow",
+  "workflowCleared": "Workflow configuration cleared",
+  "noWorkflowDesc": "No workflow is bound. Bind one to edit and save its configuration."
 }

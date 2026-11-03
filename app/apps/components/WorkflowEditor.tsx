@@ -68,6 +68,7 @@ interface WorkflowEditorProps {
   app: AppWithWorkflow | null;
   datasets: { id: string; name: string }[];
   onSave: (workflow: WorkflowConfig) => Promise<void>;
+  onClear: () => Promise<void>;
   isSuperAdmin?: boolean;
   ownerTenantId?: number | null;
 }
@@ -78,6 +79,7 @@ export default function WorkflowEditor({
   app,
   datasets,
   onSave,
+  onClear,
   isSuperAdmin = false,
   ownerTenantId,
 }: WorkflowEditorProps) {
@@ -90,16 +92,18 @@ export default function WorkflowEditor({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bound, setBound] = useState(false);
+  const mutationPending = useRef(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
 
   // 初始化工作流
   useEffect(() => {
     if (open && app) {
-      const workflow = app.settings?.workflow || generateDefaultWorkflow(app);
-
-      setNodes(workflow.nodes as Node[]);
-      setEdges(workflow.edges as Edge[]);
+      const workflow = app.settings?.workflow;
+      setBound(!!workflow);
+      setNodes((workflow?.nodes || []) as Node[]);
+      setEdges((workflow?.edges || []) as Edge[]);
       setSelectedNode(null);
     }
   }, [open, app, datasets]);
@@ -190,8 +194,36 @@ export default function WorkflowEditor({
     toast.success(t("nodeDeleted"));
   }, [selectedNode, setNodes, setEdges, t]);
 
+  const handleBind = () => {
+    if (!app || !isSuperAdmin || mutationPending.current) return;
+    const workflow = generateDefaultWorkflow(app);
+    setNodes(workflow.nodes as Node[]);
+    setEdges(workflow.edges as Edge[]);
+    setBound(true);
+  };
+
+  const handleClear = async () => {
+    if (!isSuperAdmin || mutationPending.current) return;
+    mutationPending.current = true;
+    setSaving(true);
+    try {
+      await onClear();
+      setBound(false);
+      setNodes([]);
+      setEdges([]);
+      setSelectedNode(null);
+      toast.success(t("workflowCleared"));
+    } catch (error: any) {
+      toast.error(error.message || t("saveFailed"));
+    } finally {
+      mutationPending.current = false;
+      setSaving(false);
+    }
+  };
+
   // 保存工作流
   const handleSave = useCallback(async () => {
+    if (!bound || !isSuperAdmin || mutationPending.current) return;
     if (nodes.some(node => node.type === "aiNode" && node.data?.aiModel?.startsWith("custom-") && (!modelAccess.includeCustom || !modelOptions.some(model => model.code === node.data.aiModel)))) {
       toast.error(t("modelUnavailable")); return;
     }
@@ -220,6 +252,7 @@ export default function WorkflowEditor({
     }
 
     try {
+      mutationPending.current = true;
       setSaving(true);
       await onSave(workflow);
       toast.success(t("workflowSaved"));
@@ -227,9 +260,10 @@ export default function WorkflowEditor({
     } catch (error: any) {
       toast.error(error.message || t("saveFailed"));
     } finally {
+      mutationPending.current = false;
       setSaving(false);
     }
-  }, [nodes, edges, onSave, onOpenChange, t, modelOptions, modelAccess.includeCustom]);
+  }, [bound, isSuperAdmin, nodes, edges, onSave, onOpenChange, t, modelOptions, modelAccess.includeCustom]);
 
   // 键盘快捷键
   useEffect(() => {
@@ -274,16 +308,21 @@ export default function WorkflowEditor({
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle>
-                {t("workflowEditor")} - {app.name}
+                {t(bound ? "workflowEditor" : "bindDefaultWorkflow")} - {app.name}
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-1">{t("editorDesc")}</p>
+              <p className="text-sm text-muted-foreground mt-1">{t(bound ? "editorDesc" : "noWorkflowDesc")}</p>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 <X className="h-4 w-4 mr-1" />
                 {tc("cancel")}
               </Button>
-              {isSuperAdmin && (
+              {isSuperAdmin && bound && app.settings?.workflow && (
+                <Button variant="outline" size="sm" disabled={saving} onClick={handleClear}>
+                  {t("clearWorkflow")}
+                </Button>
+              )}
+              {isSuperAdmin && bound && (
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   {saving ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -297,7 +336,12 @@ export default function WorkflowEditor({
           </div>
         </DialogHeader>
 
-        <div className="flex flex-1 overflow-hidden">
+        {!bound ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+            <p>{t("noWorkflowDesc")}</p>
+            {isSuperAdmin && <Button onClick={handleBind}>{t("bindDefaultWorkflow")}</Button>}
+          </div>
+        ) : <><div className="flex flex-1 overflow-hidden">
           {/* 节点工具栏 */}
           <NodePalette />
 
@@ -370,7 +414,7 @@ export default function WorkflowEditor({
             )}
           </div>
           <div className="text-gray-400">{t("workflowVersion")} 1.0</div>
-        </div>
+        </div></>}
       </DialogContent>
     </Dialog>
   );

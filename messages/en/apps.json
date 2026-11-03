@@ -222,5 +222,6 @@
   "transferBindingUnavailable": "Unavailable in target scope; retained after acknowledgment",
   "transferRollback": "Check tenant transfer rollback",
   "transferRollbackDefaults": "Restore original ownership and configuration state only if no new business or edits occurred and rollback preflight passes.",
-  "transferRollbackConfirm": "Confirm rollback (restore the previewed state)"
+  "transferRollbackConfirm": "Confirm rollback (restore the previewed state)",
+  "bindDefaultWorkflow": "Bind Default Workflow"
 }

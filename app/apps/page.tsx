@@ -67,7 +67,6 @@ import { datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
-import { syncFormToWorkflow } from "@/lib/workflowUtils";
 import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { WorkflowConfig } from "@/types/workflow";
 import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
@@ -395,83 +394,7 @@ export default function AppsPage() {
         platform: "Web" as const,
         ai_model: DEFAULT_LLM_MODEL_CODE,
             dataset_ids: createDatasets.filter(dataset => dataset.id === "quality_knowledge_base").map(dataset => dataset.id),
-        settings: {
-          workflow: {
-            nodes: [
-              {
-                id: "input-1",
-                type: "inputNode",
-                position: { x: 100, y: 100 },
-                data: {
-                  name: t("templateEmployeeFeedback"),
-                  type: "input",
-                  platform: "Web",
-                },
-              },
-              {
-                id: "input-2",
-                type: "inputNode",
-                position: { x: 100, y: 250 },
-                data: {
-                  name: t("templateWechatWork"),
-                  type: "input",
-                  platform: "Wechat",
-                },
-              },
-              {
-                id: "input-3",
-                type: "inputNode",
-                position: { x: 100, y: 400 },
-                data: {
-                  name: t("templateEmail"),
-                  type: "input",
-                  platform: "Web",
-                },
-              },
-              {
-                id: "ai-1",
-                type: "aiNode",
-                position: { x: 400, y: 250 },
-                data: {
-                  name: t("templateQualityClassification"),
-                  type: "ai",
-                  aiModel: DEFAULT_LLM_MODEL_CODE,
-                  agentType: "quality_classify",
-                  knowledgeBase: t("templateQualityKnowledgeBase"),
-                },
-              },
-              {
-                id: "human-1",
-                type: "humanNode",
-                position: { x: 700, y: 250 },
-                data: {
-                  name: t("templateQeConfirmation"),
-                  operator: t("templateQualityEngineer"),
-                  detail: t("templateQeConfirmDetail"),
-                  phase: t("templateManualReview"),
-                },
-              },
-              {
-                id: "system-1",
-                type: "systemNode",
-                position: { x: 1000, y: 250 },
-                data: {
-                  name: t("templateQmsSystem"),
-                  systemType: t("templateDatabaseType"),
-                  operation: t("templateDataEntry"),
-                  detail: t("templateQmsDetail"),
-                },
-              },
-            ],
-            edges: [
-              { id: "e1", source: "input-1", target: "ai-1" },
-              { id: "e2", source: "input-2", target: "ai-1" },
-              { id: "e3", source: "input-3", target: "ai-1" },
-              { id: "e4", source: "ai-1", target: "human-1" },
-              { id: "e5", source: "human-1", target: "system-1" },
-            ],
-          },
-        },
+        settings: {},
       };
 
       await axios.post("/api/v1/apps", { ...qualityAgentData, ...createTenantFields(isSuperAdmin, createTenantId) });
@@ -547,17 +470,11 @@ export default function AppsPage() {
         return;
       }
 
-      const workflow = syncFormToWorkflow(
-        { ...formData },
-        editingApp ? formData.settings?.workflow : undefined,
-        datasets
-      );
       const submitData = {
         ...formData,
         dataset_ids: autoSelectDatasets ? [] : formData.dataset_ids,
         settings: {
           ...formData.settings,
-          workflow,
           auto_select_datasets: autoSelectDatasets,
         },
       };
@@ -883,7 +800,7 @@ export default function AppsPage() {
                                         <Network className="h-4 w-4" />
                                       </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>{t("workflowConfig")}</TooltipContent>
+                                    <TooltipContent>{t(app.settings?.workflow ? "workflowConfig" : "bindDefaultWorkflow")}</TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
                                 {canSubmitAppReview(app) && (
@@ -1090,7 +1007,7 @@ export default function AppsPage() {
                                       <Network className="h-4 w-4" />
                                     </Button>
                                   </TooltipTrigger>
-                                  <TooltipContent>{t("workflowConfig")}</TooltipContent>
+                                  <TooltipContent>{t(app.settings?.workflow ? "workflowConfig" : "bindDefaultWorkflow")}</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                               {canSubmitAppReview(app) && (
@@ -1666,9 +1583,21 @@ export default function AppsPage() {
         onOpenChange={setWorkflowDialogOpen}
         app={workflowApp}
         datasets={datasets}
-        isSuperAdmin={isSuperAdmin}
+        isSuperAdmin={!!workflowApp && canEditApp(workflowApp, user, isSuperAdmin)}
+        onClear={async () => {
+          if (!workflowApp || !canEditApp(workflowApp, user, isSuperAdmin)) return;
+          const { data: current } = await axios.get(`/api/v1/apps/${workflowApp.id}`);
+          const { workflow: _removed, ...settings } = current.settings || {};
+          await axios.put(`/api/v1/apps/${workflowApp.id}`, { settings });
+          setWorkflowApp((app) => app ? { ...app, settings } : app);
+          setApps((apps) => apps.map((app) => app.id === workflowApp.id ? { ...app, settings } : app));
+          if (editingApp?.id === workflowApp.id) {
+            setEditingApp((app) => app ? { ...app, settings } : app);
+            setFormData((form) => ({ ...form, settings }));
+          }
+        }}
         onSave={async (workflow: WorkflowConfig) => {
-          if (!workflowApp) return;
+          if (!workflowApp || !canEditApp(workflowApp, user, isSuperAdmin)) return;
 
           // 从工作流中提取数据并同步到应用字段
           const aiNode = workflow.nodes.find((n) => n.type === "aiNode");
@@ -1676,8 +1605,9 @@ export default function AppsPage() {
           const inputNode = workflow.nodes.find((n) => n.type === "inputNode");
 
           // 保存工作流配置和同步的字段
+          const { data: current } = await axios.get(`/api/v1/apps/${workflowApp.id}`);
           const updatedSettings = {
-            ...workflowApp.settings,
+            ...current.settings,
             workflow,
           };
 
@@ -1705,8 +1635,12 @@ export default function AppsPage() {
 
           await axios.put(`/api/v1/apps/${workflowApp.id}`, updateData);
 
-          // 重新加载应用列表
-          loadApps();
+          setWorkflowApp((app) => app ? { ...app, ...updateData } : app);
+          if (editingApp?.id === workflowApp.id) {
+            setEditingApp((app) => app ? { ...app, ...updateData } : app);
+            setFormData((form) => ({ ...form, ...updateData }));
+          }
+          await loadApps();
         }}
       />
 

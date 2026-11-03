@@ -222,5 +222,6 @@
   "transferBindingUnavailable": "目标范围不可用；确认后保留绑定",
   "transferRollback": "预检回滚租户转移",
   "transferRollbackDefaults": "仅在原转移后未发生新业务或修改且预检通过时，恢复原归属与原配置状态。",
-  "transferRollbackConfirm": "确认回滚（恢复预检所示状态）"
+  "transferRollbackConfirm": "确认回滚（恢复预检所示状态）",
+  "bindDefaultWorkflow": "绑定默认工作流"
 }
