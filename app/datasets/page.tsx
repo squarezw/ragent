@@ -22,6 +22,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDatasets } from "@/hooks/useDatasets";
+import DatasetTenantTransfer from "@/app/datasets/components/DatasetTenantTransfer";
 import { useOrganization } from "@/hooks/useOrganization";
 import DatasetSettings from "./components/DatasetSettings";
 import DeptSelect from "@/components/DeptSelect";
@@ -147,8 +148,21 @@ export default function DatasetsPage() {
   const tc = useTranslations("common");
 
   // 使用 SWR hook
-  const { datasets, loading, createDataset, updateDataset, deleteDataset } = useDatasets();
+  const {
+    datasets,
+    loading,
+    createDataset,
+    updateDataset,
+    deleteDataset,
+    refresh: refreshDatasets,
+  } = useDatasets();
   const { tenants, departments } = useOrganization();
+  const workspace = useWorkspace();
+  // Knowledge bases always live in the tenant being operated in; moving one to
+  // another tenant goes through the dedicated transfer flow, not this form.
+  const workspaceTenantId = workspace.tenant?.id ?? user?.tenant_id ?? null;
+  const workspaceTenantName =
+    workspace.tenant?.name || tenants.find((t) => t.id === workspaceTenantId)?.name || user?.tenant_name;
 
   // 对话框状态
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -214,22 +228,19 @@ export default function DatasetsPage() {
   useEffect(() => {
     if (!user || !showCreateDialog) return;
 
-    const userTenantId = user.tenant_id ?? null;
     const userDeptId = user.dept_id ?? null;
 
+    setSelectedTenantId(workspaceTenantId);
     if (isSuperAdmin) {
-      // 如果超级管理员尚未选择租户，则默认自己的租户
-      setSelectedTenantId((prev) => prev ?? userTenantId);
-      setSelectedDeptId((prev) => prev ?? userDeptId);
+      setSelectedDeptId((prev) => prev ?? null);
     } else {
-      setSelectedTenantId(userTenantId);
       if (isTenantAdmin) {
         setSelectedDeptId((prev) => prev ?? null);
       } else {
         setSelectedDeptId(userDeptId);
       }
     }
-  }, [user, showCreateDialog, isSuperAdmin, isTenantAdmin]);
+  }, [user, showCreateDialog, isSuperAdmin, isTenantAdmin, workspaceTenantId]);
 
   // 当租户改变时，清空部门选择
   useEffect(() => {
@@ -704,29 +715,10 @@ export default function DatasetsPage() {
                       <span className="font-medium text-foreground whitespace-nowrap">
                         {t("tenantLabel")}：
                       </span>
-                      {isSuperAdmin ? (
-                        // 超级管理员：可以修改租户
-                        <select
-                          className="flex-1 min-w-0 border rounded px-2 py-1.5"
-                          value={selectedTenantId || ""}
-                          onChange={(e) =>
-                            setSelectedTenantId(e.target.value ? Number(e.target.value) : null)
-                          }
-                          disabled={creating}
-                        >
-                          <option value="">{t("tenantPlaceholder")}</option>
-                          {tenants.map((tenant) => (
-                            <option key={tenant.id} value={tenant.id}>
-                              {tenant.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        // 租户管理员、部门管理员、普通用户：只显示当前租户
-                        <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground">
-                          {user?.tenant_name || t("notSet")}
-                        </div>
-                      )}
+                      {/* 始终是当前操作的租户；跨租户请用知识库的迁移功能 */}
+                      <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground truncate">
+                        {workspaceTenantName || t("notSet")}
+                      </div>
                     </div>
 
                     {/* 部门选择/显示 */}
@@ -815,6 +807,20 @@ export default function DatasetsPage() {
               <Dialog.Title className="text-lg font-bold">{t("editDataset")}</Dialog.Title>
               {/* 创建者显示 */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {isSuperAdmin && editingDataset && (
+                  <>
+                    <DatasetTenantTransfer
+                      dataset={editingDataset}
+                      disabled={updating}
+                      onTransferred={() => {
+                        setShowEditDialog(false);
+                        resetEditDialogState();
+                        void refreshDatasets();
+                      }}
+                    />
+                    <span aria-hidden className="text-border">|</span>
+                  </>
+                )}
                 <span>
                   {t("owner")}: {ownerName}
                 </span>
@@ -839,27 +845,9 @@ export default function DatasetsPage() {
                       <span className="font-medium text-foreground whitespace-nowrap">
                         {t("tenantLabel")}：
                       </span>
-                      {isSuperAdmin ? (
-                        <select
-                          className="flex-1 min-w-0 border rounded px-2 py-1.5"
-                          value={selectedTenantId || ""}
-                          onChange={(e) =>
-                            setSelectedTenantId(e.target.value ? Number(e.target.value) : null)
-                          }
-                          disabled={updating}
-                        >
-                          <option value="">{t("tenantPlaceholder")}</option>
-                          {tenants.map((tenant) => (
-                            <option key={tenant.id} value={tenant.id}>
-                              {tenant.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground">
-                          {editingDataset?.owner_tenant_name || user?.tenant_name || t("notSet")}
-                        </div>
-                      )}
+                      <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground truncate">
+                        {editingDataset?.owner_tenant_name || workspaceTenantName || t("notSet")}
+                      </div>
                     </div>
 
                     {/* 部门 */}
