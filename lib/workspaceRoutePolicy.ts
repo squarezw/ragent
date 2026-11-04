@@ -38,6 +38,8 @@ export const workspaceProxyRoutes = [
   "/api/v1/apps/[id]/tenant-transfer/[transferId]/rollback-preflight",
   "/api/v1/apps/[id]/tenant-transfer/[transferId]/rollback",
   "/api/v1/app-tenant-transfer-requests/[key]",
+  "/api/v1/datasets/[id]/tenant-transfer",
+  "/api/v1/datasets/[id]/tenant-transfer/preflight",
   "/api/v1/apps/[id]",
   "/api/v1/apps",
   "/api/v1/apps/[id]/review",

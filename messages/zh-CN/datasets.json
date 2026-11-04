@@ -76,5 +76,20 @@
   "createOtherTenantDenied": "您无法在其他租户下创建知识库。请选择自己所属的租户，或联系管理员确认账号归属。",
   "createOtherDepartmentDenied": "您只能在自己所属的部门下创建知识库。请选择自己的部门，或联系租户管理员确认部门归属。",
   "createPermissionDenied": "当前账号没有创建此知识库的权限。请检查可见范围及租户、部门选择，或联系租户管理员；已填写的内容会保留。",
-  "workspaceSharedReadOnly": "共享 · 只读"
+  "workspaceSharedReadOnly": "共享 · 只读",
+  "transferAction": "迁移",
+  "transferTitle": "迁移到其它租户",
+  "transferNotice": "知识库连同文件一起迁到目标租户，无需重新解析。迁移后部门清空，旧租户的员工将无法再使用它。",
+  "transferTarget": "选择目标租户",
+  "transferPreview": "检查迁移影响",
+  "transferFiles": "迁移 {count} 个文件",
+  "transferDeptCleared": "所属部门将清空",
+  "transferVisibilityPrivate": "可见范围由「部门」改为「私有」",
+  "transferCreatorReassigned": "创建者不在目标租户，将改为你（可在编辑中再修改）",
+  "transferTags": "标签按名称对应到目标租户：{names}",
+  "transferCategories": "分类按名称对应到目标租户：{names}",
+  "transferBlocked": "暂时不能迁移",
+  "transferReason": "填写迁移原因",
+  "transferConfirm": "确认迁移",
+  "transferFailed": "迁移失败，请稍后重试"
 }

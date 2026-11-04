@@ -76,5 +76,20 @@
   "createOtherTenantDenied": "You cannot create a knowledge base in another tenant. Select your own tenant or ask an administrator to check your account membership.",
   "createOtherDepartmentDenied": "You can only create knowledge bases in your own department. Select it or ask your tenant administrator to check your department membership.",
   "createPermissionDenied": "Your account cannot create this knowledge base. Check the visibility, tenant and department, or contact your tenant administrator. Your entries are preserved.",
-  "workspaceSharedReadOnly": "Shared · Read only"
+  "workspaceSharedReadOnly": "Shared · Read only",
+  "transferAction": "Transfer",
+  "transferTitle": "Transfer to another tenant",
+  "transferNotice": "The knowledge base and its files move to the target tenant without re-parsing. The department is cleared and employees in the old tenant can no longer use it.",
+  "transferTarget": "Select target tenant",
+  "transferPreview": "Check impact",
+  "transferFiles": "{count} files will move",
+  "transferDeptCleared": "Department will be cleared",
+  "transferVisibilityPrivate": "Visibility changes from Department to Private",
+  "transferCreatorReassigned": "Creator is not in the target tenant and becomes you (editable later)",
+  "transferTags": "Tags mapped by name in the target tenant: {names}",
+  "transferCategories": "Categories mapped by name in the target tenant: {names}",
+  "transferBlocked": "Cannot transfer yet",
+  "transferReason": "Reason for the transfer",
+  "transferConfirm": "Confirm transfer",
+  "transferFailed": "Transfer failed, please try again"
 }

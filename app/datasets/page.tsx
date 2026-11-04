@@ -22,6 +22,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDatasets } from "@/hooks/useDatasets";
+import DatasetTenantTransfer from "@/app/datasets/components/DatasetTenantTransfer";
 import { useOrganization } from "@/hooks/useOrganization";
 import DatasetSettings from "./components/DatasetSettings";
 import DeptSelect from "@/components/DeptSelect";
@@ -147,7 +148,14 @@ export default function DatasetsPage() {
   const tc = useTranslations("common");
 
   // 使用 SWR hook
-  const { datasets, loading, createDataset, updateDataset, deleteDataset } = useDatasets();
+  const {
+    datasets,
+    loading,
+    createDataset,
+    updateDataset,
+    deleteDataset,
+    refresh: refreshDatasets,
+  } = useDatasets();
   const { tenants, departments } = useOrganization();
   const workspace = useWorkspace();
   // Knowledge bases always live in the tenant being operated in; moving one to
@@ -826,6 +834,17 @@ export default function DatasetsPage() {
                       <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground truncate">
                         {editingDataset?.owner_tenant_name || workspaceTenantName || t("notSet")}
                       </div>
+                      {isSuperAdmin && editingDataset && (
+                        <DatasetTenantTransfer
+                          dataset={editingDataset}
+                          disabled={updating}
+                          onTransferred={() => {
+                            setShowEditDialog(false);
+                            resetEditDialogState();
+                            void refreshDatasets();
+                          }}
+                        />
+                      )}
                     </div>
 
                     {/* 部门 */}
