@@ -9,6 +9,8 @@
   "aiDisclaimer": "AI can make mistakes. Please check important info.",
   "selectKnowledgeBase": "Select Knowledge Base",
   "selectedKbCount": "{count} selected",
+  "clearKnowledgeBase": "Clear selected knowledge bases",
+  "clearKbShort": "Clear",
   "noKnowledgeBase": "No knowledge base available",
   "appShortcutsTitle": "Quick Start",
   "description": "Knowledge base powered Q&A system",

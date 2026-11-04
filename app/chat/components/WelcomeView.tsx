@@ -52,6 +52,8 @@ interface WelcomeViewProps {
   selectedDatasetIds: string[];
   onAppSelect: (appId: string) => void;
   onDatasetToggle: (datasetId: string) => void;
+  onClearDatasets?: () => void;
+  currentTenantId?: number | string | null;
   organizedDatasets: any;
   orgLoading: boolean;
   // Voice input
@@ -87,6 +89,8 @@ export default function WelcomeView({
   selectedDatasetIds,
   onAppSelect,
   onDatasetToggle,
+  onClearDatasets,
+  currentTenantId,
   organizedDatasets,
   orgLoading,
   voiceStatus,
@@ -145,6 +149,8 @@ export default function WelcomeView({
             selectedDatasetIds={selectedDatasetIds}
             onAppSelect={onAppSelect}
             onDatasetToggle={onDatasetToggle}
+            onClearDatasets={onClearDatasets}
+            currentTenantId={currentTenantId}
             organizedDatasets={organizedDatasets}
             orgLoading={orgLoading}
             voiceStatus={voiceStatus}

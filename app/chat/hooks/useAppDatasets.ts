@@ -178,6 +178,13 @@ export function useAppDatasets() {
     [key, optionalKey, apps]
   );
 
+  // Clear all manually picked datasets (app-bound defaults are untouched)
+  const handleClearDatasets = useCallback(() => {
+    if (!key) return;
+    setOptionalState({ key, ids: new Set() });
+    localStorage.setItem(optionalKey, "[]");
+  }, [key, optionalKey]);
+
   // Handle dataset toggle
   const handleDatasetToggle = useCallback(
     (datasetId: string) => {
@@ -203,5 +210,7 @@ export function useAppDatasets() {
     optionalDatasetSelections,
     handleAppSelect,
     handleDatasetToggle,
+    handleClearDatasets,
+    operationTenantId,
   };
 }
