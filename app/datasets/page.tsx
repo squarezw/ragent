@@ -807,6 +807,20 @@ export default function DatasetsPage() {
               <Dialog.Title className="text-lg font-bold">{t("editDataset")}</Dialog.Title>
               {/* 创建者显示 */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {isSuperAdmin && editingDataset && (
+                  <>
+                    <DatasetTenantTransfer
+                      dataset={editingDataset}
+                      disabled={updating}
+                      onTransferred={() => {
+                        setShowEditDialog(false);
+                        resetEditDialogState();
+                        void refreshDatasets();
+                      }}
+                    />
+                    <span aria-hidden className="text-border">|</span>
+                  </>
+                )}
                 <span>
                   {t("owner")}: {ownerName}
                 </span>
@@ -834,17 +848,6 @@ export default function DatasetsPage() {
                       <div className="flex-1 min-w-0 px-2 py-1.5 bg-muted border rounded text-muted-foreground truncate">
                         {editingDataset?.owner_tenant_name || workspaceTenantName || t("notSet")}
                       </div>
-                      {isSuperAdmin && editingDataset && (
-                        <DatasetTenantTransfer
-                          dataset={editingDataset}
-                          disabled={updating}
-                          onTransferred={() => {
-                            setShowEditDialog(false);
-                            resetEditDialogState();
-                            void refreshDatasets();
-                          }}
-                        />
-                      )}
                     </div>
 
                     {/* 部门 */}
