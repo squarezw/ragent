@@ -119,6 +119,8 @@ export default function ChatPage() {
     optionalDatasetSelections,
     handleAppSelect,
     handleDatasetToggle,
+    handleClearDatasets,
+    operationTenantId,
   } = useAppDatasets();
 
   const { messagesContainerRef, messagesEndRef, scrollToBottom } = useMessageScroll(
@@ -557,6 +559,8 @@ export default function ChatPage() {
     selectedDatasetIds,
     onAppSelect: handleAppSelect,
     onDatasetToggle: handleDatasetToggle,
+    onClearDatasets: handleClearDatasets,
+    currentTenantId: operationTenantId,
     organizedDatasets,
     orgLoading,
     voiceStatus,

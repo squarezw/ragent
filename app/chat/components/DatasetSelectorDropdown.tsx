@@ -20,6 +20,9 @@ interface DatasetSelectorDropdownProps {
   optionalDatasetSelections: Set<string>;
   selectedDatasetIds: string[];
   onDatasetToggle: (datasetId: string) => void;
+  onClearDatasets?: () => void;
+  /** Tenant the user is currently operating in; other tenants' datasets are hidden. */
+  currentTenantId?: number | string | null;
   organizedDatasets: any;
   orgLoading: boolean;
   disabled?: boolean;
@@ -35,11 +38,24 @@ export default function DatasetSelectorDropdown({
   optionalDatasetSelections,
   selectedDatasetIds,
   onDatasetToggle,
+  onClearDatasets,
+  currentTenantId,
   organizedDatasets,
   orgLoading,
   disabled,
 }: DatasetSelectorDropdownProps) {
   const t = useTranslations("chat");
+
+  // Only the current tenant's datasets are usable in this chat, so hide the others.
+  const tenantEntries = useMemo(() => {
+    const entries = Object.entries(organizedDatasets || {}) as [string, any][];
+    if (currentTenantId === undefined || currentTenantId === null || currentTenantId === "") {
+      return entries;
+    }
+    return entries.filter(([tenantId]) => String(tenantId) === String(currentTenantId));
+  }, [organizedDatasets, currentTenantId]);
+
+  const canClear = optionalDatasetSelections.size > 0 && !!onClearDatasets;
 
   // Compute display label
   const displayLabel = useMemo(() => {
@@ -69,68 +85,76 @@ export default function DatasetSelectorDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 max-h-[400px] overflow-y-auto">
         {/* Datasets section by organization */}
-        {Object.keys(organizedDatasets || {}).length > 0 ? (
+        {tenantEntries.length > 0 ? (
           <>
             <DropdownMenuLabel className="flex items-center gap-2 text-xs">
               <Database className="w-3 h-3" />
               {t("specifyDatasets")}
+              {canClear && (
+                <button
+                  type="button"
+                  onClick={onClearDatasets}
+                  title={t("clearKnowledgeBase")}
+                  className="ml-auto rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {t("clearKbShort")}
+                </button>
+              )}
             </DropdownMenuLabel>
 
-            {Object.entries(organizedDatasets || {}).map(
-              ([tenantId, tenantData]: [string, any]) => (
-                <DropdownMenuSub key={tenantId}>
-                  <DropdownMenuSubTrigger className="pl-2">
-                    <Building2 className="w-3.5 h-3.5 mr-2 text-primary" />
-                    <span>{tenantData.tenant?.name || "Unknown"}</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuPortal>
-                    <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
-                      {/* Tenant-level datasets */}
-                      {tenantData.datasets?.map((dataset: any) => (
-                        <DropdownMenuCheckboxItem
-                          key={dataset.id}
-                          checked={optionalDatasetSelections.has(dataset.id)}
-                          onCheckedChange={() => onDatasetToggle(dataset.id)}
-                        >
-                          {dataset.name}
-                        </DropdownMenuCheckboxItem>
-                      ))}
+            {tenantEntries.map(([tenantId, tenantData]: [string, any]) => (
+              <DropdownMenuSub key={tenantId}>
+                <DropdownMenuSubTrigger className="pl-2">
+                  <Building2 className="w-3.5 h-3.5 mr-2 text-primary" />
+                  <span>{tenantData.tenant?.name || "Unknown"}</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent className="max-h-[300px] overflow-y-auto">
+                    {/* Tenant-level datasets */}
+                    {tenantData.datasets?.map((dataset: any) => (
+                      <DropdownMenuCheckboxItem
+                        key={dataset.id}
+                        checked={optionalDatasetSelections.has(dataset.id)}
+                        onCheckedChange={() => onDatasetToggle(dataset.id)}
+                      >
+                        {dataset.name}
+                      </DropdownMenuCheckboxItem>
+                    ))}
 
-                      {/* Department submenus */}
-                      {Object.entries(tenantData.departments || {}).map(
-                        ([deptId, deptData]: [string, any]) => {
-                          if (!deptData.datasets?.length) return null;
-                          return (
-                            <DropdownMenuSub key={deptId}>
-                              <DropdownMenuSubTrigger className="pl-2">
-                                <Users className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
-                                <span>{deptData.department?.name}</span>
-                                <span className="ml-auto text-xs text-muted-foreground">
-                                  ({deptData.datasets.length})
-                                </span>
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuPortal>
-                                <DropdownMenuSubContent className="max-h-[200px] overflow-y-auto">
-                                  {deptData.datasets.map((dataset: any) => (
-                                    <DropdownMenuCheckboxItem
-                                      key={dataset.id}
-                                      checked={optionalDatasetSelections.has(dataset.id)}
-                                      onCheckedChange={() => onDatasetToggle(dataset.id)}
-                                    >
-                                      {dataset.name}
-                                    </DropdownMenuCheckboxItem>
-                                  ))}
-                                </DropdownMenuSubContent>
-                              </DropdownMenuPortal>
-                            </DropdownMenuSub>
-                          );
-                        }
-                      )}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuPortal>
-                </DropdownMenuSub>
-              )
-            )}
+                    {/* Department submenus */}
+                    {Object.entries(tenantData.departments || {}).map(
+                      ([deptId, deptData]: [string, any]) => {
+                        if (!deptData.datasets?.length) return null;
+                        return (
+                          <DropdownMenuSub key={deptId}>
+                            <DropdownMenuSubTrigger className="pl-2">
+                              <Users className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                              <span>{deptData.department?.name}</span>
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ({deptData.datasets.length})
+                              </span>
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuPortal>
+                              <DropdownMenuSubContent className="max-h-[200px] overflow-y-auto">
+                                {deptData.datasets.map((dataset: any) => (
+                                  <DropdownMenuCheckboxItem
+                                    key={dataset.id}
+                                    checked={optionalDatasetSelections.has(dataset.id)}
+                                    onCheckedChange={() => onDatasetToggle(dataset.id)}
+                                  >
+                                    {dataset.name}
+                                  </DropdownMenuCheckboxItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuPortal>
+                          </DropdownMenuSub>
+                        );
+                      }
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
+            ))}
           </>
         ) : (
           /* Empty state */

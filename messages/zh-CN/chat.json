@@ -9,6 +9,8 @@
   "aiDisclaimer": "AI 可能会出错，请核实重要信息",
   "selectKnowledgeBase": "知识库",
   "selectedKbCount": "已选 {count} 个知识库",
+  "clearKnowledgeBase": "清除已选知识库",
+  "clearKbShort": "清除",
   "noKnowledgeBase": "暂无知识库",
   "appShortcutsTitle": "快速开始",
   "description": "基于知识库的智能问答系统",
