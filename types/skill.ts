@@ -19,6 +19,8 @@ export interface Skill {
   id: number;
   name: string;
   display_name: string;
+  /** Effective category key (unset/unknown already mapped to the fallback by the API). */
+  category?: string;
   description: string;
   /** 草稿正文 */
   content: string;

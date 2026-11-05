@@ -39,6 +39,7 @@ import { resolveReviewStatus, reviewStatusBadge } from "@/lib/reviewStatus";
 import { getSkillOwnerLabel } from "@/lib/skillOwnerLabel";
 import { canEditSkill, canDeleteSkill } from "@/lib/skillPermissions";
 import { filterSkillsByCreator, getSkillCreators } from "@/lib/skillCreatorFilter";
+import { useSkillCategories } from "@/hooks/useSkillCategories";
 import { checkDeptAdmin, checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import type { Skill } from "@/types/skill";
 
@@ -88,9 +89,27 @@ export default function SkillsPage() {
   useEffect(() => {
     if (!canFilterCreators) setCreatorId(null);
   }, [canFilterCreators]);
-  const filteredSkills = useMemo(
+  const creatorFiltered = useMemo(
     () => filterSkillsByCreator(skills, canFilterCreators ? creatorId : null),
     [skills, creatorId, canFilterCreators]
+  );
+  // 分类来自后端打包的 config/skill_categories.yaml；"全部" 是界面自带的。
+  const { categories, fallback, labelOf } = useSkillCategories();
+  const [category, setCategory] = useState<string>("all");
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const skill of creatorFiltered) {
+      const key = skill.category || fallback;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [creatorFiltered, fallback]);
+  const filteredSkills = useMemo(
+    () =>
+      category === "all"
+        ? creatorFiltered
+        : creatorFiltered.filter((skill) => (skill.category || fallback) === category),
+    [creatorFiltered, category, fallback]
   );
 
   // 删除被引用时（409）弹引用应用清单
@@ -208,7 +227,37 @@ export default function SkillsPage() {
             </div>
           ) : (
             <>
-              {filteredSkills.length === 0 ? (
+              {categories.length > 0 && (
+                <div role="tablist" aria-label={t("category")} className="mb-4 flex flex-wrap gap-2">
+                  {[{ key: "all", count: creatorFiltered.length }, ...categories.map((c) => ({ key: c.key, count: categoryCounts[c.key] || 0 }))].map(
+                    ({ key, count }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="tab"
+                        aria-selected={category === key}
+                        onClick={() => setCategory(key)}
+                        className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                          category === key
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {key === "all" ? t("categoryAll") : labelOf(key)}
+                        <span className="ml-1 text-xs opacity-70">{count}</span>
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+              {creatorFiltered.length > 0 && filteredSkills.length === 0 ? (
+                <div className="py-12 text-center">
+                  <h3 className="mb-2 text-lg font-medium">{t("noSkillsInCategory")}</h3>
+                  <Button onClick={() => setCategory("all")} variant="outline">
+                    {t("categoryAll")}
+                  </Button>
+                </div>
+              ) : filteredSkills.length === 0 ? (
                 <div className="py-12 text-center">
                   <h3 className="mb-2 text-lg font-medium">{t("noSkillsForCreator")}</h3>
                   <Button onClick={() => setCreatorId(null)} variant="outline">

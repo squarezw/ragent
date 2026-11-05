@@ -16,6 +16,8 @@ import ReviewLogDialog from "@/components/ReviewLogDialog";
 import VisibilitySelect from "@/components/VisibilitySelect";
 import SkillTenantSelect from "./SkillTenantSelect";
 import DeptSelect from "@/components/DeptSelect";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSkillCategories } from "@/hooks/useSkillCategories";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import axios from "@/lib/axios";
@@ -99,6 +101,9 @@ export default function SkillEditor({
   const [name, setName] = useState(skill?.name || "");
   const [reviewLogOpen, setReviewLogOpen] = useState(false);
   const [displayName, setDisplayName] = useState(skill?.display_name || "");
+  // "" = 未选，保存时不带该字段，后端保持原值（新建则归兜底分类）。
+  const [category, setCategory] = useState(skill?.category || "");
+  const { categories, fallback, labelOf } = useSkillCategories();
   const [description, setDescription] = useState(skill?.description || "");
   // 新建时用脚手架起头（编辑既有 skill 绝不注入，避免污染已有正文）
   const [content, setContent] = useState(skill ? skill.content || "" : SKILL_BODY_SCAFFOLD);
@@ -127,6 +132,7 @@ export default function SkillEditor({
     if (skill) {
       setName(skill.name ?? "");
       setDisplayName(skill.display_name ?? "");
+      setCategory(skill.category ?? "");
       setDescription(skill.description ?? "");
       setContent(skill.content ?? "");
       setRequiresTools(normalizeRequiresList(skill.requires?.tools));
@@ -173,6 +179,7 @@ export default function SkillEditor({
     () => ({
       name: name.trim(),
       display_name: displayName.trim(),
+      ...(category ? { category } : {}),
       description: description.trim(),
       content,
       requires: {
@@ -183,7 +190,7 @@ export default function SkillEditor({
       // 带一个 null 上去会被理解成"清空归属部门"，那是另一个意思。
       ...(ownerDeptId != null ? { owner_dept_id: ownerDeptId } : {}),
     }),
-    [name, displayName, description, content, requiresTools, visibility,
+    [name, displayName, category, description, content, requiresTools, visibility,
      ownerDeptId]
   );
 
@@ -207,6 +214,7 @@ export default function SkillEditor({
   return (
     <Card data-workspace-dirty={!readOnly && (
       name !== (skill?.name || "") || displayName !== (skill?.display_name || "") ||
+      category !== (skill?.category || "") ||
       description !== (skill?.description || "") || content !== (skill ? skill.content || "" : SKILL_BODY_SCAFFOLD) ||
       visibility !== (skill?.visibility || "tenant") || ownerDeptId !== (skill?.owner_dept_id ?? null) ||
       JSON.stringify(requiresTools) !== JSON.stringify(normalizeRequiresList(skill?.requires?.tools))
@@ -332,7 +340,7 @@ export default function SkillEditor({
           </section>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
             <Label htmlFor="skill-name">{t("name")} *</Label>
             <Input
@@ -356,6 +364,25 @@ export default function SkillEditor({
               disabled={readOnly}
               placeholder={t("displayNamePlaceholder")}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="skill-category">{t("category")}</Label>
+            <Select
+              value={category || fallback}
+              onValueChange={setCategory}
+              disabled={readOnly || categories.length === 0}
+            >
+              <SelectTrigger id="skill-category">
+                <SelectValue placeholder={t("category")} />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.key} value={c.key}>
+                    {labelOf(c.key)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
