@@ -391,5 +391,8 @@
   "replacePackageReadDraft": "Reload draft to verify",
   "replacePackageDropzone": "Drop one ZIP file here, or choose a file below",
   "replacePackageNoFile": "No file selected",
-  "replacePackageSingleZip": "Choose one ZIP file of at most 25 MiB. Folders and multiple files are not supported."
+  "replacePackageSingleZip": "Choose one ZIP file of at most 25 MiB. Folders and multiple files are not supported.",
+  "category": "Category",
+  "categoryAll": "All",
+  "noSkillsInCategory": "No skills in this category yet"
 }

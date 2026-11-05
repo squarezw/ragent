@@ -9,6 +9,8 @@ import type { SkillDiff } from "@/types/review";
 export interface SkillPayload {
   name: string;
   display_name: string;
+  /** Category key from config/skill_categories.yaml. */
+  category?: string;
   description: string;
   content: string;
   requires: SkillRequires;

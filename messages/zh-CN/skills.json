@@ -391,5 +391,8 @@
   "replacePackageReadDraft": "重新读取草稿核对",
   "replacePackageDropzone": "将一个 ZIP 文件拖到这里，或点击下方选择文件",
   "replacePackageNoFile": "尚未选择文件",
-  "replacePackageSingleZip": "请仅选择一个不超过 25 MiB 的 ZIP 文件，不支持文件夹或多个文件。"
+  "replacePackageSingleZip": "请仅选择一个不超过 25 MiB 的 ZIP 文件，不支持文件夹或多个文件。",
+  "category": "分类",
+  "categoryAll": "全部",
+  "noSkillsInCategory": "这个分类下还没有技能"
 }

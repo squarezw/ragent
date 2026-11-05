@@ -21,6 +21,7 @@ function harness(initialRole: string) {
       if (name === '@/lib/clientPermissions') return { checkSuperAdmin: () => role === 'super', checkTenantAdmin: () => role === 'tenant', checkDeptAdmin: () => role === 'dept' };
       if (name === '@/app/components/WorkspaceProvider') return { useWorkspace: () => ({ enabled: true, tenant: { id: 20 } }) };
       if (name === '@/hooks/useSkills') return { useSkills: () => ({ skills, loading: false }) };
+      if (name === '@/hooks/useSkillCategories') return { useSkillCategories: () => ({ categories: [], fallback: 'other', labelOf: (key: string) => key }) };
       if (name === '@/lib/skillCreatorFilter') return { getSkillCreators: (rows: any[]) => rows.map(r => ({ userId: r.user_id, name: r.author })), filterSkillsByCreator: (rows: any[], id: number | null) => id == null ? rows : rows.filter(r => r.user_id === id) };
       if (name === '@/lib/skillPermissions') return { canEditSkill: () => false, canDeleteSkill: () => false };
       if (name === '@/lib/reviewStatus') return { resolveReviewStatus: () => 'published', reviewStatusBadge: () => ({ labelKey: 'published' }) };
