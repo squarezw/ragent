@@ -1,6 +1,4 @@
 "use client";
-import { usePathname } from "next/navigation";
-import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import { TenantModelsManager } from "@/components/TenantModelsManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -119,8 +117,6 @@ interface SystemSettings {
 export default function SystemSettingsPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const isSuperAdmin = checkSuperAdmin(user);
-  const workspace = useWorkspace();
-  const platformPage = usePathname() === "/platform-settings";
   const { mutate } = useSWRConfig();
   const t = useTranslations("systemSettings");
   const tc = useTranslations("common");
@@ -171,7 +167,7 @@ export default function SystemSettingsPage() {
   // 加载系统设置（平台名称、Logo等）
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reload privileged settings only when administrator access changes.
   useEffect(() => {
-    if (userLoading || !isSuperAdmin || (workspace.enabled && !platformPage)) return;
+    if (userLoading || !isSuperAdmin) return;
     let active = true;
     const loadSystemSettings = async () => {
       try {
@@ -422,8 +418,9 @@ export default function SystemSettingsPage() {
   }
 
   if (!user) return null;
-  if (platformPage && !isSuperAdmin) return null;
-  if (!isSuperAdmin || (workspace.enabled && !platformPage)) {
+  // One settings page for everyone; super admins additionally see the
+  // platform-wide sections (name/logo, SMTP, theme, billing rates).
+  if (!isSuperAdmin) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-4">
@@ -1046,7 +1043,7 @@ export default function SystemSettingsPage() {
         <GithubOAuthSection defaultOpen={false} />
         </div>
         </div>
-        {!platformPage && <TenantModelsManager />}
+        <TenantModelsManager />
       </div>
 
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——
