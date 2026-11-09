@@ -143,5 +143,15 @@
   "workspaceSkippedSkills": "{count} Skills",
   "workspaceSkippedTools": "{count} tools",
   "workspaceSkippedDatasets": "{count} knowledge bases",
-  "workspaceBindingSeparator": ", "
+  "workspaceBindingSeparator": ", ",
+  "knowledgeWriteTitle": "Write to knowledge base",
+  "knowledgeWriteChoose": "Choose a knowledge base for “{filename}”. Only knowledge bases you created in this workspace are listed.",
+  "knowledgeWriteDataset": "Destination knowledge base",
+  "knowledgeWritePlaceholder": "Select a knowledge base",
+  "knowledgeWriteConfirm": "Confirm write",
+  "knowledgeWriteCancel": "Cancel",
+  "knowledgeWriteSubmitting": "Submitting…",
+  "knowledgeWriteProcessing": "Added to the knowledge base. Segmentation and further processing are in progress; search will be available after completion.",
+  "knowledgeWriteCancelled": "Cancelled. No write was submitted.",
+  "knowledgeWriteError": "The write result could not be confirmed. Check the knowledge base file status or start a new write request."
 }

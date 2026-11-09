@@ -190,6 +190,7 @@ test("route inventory denies new unknown business endpoints and keeps credential
   assert.equal(module.workspaceRoutePolicy("/api/v1/apps/123"), "covered");
   assert.equal(module.workspaceRoutePolicy("/api/v1/apps/123/datasets/cleanup-unavailable"), "covered");
   assert.equal(module.workspaceRoutePolicy("/api/knowledge/list"), "covered");
+  assert.equal(module.workspaceRoutePolicy("/api/knowledge/write-selection"), "covered");
   assert.equal(module.workspaceRoutePolicy("/api/internal/onlyoffice/config/doc"), "covered");
   assert.equal(module.workspaceRoutePolicy("/api/organization/pending-users"), "exempt");
   assert.equal(module.workspaceRoutePolicy("/api/internal/onlyoffice/callback"), "exempt");
@@ -228,6 +229,19 @@ test(`actual middleware enforces context with legacy flag ${legacyFlag}`, () => 
   });
   assert.equal(module.middleware(request("/api/new-unknown-business")).status, 501);
   assert.equal(module.middleware(request("/api/v1/apps")).status, 409);
+  // Confirmation must reach its authenticated handler, while remaining workspace-scoped.
+  assert.equal(module.middleware(request("/api/knowledge/write-selection")).status, 409);
+  const confirmation = module.middleware(
+    request("/api/knowledge/write-selection", { "x-workspace-tenant-id": "20" })
+  );
+  assert.equal(confirmation.status, 200);
+  assert.equal(confirmation.forwarded.get("x-workspace-tenant-id"), "20");
+  assert.equal(
+    module.middleware(request("/api/knowledge/write-selection?workspace_tenant_id=10", {
+      "x-workspace-tenant-id": "20",
+    })).status,
+    403
+  );
   assert.equal(
     module.middleware(
       request("/api/v1/apps?workspace_tenant_id=20", { "x-workspace-tenant-id": "10" })

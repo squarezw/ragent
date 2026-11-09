@@ -1,3 +1,4 @@
+import { parseKnowledgeWriteConfirmation, type KnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
 import { ensureSessionCurrent, renewSession } from "@/lib/sessionRenewal";
 import axios from "@/lib/axios";
 import {
@@ -84,6 +85,7 @@ export function useChatSession() {
          */
         onToolStatus?: (status: ToolStatusEvent) => void;
         onWorkspaceWarning?: (warning: WorkspaceBindingWarning) => void;
+        onKnowledgeWriteConfirmation?: (selection: KnowledgeWriteConfirmation) => void;
       }
     ) => {
       // 创建 AbortController 用于取消请求
@@ -225,6 +227,12 @@ export function useChatSession() {
                   try {
                     const parsed = JSON.parse(data);
 
+                    if (currentEvent === "knowledge_write_confirmation") {
+                      const selection = parseKnowledgeWriteConfirmation(parsed);
+                      if (selection && !isAborted) callbacks?.onKnowledgeWriteConfirmation?.(selection);
+                      currentEvent = null;
+                      continue;
+                    }
                     if (currentEvent === "workspace_warning") {
                       handleWorkspaceWarning(parsed);
                       currentEvent = null;
@@ -358,7 +366,11 @@ export function useChatSession() {
                 const data = trimmedLine.slice(6);
                 try {
                   const parsed = JSON.parse(data);
-                  if (currentEvent === "workspace_warning") {
+                  if (currentEvent === "knowledge_write_confirmation") {
+                    const selection = parseKnowledgeWriteConfirmation(parsed);
+                    if (selection && !isAborted) callbacks?.onKnowledgeWriteConfirmation?.(selection);
+                    currentEvent = null;
+                  } else if (currentEvent === "workspace_warning") {
                     handleWorkspaceWarning(parsed);
                     currentEvent = null;
                   }
