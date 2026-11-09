@@ -243,7 +243,7 @@ export default function ChatPage() {
       loading ||
       uploading ||
       loadingHistorySession ||
-      (!input.trim() && attachments.length === 0)
+      !input.trim()
     )
       return;
     setKnowledgeWrites([]);
