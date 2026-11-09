@@ -170,6 +170,8 @@ export default function ChatInputComposite({
     [onFileDrop]
   );
 
+  const canSend = Boolean(input.trim());
+
   // Handle keyboard events
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -180,11 +182,11 @@ export default function ChatInputComposite({
         } else {
           // Enter: send message
           e.preventDefault();
-          if (!uploading) onSend();
+          if (canSend && !loading && !isStreaming && !uploading) onSend();
         }
       }
     },
-    [onSend, uploading]
+    [canSend, loading, isStreaming, onSend, uploading]
   );
 
   // Auto-resize textarea
@@ -206,8 +208,6 @@ export default function ChatInputComposite({
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
-
-  const canSend = input.trim() || attachments.length > 0;
 
   return (
     <div
