@@ -54,6 +54,7 @@ interface MessageListProps {
   /** This turn's tool calls, accumulated from `event: tool_status` frames.
    *  Rendered as a collapsible list — expanded while running, collapsed after. */
   toolSteps?: ToolStep[];
+  knowledgeWriteCards?: React.ReactNode;
   /** Whether the turn is still streaming; drives the spinner and the timer. */
   toolsRunning?: boolean;
   onPreviewResource: (resource: PreviewResource) => void;
@@ -72,6 +73,7 @@ export default function MessageList({
   messagesContainerRef,
   messagesEndRef,
   toolSteps,
+  knowledgeWriteCards,
   toolsRunning,
   onPreviewResource,
 }: MessageListProps) {
@@ -148,6 +150,8 @@ export default function MessageList({
           </div>
         )
       )}
+
+      {knowledgeWriteCards}
 
       {/* Thinking state - streaming started but no content yet */}
       {isStreaming && !streamingMessage && (

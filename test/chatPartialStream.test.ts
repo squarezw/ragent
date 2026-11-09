@@ -57,6 +57,7 @@ async function start() {
       setLoading() {},
       setIsStreaming() {},
       setToolSteps() {},
+      setKnowledgeWrites() {},
       focusInput() {},
       t: (key: string, params?: { message: string }) => (params ? `${key}:${params.message}` : key),
       askStream: async (_text: string, _datasets: unknown, _params: unknown, cb: unknown) => {

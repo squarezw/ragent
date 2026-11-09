@@ -143,5 +143,15 @@
   "workspaceSkippedSkills": "Skill {count} 项",
   "workspaceSkippedTools": "工具 {count} 项",
   "workspaceSkippedDatasets": "知识库 {count} 项",
-  "workspaceBindingSeparator": "、"
+  "workspaceBindingSeparator": "、",
+  "knowledgeWriteTitle": "写入知识库",
+  "knowledgeWriteChoose": "请选择“{filename}”要写入的知识库。仅列出你在当前工作空间创建的知识库。",
+  "knowledgeWriteDataset": "目标知识库",
+  "knowledgeWritePlaceholder": "请选择知识库",
+  "knowledgeWriteConfirm": "确认写入",
+  "knowledgeWriteCancel": "取消",
+  "knowledgeWriteSubmitting": "正在提交…",
+  "knowledgeWriteProcessing": "已入库，正在分段及后续处理；完成后即可检索。",
+  "knowledgeWriteCancelled": "已取消，未提交写入。",
+  "knowledgeWriteError": "未能确认写入结果。请查看知识库文件状态，或重新发起写入请求。"
 }

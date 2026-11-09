@@ -20,8 +20,10 @@ function compile(file: string, require: (name: string) => any = () => { throw Er
   return api;
 }
 test("skipped-binding warning fires once and split SSE still delivers the answer", {timeout: 3000}, async () => {
+  const knowledgeWrite = compile("../lib/knowledgeWrite.ts");
   const sse = compile("../lib/chatSse.ts");
   const api = compile("../hooks/useChatSession.ts", (name) => {
+    if (name === "@/lib/knowledgeWrite") return knowledgeWrite;
     if (name === "@/lib/chatSse") return sse;
     if (name === "react") return {useState: (value: unknown) => [value, () => {}], useCallback: (fn: unknown) => fn};
     if (name === "@/lib/sessionRenewal") return {ensureSessionCurrent: async () => {}, renewSession: async () => {}};

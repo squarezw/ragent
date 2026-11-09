@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { findToolCompletionIndex } from "@/lib/chatSse";
 import type { ToolStep } from "./components/ToolActivity";
+import KnowledgeWriteCard from "./components/KnowledgeWriteCard";
+import type { KnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
 import WelcomeView from "@/app/chat/components/WelcomeView";
 import ChatInputComposite from "@/app/chat/components/ChatInputComposite";
 import MessageList from "@/app/chat/components/MessageList";
@@ -88,6 +90,7 @@ export default function ChatPage() {
   // 本轮的工具调用列表。此前每来一帧就整个替换 —— 一轮调了五个工具只看得到
   // 第五个，前四个不留痕迹。帧一直都在，是界面把它们丢了。
   const [toolSteps, setToolSteps] = useState<ToolStep[]>([]);
+  const [knowledgeWrites, setKnowledgeWrites] = useState<KnowledgeWriteConfirmation[]>([]);
 
   const [referencesDialogOpen, setReferencesDialogOpen] = useState(false);
   const [currentMessageIndex, setCurrentMessageIndex] = useState<number>(-1);
@@ -122,6 +125,15 @@ export default function ChatPage() {
     handleClearDatasets,
     operationTenantId,
   } = useAppDatasets();
+
+  useEffect(() => {
+    conversationVersion.current += 1;
+    abortControllerRef.current?.();
+    abortControllerRef.current = null;
+    setKnowledgeWrites([]);
+    setLoading(false);
+    setIsStreaming(false);
+  }, [operationTenantId]);
 
   const { messagesContainerRef, messagesEndRef, scrollToBottom } = useMessageScroll(
     messages,
@@ -199,6 +211,7 @@ export default function ChatPage() {
 
   // Start new conversation
   const startNewConversation = useCallback(() => {
+    setKnowledgeWrites([]);
     conversationVersion.current += 1;
     abortControllerRef.current?.();
     abortControllerRef.current = null;
@@ -233,6 +246,7 @@ export default function ChatPage() {
       (!input.trim() && attachments.length === 0)
     )
       return;
+    setKnowledgeWrites([]);
     const version = conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
     // Per-request accumulation also sees chunks queued before React commits state.
@@ -296,6 +310,11 @@ export default function ChatPage() {
             warning.skipped.datasets > 0 ? t("workspaceSkippedDatasets", { count: warning.skipped.datasets }) : null,
           ].filter(Boolean).join(t("workspaceBindingSeparator"));
           toast.warning(t("workspaceBindingsSkipped", { resources }), { duration: 10000 });
+        },
+        onKnowledgeWriteConfirmation: (selection) => {
+          if (!isCurrent() || terminal) return;
+          setKnowledgeWrites((previous) => previous.some((item) => item.request_id === selection.request_id)
+            ? previous : [...previous, selection]);
         },
         onToolStatus: (status) => {
           if (!isCurrent()) return;
@@ -460,6 +479,7 @@ export default function ChatPage() {
 
   // Load history session
   const loadHistorySession = async (sessionId: number) => {
+    setKnowledgeWrites([]);
     const version = ++conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
     abortControllerRef.current?.();
@@ -586,6 +606,9 @@ export default function ChatPage() {
                 messages={messages}
                 streamingMessage={streamingMessage}
                 isStreaming={isStreaming}
+                knowledgeWriteCards={knowledgeWrites.map((selection) => (
+                  <KnowledgeWriteCard key={selection.request_id} selection={selection} />
+                ))}
                 toolSteps={toolSteps}
                 toolsRunning={isStreaming}
                 segments={segments}
