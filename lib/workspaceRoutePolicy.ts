@@ -161,6 +161,7 @@ export const workspaceDirectRoutes: string[] = [
   "/api/datasets",
   "/api/datasets/tasks/[task_id]",
   "/api/datasets/[id]/files",
+  "/api/knowledge/write-selection",
   "/api/knowledge/replace",
   "/api/knowledge/category",
   "/api/knowledge/tags-summary",
