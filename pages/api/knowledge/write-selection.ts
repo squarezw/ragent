@@ -27,20 +27,19 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       { dataset_id, chat_id },
       {
         headers: { ...workspaceHeaders(req), Authorization: req.headers.authorization },
-        timeout: 60000,
+        // Allow the bounded 60s source download and 120s knowledge-object upload.
+        timeout: 210000,
         maxRedirects: 0,
       }
     );
     if (response.data?.status !== "processing") {
       return res.status(502).json({ error: "KNOWLEDGE_WRITE_FAILED" });
     }
-    return res
-      .status(200)
-      .json({
-        status: "processing",
-        file_id: response.data.file_id,
-        task_id: response.data.task_id,
-      });
+    return res.status(200).json({
+      status: "processing",
+      file_id: response.data.file_id,
+      task_id: response.data.task_id,
+    });
   } catch (error: unknown) {
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     return res

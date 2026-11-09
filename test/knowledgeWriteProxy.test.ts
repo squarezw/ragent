@@ -90,6 +90,10 @@ test("proxy forwards authentication and workspace, never client actor or source"
   assert.equal(calls[0][2].headers.Authorization, "Bearer trusted");
   assert.equal(calls[0][2].headers["X-Workspace-Tenant-ID"], "7");
   assert.equal(calls[0][2].maxRedirects, 0);
+  assert.ok(
+    calls[0][2].timeout > (60 + 120) * 1000,
+    "confirmation must allow bounded document download and upload"
+  );
   assert.equal(res.code, 200);
   assert.equal(JSON.stringify(res.payload).includes("PRIVATE"), false);
 });
