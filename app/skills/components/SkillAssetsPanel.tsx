@@ -148,6 +148,9 @@ export default function SkillAssetsPanel({
     execConfigLoading,
     images,
     imagesUnavailable,
+    remoteEnvironments,
+    remoteEnvironmentsLoading,
+    remoteEnvironmentsError,
     uploading,
     uploadedCount,
     uploadAssets,
@@ -434,7 +437,10 @@ export default function SkillAssetsPanel({
   return (
     <>
       {/* 参考文档与资产文件：与「是否可执行」解耦，知识型 skill 也能只用这一块 */}
-      <Card data-workspace-dirty={staged.length > 0 ? "true" : undefined} data-skill-config-dirty={staged.length > 0 ? "true" : undefined}>
+      <Card
+        data-workspace-dirty={staged.length > 0 ? "true" : undefined}
+        data-skill-config-dirty={staged.length > 0 ? "true" : undefined}
+      >
         <CardHeader>
           <CardTitle>
             <button
@@ -891,6 +897,9 @@ export default function SkillAssetsPanel({
               config={execConfig}
               images={images}
               imagesUnavailable={imagesUnavailable}
+              remoteEnvironments={remoteEnvironments}
+              remoteEnvironmentsLoading={remoteEnvironmentsLoading}
+              remoteEnvironmentsError={remoteEnvironmentsError}
               saving={savingConfig}
               onSave={(payload) => guard(() => runSaveConfig(payload))}
             />

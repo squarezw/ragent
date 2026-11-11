@@ -83,8 +83,11 @@ export interface SkillAssetList {
 /** GET|PUT /api/v1/skills/{id}/exec-config 响应 */
 export interface SkillExecConfig {
   stage: string;
-  /** name:tag（digest 锁版本时为 name@digest） */
-  image: string;
+  backend?: "local" | "remote";
+  remote_environment_id?: string | null;
+  remote_environment?: RemoteSandboxEnvironment | null;
+  /** Local name:tag/name@digest; null for remote execution. */
+  image: string | null;
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];
@@ -97,7 +100,8 @@ export interface SkillExecConfig {
 }
 
 /** PUT /api/v1/skills/{id}/exec-config 请求体（SkillExecConfigPayload） */
-export interface SkillExecConfigPayload {
+export interface LocalSkillExecConfigPayload {
+  backend?: "local";
   image: string;
   timeout_sec: number;
   writable_subdirs: string[];
@@ -105,6 +109,25 @@ export interface SkillExecConfigPayload {
   warm_pool: boolean;
   artifact_exclude: string[];
 }
+
+export interface RemoteSandboxEnvironment {
+  id: string;
+  name: string;
+  revision: string;
+  enabled: boolean;
+  description: string | null;
+  max_timeout_sec: number;
+  network_description: string | null;
+}
+
+export type SkillExecConfigPayload =
+  | LocalSkillExecConfigPayload
+  | {
+      backend: "remote";
+      remote_environment_id: string;
+      timeout_sec: number;
+      artifact_exclude: string[];
+    };
 
 /**
  * GET|PUT /api/v1/skills/{id}/user-env 响应（迁移 041）。

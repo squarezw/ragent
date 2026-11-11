@@ -20,13 +20,21 @@ import {
   resolveImageSelection,
   sandboxImageValue,
 } from "@/lib/skillAssets";
-import type { SandboxImage, SkillExecConfig, SkillExecConfigPayload } from "@/types/skill";
+import type {
+  RemoteSandboxEnvironment,
+  SandboxImage,
+  SkillExecConfig,
+  SkillExecConfigPayload,
+} from "@/types/skill";
 
 interface SkillExecConfigFormProps {
   config: SkillExecConfig | null;
   images: SandboxImage[];
   /** 白名单端点不可用：镜像字段降级为手工输入 */
   imagesUnavailable: boolean;
+  remoteEnvironments: RemoteSandboxEnvironment[];
+  remoteEnvironmentsLoading: boolean;
+  remoteEnvironmentsError: boolean;
   saving: boolean;
   onSave: (payload: SkillExecConfigPayload) => void;
 }
@@ -37,11 +45,23 @@ export default function SkillExecConfigForm({
   config,
   images,
   imagesUnavailable,
+  remoteEnvironments,
+  remoteEnvironmentsLoading,
+  remoteEnvironmentsError,
   saving,
   onSave,
 }: SkillExecConfigFormProps) {
   const t = useTranslations("skills");
 
+  const [backend, setBackend] = useState<"local" | "remote">(config?.backend ?? "local");
+  const [environmentId, setEnvironmentId] = useState(config?.remote_environment_id ?? "");
+  const [remoteTimeout, setRemoteTimeout] = useState(
+    String(config?.backend === "remote" ? config.timeout_sec : DEFAULT_TIMEOUT)
+  );
+  const [remoteExclusions, setRemoteExclusions] = useState(
+    (config?.artifact_exclude ?? []).join("\n")
+  );
+  const [acknowledgeState, setAcknowledgeState] = useState(false);
   const [image, setImage] = useState("");
   const [timeout, setTimeoutSec] = useState(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
   const [needsNetwork, setNeedsNetwork] = useState(config?.needs_network ?? false);
@@ -67,6 +87,11 @@ export default function SkillExecConfigForm({
 
   // 配置或镜像清单异步到达后回填（digest 形态的 image 在此映射回可提交的 name:tag）
   useEffect(() => {
+    setBackend(config?.backend ?? "local");
+    setEnvironmentId(config?.remote_environment_id ?? "");
+    setRemoteTimeout(String(config?.backend === "remote" ? config.timeout_sec : DEFAULT_TIMEOUT));
+    setRemoteExclusions((config?.artifact_exclude ?? []).join("\n"));
+    setAcknowledgeState(false);
     setTimeoutSec(String(config?.timeout_sec ?? DEFAULT_TIMEOUT));
     setNeedsNetwork(config?.needs_network ?? false);
     setWarmPool(config?.warm_pool ?? false);
@@ -91,153 +116,307 @@ export default function SkillExecConfigForm({
   const selectedMissing =
     useSelect && images.some((i) => sandboxImageValue(i) === image && i.present === false);
 
-  const canSave = !saving && !timeoutInvalid && !imageMissing;
+  const selectedEnvironment = remoteEnvironments.find(
+    (env) => env.id === environmentId && env.enabled
+  );
+  const remoteLimit = Math.min(3600, selectedEnvironment?.max_timeout_sec ?? 3600);
+  const remoteTimeoutInvalid =
+    !Number.isInteger(Number(remoteTimeout)) ||
+    Number(remoteTimeout) < 1 ||
+    Number(remoteTimeout) > remoteLimit;
+  const hasLocalState = writableSubdirs.split("\n").some((line) => line.trim());
+  const canSave =
+    !saving &&
+    (backend === "remote"
+      ? Boolean(selectedEnvironment) &&
+        !remoteEnvironmentsLoading &&
+        !remoteEnvironmentsError &&
+        !remoteTimeoutInvalid &&
+        (!hasLocalState || acknowledgeState)
+      : !timeoutInvalid && !imageMissing);
 
-  const configDirty = image !== selection.value || timeout !== String(config?.timeout_sec ?? DEFAULT_TIMEOUT) ||
-    needsNetwork !== (config?.needs_network ?? false) || warmPool !== (config?.warm_pool ?? false) ||
-    artifactExclude !== (config?.artifact_exclude ?? []).join("\n") || writableSubdirs !== (config?.writable_subdirs ?? []).join("\n");
+  const configDirty =
+    backend !== (config?.backend ?? "local") ||
+    environmentId !== (config?.remote_environment_id ?? "") ||
+    remoteTimeout !== String(config?.backend === "remote" ? config.timeout_sec : DEFAULT_TIMEOUT) ||
+    remoteExclusions !== (config?.artifact_exclude ?? []).join("\n") ||
+    image !== selection.value ||
+    timeout !== String(config?.timeout_sec ?? DEFAULT_TIMEOUT) ||
+    needsNetwork !== (config?.needs_network ?? false) ||
+    warmPool !== (config?.warm_pool ?? false) ||
+    artifactExclude !== (config?.artifact_exclude ?? []).join("\n") ||
+    writableSubdirs !== (config?.writable_subdirs ?? []).join("\n");
   return (
-    <div className="space-y-4" data-workspace-dirty={configDirty ? "true" : undefined} data-skill-config-dirty={configDirty ? "true" : undefined}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="exec-image">{t("execImage")} *</Label>
-          {useSelect ? (
-            <Select value={image} onValueChange={setImage}>
-              <SelectTrigger id="exec-image">
-                <SelectValue placeholder={t("execImagePlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                {orphanImage && <SelectItem value={image}>{image}</SelectItem>}
-                {images.map((img) => (
-                  <SelectItem key={img.id} value={sandboxImageValue(img)}>
-                    {sandboxImageValue(img)}
-                    {img.digest ? ` · ${t("execImagePinned")}` : ""}
-                    {/* 标注而**不禁用**：镜像完全可能是先配置、后构建，禁用会挡住
+    <div
+      className="space-y-4"
+      data-workspace-dirty={configDirty ? "true" : undefined}
+      data-skill-config-dirty={configDirty ? "true" : undefined}
+    >
+      <fieldset className="space-y-2">
+        <legend className="sr-only">{t("execBackend")}</legend>
+        <div className="flex gap-6">
+          {(["local", "remote"] as const).map((mode) => (
+            <label key={mode} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="exec-backend"
+                value={mode}
+                checked={backend === mode}
+                onChange={() => setBackend(mode)}
+              />
+              {mode === "local" ? t("execBackendLocal") : t("execBackendRemote")}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {backend === "remote" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="exec-remote-environment">{t("execRemoteEnvironment")} *</Label>
+              <Select
+                value={environmentId}
+                onValueChange={setEnvironmentId}
+                disabled={remoteEnvironmentsLoading}
+              >
+                <SelectTrigger id="exec-remote-environment">
+                  <SelectValue placeholder={t("execRemoteEnvironmentPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {environmentId && !selectedEnvironment && (
+                    <SelectItem value={environmentId} disabled>
+                      {config?.remote_environment?.name ?? t("execRemoteUnavailable")}
+                    </SelectItem>
+                  )}
+                  {remoteEnvironments
+                    .filter((env) => env.enabled)
+                    .map((env) => (
+                      <SelectItem key={env.id} value={env.id}>
+                        {env.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {remoteEnvironmentsLoading ? (
+                <p className="text-xs text-muted-foreground">{t("execRemoteLoading")}</p>
+              ) : remoteEnvironmentsError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {t("execRemoteLoadFailed")}
+                </p>
+              ) : !remoteEnvironments.some((env) => env.enabled) ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {t("execRemoteEmpty")}
+                </p>
+              ) : environmentId && !selectedEnvironment ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {t("execRemoteUnavailable")}
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="exec-remote-timeout">{t("execTimeout")} *</Label>
+              <Input
+                id="exec-remote-timeout"
+                type="number"
+                min={1}
+                max={remoteLimit}
+                value={remoteTimeout}
+                onChange={(event) => setRemoteTimeout(event.target.value)}
+                className={remoteTimeoutInvalid ? "border-destructive" : ""}
+              />
+              <p
+                className={`text-xs ${remoteTimeoutInvalid ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {t("execRemoteTimeoutHint", { max: remoteLimit })}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="exec-remote-exclude">{t("execArtifactExclude")}</Label>
+            <Textarea
+              id="exec-remote-exclude"
+              value={remoteExclusions}
+              onChange={(event) => setRemoteExclusions(event.target.value)}
+              rows={2}
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">{t("execRemoteStateHint")}</p>
+          {hasLocalState && (
+            <label className="flex items-start gap-2 text-sm text-destructive">
+              <input
+                type="checkbox"
+                checked={acknowledgeState}
+                onChange={(event) => setAcknowledgeState(event.target.checked)}
+              />
+              {t("execRemoteStateConfirm")}
+            </label>
+          )}
+        </div>
+      )}
+      <div hidden={backend !== "local"} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="exec-image">{t("execImage")} *</Label>
+            {useSelect ? (
+              <Select value={image} onValueChange={setImage}>
+                <SelectTrigger id="exec-image">
+                  <SelectValue placeholder={t("execImagePlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {orphanImage && <SelectItem value={image}>{image}</SelectItem>}
+                  {images.map((img) => (
+                    <SelectItem key={img.id} value={sandboxImageValue(img)}>
+                      {sandboxImageValue(img)}
+                      {img.digest ? ` · ${t("execImagePinned")}` : ""}
+                      {/* 标注而**不禁用**：镜像完全可能是先配置、后构建，禁用会挡住
                         这条合理路径。这里的目的是让"选了会跑不起来"在选之前就看得见，
                         而不是替用户决定不许选。present 为 null（docker 不可达）时
                         什么都不标——那时所有镜像都判不出来，逐个标"不存在"是误导。 */}
-                    {img.present === false ? (
-                      <span className="ml-1.5 text-xs text-amber-600">· 本机无此镜像</span>
-                    ) : null}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id="exec-image"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="ragent-skill-fund:latest"
-            />
-          )}
-          {selectedMissing && (
-            <p className="text-xs text-amber-600">
-              该镜像已登记但本机不存在，保存后运行会失败（exit 125）。
-              平台的 skill 运行镜像多为本地构建、未推送 registry，docker 会报
-              「pull access denied」——那不是权限问题。请重新构建该镜像，或改选一个本机已有的。
+                      {img.present === false ? (
+                        <span className="ml-1.5 text-xs text-amber-600">· 本机无此镜像</span>
+                      ) : null}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id="exec-image"
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                placeholder="ragent-skill-fund:latest"
+              />
+            )}
+            {selectedMissing && (
+              <p className="text-xs text-amber-600">
+                该镜像已登记但本机不存在，保存后运行会失败（exit 125）。 平台的 skill
+                运行镜像多为本地构建、未推送 registry，docker 会报 「pull access
+                denied」——那不是权限问题。请重新构建该镜像，或改选一个本机已有的。
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {useSelect
+                ? selection.matched?.digest
+                  ? t("execImageDigestNote", { ref: selection.matched.ref })
+                  : t("execImageHint")
+                : t("execImageManual")}
             </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {useSelect
-              ? selection.matched?.digest
-                ? t("execImageDigestNote", { ref: selection.matched.ref })
-                : t("execImageHint")
-              : t("execImageManual")}
-          </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="exec-timeout">{t("execTimeout")} *</Label>
+            <Input
+              id="exec-timeout"
+              type="number"
+              min={1}
+              max={3600}
+              value={timeout}
+              onChange={(e) => setTimeoutSec(e.target.value)}
+              className={timeoutInvalid ? "border-destructive" : ""}
+            />
+            <p
+              className={`text-xs ${timeoutInvalid ? "text-destructive" : "text-muted-foreground"}`}
+            >
+              {t("execTimeoutHint")}
+            </p>
+          </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="exec-timeout">{t("execTimeout")} *</Label>
-          <Input
-            id="exec-timeout"
-            type="number"
-            min={1}
-            max={3600}
-            value={timeout}
-            onChange={(e) => setTimeoutSec(e.target.value)}
-            className={timeoutInvalid ? "border-destructive" : ""}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ToggleRow
+            id="exec-needs-network"
+            label={t("execNeedsNetwork")}
+            hint={t("execNeedsNetworkHint")}
+            checked={needsNetwork}
+            onChange={setNeedsNetwork}
           />
-          <p className={`text-xs ${timeoutInvalid ? "text-destructive" : "text-muted-foreground"}`}>
-            {t("execTimeoutHint")}
-          </p>
+          <ToggleRow
+            id="exec-warm-pool"
+            label={t("execWarmPool")}
+            hint={t("execWarmPoolHint")}
+            checked={warmPool}
+            onChange={setWarmPool}
+          />
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ToggleRow
-          id="exec-needs-network"
-          label={t("execNeedsNetwork")}
-          hint={t("execNeedsNetworkHint")}
-          checked={needsNetwork}
-          onChange={setNeedsNetwork}
-        />
-        <ToggleRow
-          id="exec-warm-pool"
-          label={t("execWarmPool")}
-          hint={t("execWarmPoolHint")}
-          checked={warmPool}
-          onChange={setWarmPool}
-        />
-      </div>
-
-      {/* 两个都是「一行一条」的列表字段，并排放：它们的形态一样，
+        {/* 两个都是「一行一条」的列表字段，并排放：它们的形态一样，
           而且一个管「什么不给用户看」、一个管「什么跨执行留下来」，
           放在一起比隔开更容易一起想清楚。 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
-          <Textarea
-            id="exec-artifact-exclude"
-            rows={2}
-            value={artifactExclude}
-            onChange={(e) => setArtifactExclude(e.target.value)}
-            placeholder="**/findings.json"
-            className="font-mono text-xs"
-          />
-          <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
+            <Textarea
+              id="exec-artifact-exclude"
+              rows={2}
+              value={artifactExclude}
+              onChange={(e) => setArtifactExclude(e.target.value)}
+              placeholder="**/findings.json"
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+          </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="exec-writable-subdirs">{t("execWritableSubdirs")}</Label>
-          <Textarea
-            id="exec-writable-subdirs"
-            rows={2}
-            value={writableSubdirs}
-            onChange={(e) => setWritableSubdirs(e.target.value)}
-            placeholder=".lark"
-            className="font-mono text-xs"
-          />
-          <p className="text-xs text-muted-foreground">{t("execWritableSubdirsHelp")}</p>
+          <div className="space-y-1.5">
+            <Label htmlFor="exec-writable-subdirs">{t("execWritableSubdirs")}</Label>
+            <Textarea
+              id="exec-writable-subdirs"
+              rows={2}
+              value={writableSubdirs}
+              onChange={(e) => setWritableSubdirs(e.target.value)}
+              placeholder=".lark"
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">{t("execWritableSubdirsHelp")}</p>
+          </div>
         </div>
       </div>
-
       <div className="flex justify-end">
         <Button
           disabled={!canSave}
           onClick={() =>
-            onSave(
-              buildExecConfigPayload(
-                {
-                  image: image.trim(),
-                  timeout_sec: timeoutValue,
-                  needs_network: needsNetwork,
-                  warm_pool: warmPool,
-                  artifact_exclude: artifactExclude
-                    .split("\n")
-                    .map((g) => g.trim())
-                    .filter(Boolean),
-                  writable_subdirs: writableSubdirs
-                    .split("\n")
-                    .map((d) => d.trim().replace(/^\/+|\/+$/g, ""))
-                    .filter(Boolean),
-                },
-                // 仍然传 config：两个列表字段现在都可编辑，但 buildExecConfigPayload
-                // 里的兜底还在——它保护的是「表单没渲染出这个字段」的情形（比如
-                // GET 失败、config 为 null），那时不该把已有配置清空。
-                config
-              )
-            )
+            backend === "remote"
+              ? onSave(
+                  buildExecConfigPayload(
+                    {
+                      backend: "remote",
+                      remote_environment_id: environmentId,
+                      image: "",
+                      timeout_sec: Number(remoteTimeout),
+                      needs_network: false,
+                      warm_pool: false,
+                      writable_subdirs: [],
+                      artifact_exclude: remoteExclusions
+                        .split("\n")
+                        .map((line) => line.trim())
+                        .filter(Boolean),
+                    },
+                    config
+                  )
+                )
+              : onSave(
+                  buildExecConfigPayload(
+                    {
+                      image: image.trim(),
+                      timeout_sec: timeoutValue,
+                      needs_network: needsNetwork,
+                      warm_pool: warmPool,
+                      artifact_exclude: artifactExclude
+                        .split("\n")
+                        .map((g) => g.trim())
+                        .filter(Boolean),
+                      writable_subdirs: writableSubdirs
+                        .split("\n")
+                        .map((d) => d.trim().replace(/^\/+|\/+$/g, ""))
+                        .filter(Boolean),
+                    },
+                    // 仍然传 config：两个列表字段现在都可编辑，但 buildExecConfigPayload
+                    // 里的兜底还在——它保护的是「表单没渲染出这个字段」的情形（比如
+                    // GET 失败、config 为 null），那时不该把已有配置清空。
+                    config
+                  )
+                )
           }
         >
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

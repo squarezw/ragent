@@ -168,14 +168,37 @@ function ExecConfigColumn({
     {
       field: "artifact_exclude",
       label: t("execArtifactExclude"),
-      value:
-        config.artifact_exclude.length > 0 ? config.artifact_exclude.join(", ") : "-",
+      value: config.artifact_exclude.length > 0 ? config.artifact_exclude.join(", ") : "-",
     },
   ];
 
   return (
     <dl className="text-xs space-y-1.5">
-      {rows.map((row) => (
+      {[
+        {
+          field: "backend" as const,
+          label: t("execBackend"),
+          value: config.backend === "remote" ? t("execBackendRemote") : t("execBackendLocal"),
+        },
+        ...(config.backend === "remote"
+          ? [
+              {
+                field: "remote_environment_id" as const,
+                label: t("execRemoteEnvironment"),
+                value: config.remote_environment?.name ?? t("execRemoteUnavailable"),
+              },
+              {
+                field: "remote_environment_revision" as const,
+                label: t("execRemoteRevisionLabel"),
+                value: config.remote_environment?.revision ?? "-",
+              },
+            ]
+          : []),
+        ...rows.filter(
+          (row) =>
+            config.backend !== "remote" || ["timeout_sec", "artifact_exclude"].includes(row.field)
+        ),
+      ].map((row) => (
         <div key={row.field} className="flex gap-2">
           <dt className="w-20 shrink-0 text-muted-foreground">{row.label}</dt>
           <dd

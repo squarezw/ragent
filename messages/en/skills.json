@@ -394,5 +394,19 @@
   "replacePackageSingleZip": "Choose one ZIP file of at most 25 MiB. Folders and multiple files are not supported.",
   "category": "Category",
   "categoryAll": "All",
-  "noSkillsInCategory": "No skills in this category yet"
+  "noSkillsInCategory": "No skills in this category yet",
+  "execBackend": "Run location",
+  "execBackendLocal": "Local sandbox",
+  "execBackendRemote": "Remote sandbox",
+  "execRemoteEnvironment": "Environment",
+  "execRemoteEnvironmentPlaceholder": "Select an environment",
+  "execRemoteLoading": "Loading remote environments…",
+  "execRemoteLoadFailed": "Failed to load remote environments. Please retry.",
+  "execRemoteEmpty": "No remote environments available. Contact an administrator.",
+  "execRemoteUnavailable": "This remote environment is unavailable. Select another.",
+  "execRemoteRevision": "Environment revision: {revision}",
+  "execRemoteRevisionLabel": "Revision",
+  "execRemoteTimeoutHint": "Execution timeout: 1–{max} seconds.",
+  "execRemoteStateHint": "Results are returned and the instance released after execution. Persistent directories are not supported yet.",
+  "execRemoteStateConfirm": "I confirm that saving removes local persistent directory settings. Existing contents will not be migrated. Unsaved local inputs remain available until leaving this page."
 }

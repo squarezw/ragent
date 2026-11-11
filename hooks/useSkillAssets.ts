@@ -9,6 +9,7 @@ import {
   parseAssetList,
   parseExecConfig,
   parseSandboxImages,
+  parseRemoteSandboxEnvironments,
   readableAssetPaths,
 } from "@/lib/skillAssets";
 import type {
@@ -110,6 +111,15 @@ export function useSkillAssets(skillId: number | null, enabled: boolean, assetsE
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   });
+
+  const remoteEnvironments = useSWR(
+    key ? "/api/v1/remote-sandbox-environments" : null,
+    async (url: string) =>
+      parseRemoteSandboxEnvironments(
+        (await axios.get(url, { suppressErrorToast: true } as never)).data
+      ),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
 
   const [uploading, setUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
@@ -228,15 +238,18 @@ export function useSkillAssets(skillId: number | null, enabled: boolean, assetsE
    * 自己拼一句「已取消」会让用户以为停掉了线上，而实际上没有。
    */
   const deleteExecConfig = useCallback(
-    async (stage: "draft" | "published" = "draft"): Promise<{
-      ok: boolean; message?: string; detail?: string;
+    async (
+      stage: "draft" | "published" = "draft"
+    ): Promise<{
+      ok: boolean;
+      message?: string;
+      detail?: string;
     }> => {
       if (!skillId) return { ok: false, detail: "no skill" };
       try {
-        const res = await axios.delete(
-          `/api/v1/skills/${skillId}/exec-config?stage=${stage}`,
-          { suppressErrorToast: true } as never
-        );
+        const res = await axios.delete(`/api/v1/skills/${skillId}/exec-config?stage=${stage}`, {
+          suppressErrorToast: true,
+        } as never);
         // 撤 draft 后本地那份配置就没了；撤 published 不影响 draft 的展示，
         // 但两种情况都重新拉一次最稳妥 —— 状态由服务端说了算。
         await Promise.all([execConfig.mutate(), execConfigPublished.mutate()]);
@@ -278,6 +291,9 @@ export function useSkillAssets(skillId: number | null, enabled: boolean, assetsE
     execConfigPublished: execConfigPublished.data ?? null,
     execConfigLoading: execConfig.isLoading,
     images: images.data ?? [],
+    remoteEnvironments: remoteEnvironments.data ?? [],
+    remoteEnvironmentsLoading: remoteEnvironments.isLoading,
+    remoteEnvironmentsError: Boolean(remoteEnvironments.error),
     imagesUnavailable: !images.isLoading && (images.data?.length ?? 0) === 0,
     uploading,
     uploadedCount,

@@ -394,5 +394,19 @@
   "replacePackageSingleZip": "请仅选择一个不超过 25 MiB 的 ZIP 文件，不支持文件夹或多个文件。",
   "category": "分类",
   "categoryAll": "全部",
-  "noSkillsInCategory": "这个分类下还没有技能"
+  "noSkillsInCategory": "这个分类下还没有技能",
+  "execBackend": "运行位置",
+  "execBackendLocal": "本地沙箱",
+  "execBackendRemote": "远程沙箱",
+  "execRemoteEnvironment": "运行环境",
+  "execRemoteEnvironmentPlaceholder": "选择运行环境",
+  "execRemoteLoading": "正在加载远程环境…",
+  "execRemoteLoadFailed": "远程环境加载失败，请重试。",
+  "execRemoteEmpty": "暂无可用远程环境，请联系管理员。",
+  "execRemoteUnavailable": "该远程环境已不可用，请重新选择。",
+  "execRemoteRevision": "环境版本：{revision}",
+  "execRemoteRevisionLabel": "环境版本",
+  "execRemoteTimeoutHint": "执行超时为 1–{max} 秒。",
+  "execRemoteStateHint": "远程运行完成后回传产物并释放实例，暂不支持持久化目录。",
+  "execRemoteStateConfirm": "我确认保存远程配置将移除本地持久化目录设置；已有目录内容不会迁移。切回本地前仍保留本页输入。"
 }
