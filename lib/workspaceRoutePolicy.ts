@@ -1,6 +1,7 @@
 /** Explicit audited proxy routes; unknown business APIs fail closed when enabled. */
 export const workspaceProxyRoutes = [
   "/api/v1/sandbox-images",
+  "/api/v1/remote-sandbox-environments",
   "/api/v1/prompt-variables",
   "/api/v1/llm-models",
   "/api/v1/llm-models/custom/[code]",

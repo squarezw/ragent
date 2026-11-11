@@ -59,8 +59,11 @@ export interface SkillAssetDiffItem {
 /** GET /api/v1/skills/{id}/diff → exec_config_draft / exec_config_published */
 export interface SkillExecConfigSummary {
   stage: string;
-  /** name:tag（digest 锁版本时为 name@digest） */
-  image: string;
+  backend?: "local" | "remote";
+  remote_environment_id?: string | null;
+  remote_environment?: import("./skill").RemoteSandboxEnvironment | null;
+  /** Local name:tag/name@digest; null for remote execution. */
+  image: string | null;
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];

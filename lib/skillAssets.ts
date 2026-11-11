@@ -8,11 +8,13 @@ import type {
 } from "@/types/review";
 import type {
   SandboxImage,
+  RemoteSandboxEnvironment,
   SkillAssetItem,
   SkillAssetKind,
   SkillAssetList,
   SkillExecConfig,
   SkillExecConfigPayload,
+  LocalSkillExecConfigPayload,
 } from "@/types/skill";
 
 const KNOWN_CHANGES: ReadonlySet<string> = new Set(["added", "removed", "modified", "unchanged"]);
@@ -55,14 +57,28 @@ export function normalizeAssetDiff(value: unknown): SkillAssetDiffItem[] {
   return value.map(toAssetDiffItem).filter((item): item is SkillAssetDiffItem => item !== null);
 }
 
-/** exec 配置容错归一化：image 缺失视为无配置（沙箱镜像是可执行 skill 的唯一必填项） */
+/** Normalize legacy local records and remote records without accepting mixed execution modes. */
 export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | null {
   if (typeof value !== "object" || value === null) return null;
   const obj = value as Record<string, unknown>;
   const image = asString(obj.image);
-  if (!image) return null;
+  const backend = obj.backend ?? "local";
+  if (backend !== "local" && backend !== "remote") return null;
+  const environmentId = asString(obj.remote_environment_id);
+  if (
+    backend === "remote" &&
+    (obj.needs_network === true ||
+      obj.warm_pool === true ||
+      (Array.isArray(obj.writable_subdirs) && obj.writable_subdirs.length > 0))
+  )
+    return null;
+  if (backend === "local" ? !image || environmentId : !environmentId || image) return null;
   return {
     stage: asString(obj.stage) ?? "draft",
+    backend,
+    remote_environment_id: environmentId,
+    remote_environment:
+      parseRemoteSandboxEnvironments({ items: [obj.remote_environment] })[0] ?? null,
     image,
     image_enabled: obj.image_enabled !== false,
     timeout_sec: asSize(obj.timeout_sec) ?? 120,
@@ -133,6 +149,9 @@ export function summarizeAssetDiff(items: SkillAssetDiffItem[]): AssetDiffSummar
 
 /** exec 配置 diff 视图要标注的字段 */
 export type ExecConfigField =
+  | "backend"
+  | "remote_environment_id"
+  | "remote_environment_revision"
   | "image"
   | "timeout_sec"
   | "writable_subdirs"
@@ -150,6 +169,11 @@ export function diffExecConfig(
 ): ExecConfigField[] {
   if (!draft || !published) return [];
   const changed: ExecConfigField[] = [];
+  if ((draft.backend ?? "local") !== (published.backend ?? "local")) changed.push("backend");
+  if (draft.remote_environment_id !== published.remote_environment_id)
+    changed.push("remote_environment_id");
+  if (draft.remote_environment?.revision !== published.remote_environment?.revision)
+    changed.push("remote_environment_revision");
   if (draft.image !== published.image) changed.push("image");
   if (draft.timeout_sec !== published.timeout_sec) changed.push("timeout_sec");
   if (draft.writable_subdirs.join("\n") !== published.writable_subdirs.join("\n")) {
@@ -628,6 +652,7 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
   const summary = normalizeExecConfig(data);
   if (!summary) return null;
   return {
+    ...summary,
     stage: summary.stage,
     image: summary.image,
     image_enabled: summary.image_enabled,
@@ -640,8 +665,10 @@ export function parseExecConfig(data: unknown): SkillExecConfig | null {
   };
 }
 
-/** exec 配置表单里真正可编辑的字段（writable_subdirs 不在其中，见 buildExecConfigPayload） */
+/** Editable execution fields; serialization emits only the selected execution mode. */
 export interface ExecConfigEdits {
+  backend?: "local" | "remote";
+  remote_environment_id?: string;
   image: string;
   timeout_sec: number;
   needs_network: boolean;
@@ -668,9 +695,29 @@ export interface ExecConfigEdits {
  * loaded 为 null（把一个非可执行 skill 首次配成可执行）时才是真正的空清单。
  */
 export function buildExecConfigPayload(
+  edits: ExecConfigEdits & { backend: "remote" },
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
+): Extract<SkillExecConfigPayload, { backend: "remote" }>;
+export function buildExecConfigPayload(
+  edits: ExecConfigEdits & { backend?: "local" },
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
+): LocalSkillExecConfigPayload;
+export function buildExecConfigPayload(
   edits: ExecConfigEdits,
   loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
 ): SkillExecConfigPayload {
+  if (edits.backend === "remote") {
+    if (!edits.remote_environment_id?.trim()) throw new Error("Missing remote environment");
+    if ((edits.writable_subdirs ?? loaded?.writable_subdirs ?? []).length) {
+      throw new Error("Remote sandbox does not support writable directories");
+    }
+    return {
+      backend: "remote",
+      remote_environment_id: edits.remote_environment_id.trim(),
+      timeout_sec: edits.timeout_sec,
+      artifact_exclude: edits.artifact_exclude ?? loaded?.artifact_exclude ?? [],
+    };
+  }
   return {
     image: edits.image,
     timeout_sec: edits.timeout_sec,
@@ -924,4 +971,31 @@ export function planExecCancel(input: {
 /** 这次操作是不是完全没事可做——没事可做就不该弹确认框，更不该报成功 */
 export function isExecCancelNoop(plan: ExecCancelPlan): boolean {
   return !plan.deleteDraft && !plan.deleteLive;
+}
+
+/** Safe, authorized candidates only. Invalid records cannot become selectable. */
+export function parseRemoteSandboxEnvironments(data: unknown): RemoteSandboxEnvironment[] {
+  if (!data || typeof data !== "object") return [];
+  const items = (data as Record<string, unknown>).items;
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    const id = asString(item.id);
+    const name = asString(item.name);
+    const revision = asString(item.revision);
+    const maxTimeout = asSize(item.max_timeout_sec);
+    if (!id || !name || !revision || !maxTimeout || !Number.isInteger(maxTimeout)) return [];
+    return [
+      {
+        id,
+        name,
+        revision,
+        enabled: item.enabled === true,
+        description: asString(item.description),
+        max_timeout_sec: maxTimeout,
+        network_description: asString(item.network_description),
+      },
+    ];
+  });
 }

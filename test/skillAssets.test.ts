@@ -21,6 +21,7 @@ import {
   parseAssetList,
   parseExecConfig,
   parseSandboxImages,
+  parseRemoteSandboxEnvironments,
   parseSkillDiff,
   planUploads,
   readableAssetPaths,
@@ -698,7 +699,6 @@ test("arrayBufferToBase64 与 Buffer 编码一致（含大于分块阈值的输�
   assert.equal(arrayBufferToBase64(new Uint8Array([]).buffer), "");
 });
 
-
 test("validateAssetPath 放行根级 env 模板（前端曾漏这条例外）", () => {
   // 后端 validate_asset_path 有 is_env_template_path 放行，前端没有 →
   // 一个合法资产在界面上传不进去，报错还说它是"隐藏目录"（它是文件）。
@@ -732,7 +732,9 @@ test("isEnvTemplatePath 与后端 ENV_TEMPLATE_NAMES 对齐", () => {
 // 把人引去逐个重建镜像 —— 而该做的是查 socket。
 
 test("present=true 原样保留", () => {
-  const [img] = parseSandboxImages({ items: [{ name: "python", tag: "3.11-slim", present: true }] });
+  const [img] = parseSandboxImages({
+    items: [{ name: "python", tag: "3.11-slim", present: true }],
+  });
   assert.equal(img.present, true);
 });
 
@@ -761,7 +763,6 @@ test("非布尔值一律归 null，不做真值转换", () => {
   }
 });
 
-
 // ── writable_subdirs 现在可以在表单里编辑（2026-08-23）──
 //
 // 此前它只能改库：API 支持、diff 里会显示，却没有输入框。结果是全平台只有
@@ -775,10 +776,7 @@ test("buildExecConfigPayload：edits 给了 writable_subdirs 就用它", () => {
     writable_subdirs: [".report_state"],
     needs_network: true,
   });
-  const payload = buildExecConfigPayload(
-    { ...execEdits, writable_subdirs: [".lark"] },
-    loaded
-  );
+  const payload = buildExecConfigPayload({ ...execEdits, writable_subdirs: [".lark"] }, loaded);
   assert.deepEqual(payload.writable_subdirs, [".lark"], "表单的值应当覆盖服务端现值");
 });
 
@@ -830,9 +828,176 @@ test("buildExecConfigPayload：两个列表字段互不干扰", () => {
     loaded
   );
   assert.deepEqual(onlyArtifact.artifact_exclude, ["**/tmp.json"]);
+  assert.deepEqual(onlyArtifact.writable_subdirs, [".lark"], "只改内部产物时，可写目录不该被清空");
+});
+
+test("remote response normalizes without image and retains safe nested metadata", () => {
+  const remote = parseExecConfig({
+    backend: "remote",
+    image: null,
+    remote_environment_id: "browser-v1",
+    remote_environment: {
+      id: "browser-v1",
+      name: "Browser",
+      revision: "v1",
+      enabled: true,
+      max_timeout_sec: 300,
+      description: "Browser tools",
+      network_description: "Internet enabled",
+    },
+    timeout_sec: 180,
+    artifact_exclude: ["*.tmp"],
+  });
+  assert.equal(remote?.backend, "remote");
+  assert.equal(remote?.image, null);
+  assert.equal(remote?.remote_environment?.name, "Browser");
+  assert.equal(remote?.remote_environment?.revision, "v1");
+  assert.deepEqual(remote?.artifact_exclude, ["*.tmp"]);
+});
+
+test("execution modes reject mixed branches and unknown backends", () => {
+  for (const value of [
+    { backend: "remote", image: "local:latest", remote_environment_id: "browser-v1" },
+    { backend: "local", image: "local:latest", remote_environment_id: "browser-v1" },
+    { backend: "unknown", image: "local:latest" },
+    { backend: "remote", image: null },
+  ])
+    assert.equal(normalizeExecConfig(value), null);
+  assert.equal(normalizeExecConfig({ image: "local:latest" })?.backend, "local");
+});
+
+test("remote serialization excludes all local runtime options", () => {
   assert.deepEqual(
-    onlyArtifact.writable_subdirs,
-    [".lark"],
-    "只改内部产物时，可写目录不该被清空"
+    buildExecConfigPayload(
+      {
+        backend: "remote",
+        remote_environment_id: "browser-v1",
+        image: "local:latest",
+        timeout_sec: 180,
+        needs_network: true,
+        warm_pool: true,
+        writable_subdirs: [],
+        artifact_exclude: ["*.tmp"],
+      },
+      null
+    ),
+    {
+      backend: "remote",
+      remote_environment_id: "browser-v1",
+      timeout_sec: 180,
+      artifact_exclude: ["*.tmp"],
+    }
   );
+});
+
+test("remote serialization blocks silently dropping local persistent directories", () => {
+  const edits = {
+    backend: "remote" as const,
+    remote_environment_id: "browser-v1",
+    image: "",
+    timeout_sec: 120,
+    needs_network: false,
+    warm_pool: false,
+  };
+  assert.throws(() =>
+    buildExecConfigPayload(edits, { writable_subdirs: [".state"], artifact_exclude: [] })
+  );
+  assert.doesNotThrow(() =>
+    buildExecConfigPayload(
+      { ...edits, writable_subdirs: [] },
+      { writable_subdirs: [".state"], artifact_exclude: [] }
+    )
+  );
+});
+
+test("review differences include backend and remote environment revision", () => {
+  const first = normalizeExecConfig({
+    backend: "remote",
+    remote_environment_id: "browser-v1",
+    remote_environment: {
+      id: "browser-v1",
+      name: "Browser",
+      revision: "v1",
+      enabled: true,
+      max_timeout_sec: 300,
+    },
+  });
+  const next = normalizeExecConfig({
+    backend: "remote",
+    remote_environment_id: "browser-v2",
+    remote_environment: {
+      id: "browser-v2",
+      name: "Browser",
+      revision: "v2",
+      enabled: true,
+      max_timeout_sec: 300,
+    },
+  });
+  assert.deepEqual(diffExecConfig(first, next), [
+    "remote_environment_id",
+    "remote_environment_revision",
+  ]);
+});
+
+test("remote candidates require safe identity, explicit enabled flag and timeout", () => {
+  const items = parseRemoteSandboxEnvironments({
+    items: [
+      null,
+      {},
+      { id: "x", name: "Browser", revision: "v1", max_timeout_sec: 300 },
+      { id: "bad", name: "Invalid", revision: "v1", max_timeout_sec: -1 },
+      {
+        id: "valid",
+        name: "General",
+        revision: "v2",
+        max_timeout_sec: 600,
+        enabled: true,
+        secret: "redacted",
+      },
+    ],
+  });
+  assert.equal(items.length, 2);
+  assert.equal(items[0].enabled, false);
+  assert.equal(items[1].enabled, true);
+  assert.equal("secret" in items[1], false);
+});
+
+test("remote response rejects local persistence and per-run network or warm pool", () => {
+  for (const fields of [
+    { writable_subdirs: [".state"] },
+    { needs_network: true },
+    { warm_pool: true },
+  ]) {
+    assert.equal(
+      normalizeExecConfig({ backend: "remote", remote_environment_id: "env", ...fields }),
+      null
+    );
+  }
+});
+
+test("unavailable backend environment metadata retains remote identity without local fallback", () => {
+  const config = parseExecConfig({
+    backend: "remote",
+    image: null,
+    remote_environment_id: "retired-v1",
+    remote_environment: {
+      id: "retired-v1",
+      name: "不可用远程环境",
+      revision: "",
+      enabled: false,
+      description: null,
+      max_timeout_sec: 0,
+      network_description: null,
+    },
+    timeout_sec: 120,
+    writable_subdirs: [],
+    needs_network: false,
+    warm_pool: false,
+    artifact_exclude: [],
+  });
+  assert.ok(config);
+  assert.equal(config.backend, "remote");
+  assert.equal(config.remote_environment_id, "retired-v1");
+  assert.equal(config.image, null);
+  assert.equal(config.remote_environment, null);
 });
