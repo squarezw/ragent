@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Check, X, Loader2 } from "lucide-react";
 
 export interface ToolStep {
   /** Local row identity; toolCallId correlates backend invocation events. */
-  id: number;
+  id: number | string;
   toolCallId?: string;
   label: string;
   /** 模型自报的这一步目的。有就跟在名称后，让「一连串飞书套件」变得可读 */
@@ -52,7 +52,7 @@ export default function ToolActivity({
   const [expanded, setExpanded] = useState(true);
   // 哪几步被点开看命令。默认全收 —— 命令行是给排查用的，
   // 平时摊在行里既没人看，又把标签挤到换行（"飞书 套件" 断成两行）。
-  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set());
+  const [openDetails, setOpenDetails] = useState<Set<ToolStep["id"]>>(new Set());
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {

@@ -153,5 +153,15 @@
   "knowledgeWriteSubmitting": "正在提交…",
   "knowledgeWriteProcessing": "已入库，正在分段及后续处理；完成后即可检索。",
   "knowledgeWriteCancelled": "已取消，未提交写入。",
-  "knowledgeWriteError": "未能确认写入结果。请查看知识库文件状态，或重新发起写入请求。"
+  "knowledgeWriteError": "未能确认写入结果。请查看知识库文件状态，或重新发起写入请求。",
+  "runCancelled": "已停止。",
+  "runInterrupted": "服务已重启，本轮执行中断，已完成的内容已保留。",
+  "runFailed": "本轮执行失败，已完成的内容已保留。",
+  "runStartFailed": "暂时无法确认请求状态，请勿立即重发；重新进入聊天将查找原请求。",
+  "runStopFailed": "停止失败，后台可能仍在运行，请重试。",
+  "runRestoreFailed": "暂时无法恢复会话，请打开历史或重试。",
+  "runReconnecting": "连接已中断，后台继续运行，正在重新连接…",
+  "runStopping": "正在安全停止…",
+  "runRunning": "后台正在运行。",
+  "runStopRetry": "重试停止"
 }

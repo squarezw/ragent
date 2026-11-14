@@ -153,5 +153,15 @@
   "knowledgeWriteSubmitting": "Submitting…",
   "knowledgeWriteProcessing": "Added to the knowledge base. Segmentation and further processing are in progress; search will be available after completion.",
   "knowledgeWriteCancelled": "Cancelled. No write was submitted.",
-  "knowledgeWriteError": "The write result could not be confirmed. Check the knowledge base file status or start a new write request."
+  "knowledgeWriteError": "The write result could not be confirmed. Check the knowledge base file status or start a new write request.",
+  "runCancelled": "Stopped.",
+  "runInterrupted": "The service restarted. This response was interrupted; completed work is preserved.",
+  "runFailed": "This response failed. Completed work is preserved.",
+  "runStartFailed": "Could not confirm the request. Do not resend immediately; reopening Chat will check for the original run.",
+  "runStopFailed": "Could not stop the response. It may still be running. Please retry.",
+  "runRestoreFailed": "Could not restore your conversation. Please reopen the history or retry.",
+  "runReconnecting": "Connection interrupted. Work continues in the background; reconnecting…",
+  "runStopping": "Stopping safely…",
+  "runRunning": "Running in the background.",
+  "runStopRetry": "Retry stop"
 }

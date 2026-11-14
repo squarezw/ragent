@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { mount, run } from "./helpers/chatRunPageHarness.ts";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
@@ -14,12 +15,24 @@ const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
  * 不需要动后端。
  */
 
-test("步骤是累积的，不是替换", () => {
-  const src = read("app/chat/page.tsx");
-  assert.ok(!src.includes("setToolStatus"), "还残留着替换式的 setToolStatus");
-  const seg = src.slice(src.indexOf('status.phase === "started"'));
-  assert.match(seg.slice(0, 300), /setToolSteps\(\(prev\) => \[\s*\n?\s*\.\.\.prev,/,
-    "started 应当往列表里追加");
+test("步骤是累积的，不是替换", async () => {
+  const page = mount({
+    active: [run({ tool_steps: [{ name: "one", tool_call_id: "a", phase: "started" }] })],
+  });
+  await page.settle();
+  page.emit(
+    run({
+      cursor: 2,
+      tool_steps: [
+        { name: "one", tool_call_id: "a", phase: "finished", ok: true },
+        { name: "two", tool_call_id: "b", phase: "started" },
+      ],
+    })
+  );
+  const steps = page.find("MessageList")?.props.toolSteps;
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0].ok, true);
+  assert.equal(steps[1].label, "two");
 });
 
 test("每轮开始时清空", () => {
@@ -51,12 +64,32 @@ test("空列表不渲染任何东西", () => {
   assert.match(ml, /toolSteps && toolSteps\.length > 0 \?/);
 });
 
-test("步骤有稳定的 key", () => {
-  // 用 label 作 key 的话，同名工具连调两次会被 React 当成同一行。
+test("步骤有稳定的 key", async () => {
   const src = read("app/chat/components/ToolActivity.tsx");
-  assert.match(src, /key=\{s\.id\}/, "应当用 id 而不是 label 或 index");
-  assert.match(read("app/chat/page.tsx"), /id: prev\.length/,
-    "id 应在追加时按序生成");
+  assert.match(src, /key=\{s\.id\}/);
+  const page = mount({
+    active: [
+      run({
+        tool_steps: [
+          { name: "same", tool_call_id: "a", phase: "started" },
+          { name: "same", tool_call_id: "b", phase: "started" },
+        ],
+      }),
+    ],
+  });
+  await page.settle();
+  const ids = page.find("MessageList")?.props.toolSteps.map((step: { id: string }) => step.id);
+  assert.deepEqual(JSON.parse(JSON.stringify(ids)), ["a", "b"]);
+  page.emit(
+    run({
+      cursor: 2,
+      tool_steps: [
+        { name: "same", tool_call_id: "b", phase: "finished" },
+        { name: "same", tool_call_id: "a", phase: "started" },
+      ],
+    })
+  );
+  assert.equal(page.find("MessageList")?.props.toolSteps[0].id, "b");
 });
 
 test("三种步骤状态各有其形", () => {
