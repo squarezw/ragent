@@ -123,6 +123,7 @@ export function mount(
     },
     "next-intl": { useTranslations: () => translator },
     sonner: { toast: { error: no, warning: no } },
+    "@/hooks/useStreamingText": { useStreamingText: (text: string) => text },
     "@/hooks/useChatRun": {
       useChatRun: () => useRun,
       chatRunStorageKey: () => `scope:${actor}:${tenant}`,

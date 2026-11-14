@@ -16,6 +16,7 @@ import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
 import { useChatRun, chatRunStorageKey } from "@/hooks/useChatRun";
+import { useStreamingText } from "@/hooks/useStreamingText";
 import { terminalRun, chatRunErrorMessageKey } from "@/lib/chatRun";
 import type { ChatRunSnapshot } from "@/types/chat-run";
 import { parseKnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
@@ -162,10 +163,15 @@ export default function ChatPage() {
     // Identity changes intentionally clear the entire view even if setters are stable.
   }, [operationTenantId, user?.id, detach, setChatId, setAttachments]);
 
+  const visibleStreamingMessage = useStreamingText(
+    streamingMessage,
+    isStreaming,
+    runRef.current?.run_id ?? null
+  );
   const { messagesContainerRef, messagesEndRef, scrollToBottom } = useMessageScroll(
     messages,
     isStreaming,
-    streamingMessage
+    visibleStreamingMessage
   );
 
   // Voice input
@@ -669,7 +675,7 @@ export default function ChatPage() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col mx-auto px-1 sm:px-4 max-w-4xl">
               <MessageList
                 messages={messages}
-                streamingMessage={streamingMessage}
+                streamingMessage={visibleStreamingMessage}
                 isStreaming={isStreaming}
                 knowledgeWriteCards={knowledgeWrites.map((selection) => (
                   <KnowledgeWriteCard key={selection.request_id} selection={selection} />
