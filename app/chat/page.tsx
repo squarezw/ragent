@@ -96,7 +96,6 @@ export default function ChatPage() {
   const focusInput = useCallback(() => {
     chatContainerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   }, []);
-  const abortControllerRef = useRef<(() => void) | null>(null);
 
   const [enableWebSearch] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
@@ -146,8 +145,6 @@ export default function ChatPage() {
   useEffect(() => {
     conversationVersion.current += 1;
     detach();
-    abortControllerRef.current?.();
-    abortControllerRef.current = null;
     pendingRestoredApp.current = null;
     runRef.current = null;
     setRunStatus(null);
@@ -235,8 +232,6 @@ export default function ChatPage() {
     return () => {
       conversationVersion.current += 1;
       detach();
-      abortControllerRef.current?.();
-      abortControllerRef.current = null;
     };
   }, [focusInput, detach]);
 
@@ -245,8 +240,6 @@ export default function ChatPage() {
     setKnowledgeWrites([]);
     conversationVersion.current += 1;
     detach();
-    abortControllerRef.current?.();
-    abortControllerRef.current = null;
     setLoading(false);
     setLoadingHistorySession(false);
     setHistoryOpen(false);
@@ -281,7 +274,7 @@ export default function ChatPage() {
 
   const attachRun = (run: ChatRunSnapshot, version: number) => {
     const isCurrent = () => version === conversationVersion.current;
-    const unsubscribe = subscribe(
+    subscribe(
       run,
       (next) => {
         if (!isCurrent()) return;
@@ -342,7 +335,6 @@ export default function ChatPage() {
         if (done) {
           setStopPending(false);
           setToolSteps([]);
-          abortControllerRef.current = null;
         }
       },
       (event) => {
@@ -369,7 +361,6 @@ export default function ChatPage() {
           );
       }
     );
-    abortControllerRef.current = unsubscribe;
   };
 
   const handleSend = async () => {
@@ -457,8 +448,6 @@ export default function ChatPage() {
     const version = ++conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
     detach();
-    abortControllerRef.current?.();
-    abortControllerRef.current = null;
     setLoading(false);
     setIsStreaming(false);
     setStreamingMessage("");
@@ -529,13 +518,6 @@ export default function ChatPage() {
       const running = restoredRun ?? (await active(String(sessionId)))[0];
       if (!isCurrent()) return;
       if (running) attachRun(running, version);
-      try {
-        if (!running)
-          sessionStorage.setItem(
-            chatRunStorageKey(),
-            JSON.stringify({ session_id: String(sessionId) })
-          );
-      } catch {}
 
       setTimeout(() => {
         if (isCurrent()) scrollToBottom(true);

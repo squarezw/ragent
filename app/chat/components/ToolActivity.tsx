@@ -39,7 +39,13 @@ function fmt(ms: number): string {
  * thing worth reading — collapsed rather than removed, since "what did it
  * actually do" is exactly the question asked when a result looks wrong.
  */
-export default function ToolActivity({ steps, running }: { steps: ToolStep[]; running: boolean }) {
+export default function ToolActivity({
+  steps,
+  running,
+}: {
+  steps: ToolStep[];
+  running: boolean;
+}) {
   const t = useTranslations("chat");
   // Follows `running`, but only as the initial value per turn — a user who
   // collapses it mid-run should not have it spring open again on the next frame.
@@ -88,70 +94,74 @@ export default function ToolActivity({ steps, running }: { steps: ToolStep[]; ru
         <div className="mt-1 space-y-1 border-l pl-3 ml-1.5">
           {steps.map((s) => {
             const dur = (s.endedAt ?? now) - s.startedAt;
-            const open = openDetails.has(s.id);
-            const toggle = () =>
-              setOpenDetails((prev) => {
-                const next = new Set(prev);
-                if (next.has(s.id)) next.delete(s.id);
-                else next.add(s.id);
-                return next;
-              });
-            return (
-              <div key={s.id}>
-                {/* 有命令才做成按钮：没有可展开内容的行不该有点击反馈 */}
-                {(() => {
-                  const row = (
-                    <>
-                      {s.ok === undefined ? (
-                        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-                      ) : s.ok ? (
-                        <Check className="h-3 w-3 shrink-0 text-emerald-600" />
-                      ) : (
-                        <X className="h-3 w-3 shrink-0 text-destructive" />
-                      )}
-                      <span
-                        className={s.ok === false ? "text-destructive" : "text-muted-foreground"}
-                      >
-                        {s.label}
-                      </span>
-                      {s.purpose && (
-                        <span className="text-muted-foreground/80">（{s.purpose}）</span>
-                      )}
-                      {/* A step that finishes instantly needs no duration; one that
+              const open = openDetails.has(s.id);
+              const toggle = () =>
+                setOpenDetails((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(s.id)) next.delete(s.id);
+                  else next.add(s.id);
+                  return next;
+                });
+              return (
+                <div key={s.id}>
+                  {/* 有命令才做成按钮：没有可展开内容的行不该有点击反馈 */}
+                  {(() => {
+                    const row = (
+                      <>
+                        {s.ok === undefined ? (
+                          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                        ) : s.ok ? (
+                          <Check className="h-3 w-3 shrink-0 text-emerald-600" />
+                        ) : (
+                          <X className="h-3 w-3 shrink-0 text-destructive" />
+                        )}
+                        <span
+                          className={
+                            s.ok === false ? "text-destructive" : "text-muted-foreground"
+                          }
+                        >
+                          {s.label}
+                        </span>
+                        {s.purpose && (
+                          <span className="text-muted-foreground/80">（{s.purpose}）</span>
+                        )}
+                        {/* A step that finishes instantly needs no duration; one that
                             runs for minutes is exactly where the user is looking. */}
-                      {dur >= 1000 && (
-                        <span className="tabular-nums text-muted-foreground/70">{fmt(dur)}</span>
-                      )}
-                      {s.detail && (
-                        <ChevronRight
-                          className={`h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform ${
-                            open ? "rotate-90" : ""
-                          }`}
-                        />
-                      )}
-                    </>
-                  );
-                  return s.detail ? (
-                    <button
-                      type="button"
-                      onClick={toggle}
-                      aria-expanded={open}
-                      className="flex w-full items-center gap-1.5 text-left"
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5">{row}</div>
-                  );
-                })()}
-                {open && s.detail && (
-                  // 独占一行并允许换行：命令可能很长，截断了就失去了排查价值
-                  <code className="mt-0.5 ml-[18px] block whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground/60">
-                    {s.detail}
-                  </code>
-                )}
-              </div>
-            );
+                        {dur >= 1000 && (
+                          <span className="tabular-nums text-muted-foreground/70">
+                            {fmt(dur)}
+                          </span>
+                        )}
+                        {s.detail && (
+                          <ChevronRight
+                            className={`h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform ${
+                              open ? "rotate-90" : ""
+                            }`}
+                          />
+                        )}
+                      </>
+                    );
+                    return s.detail ? (
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        aria-expanded={open}
+                        className="flex w-full items-center gap-1.5 text-left"
+                      >
+                        {row}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5">{row}</div>
+                    );
+                  })()}
+                  {open && s.detail && (
+                    // 独占一行并允许换行：命令可能很长，截断了就失去了排查价值
+                    <code className="mt-0.5 ml-[18px] block whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground/60">
+                      {s.detail}
+                    </code>
+                  )}
+                </div>
+              );
           })}
         </div>
       )}
