@@ -206,3 +206,20 @@ test("slow subscriber drain wait releases on abort and removes listeners", async
   assert.equal(res.listenerCount("drain"), 0);
   assert.equal(res.listenerCount("close"), 0);
 });
+
+// Next.js compression buffers SSE writes until explicitly flushed.
+test("each event flushes compression without waiting for stream completion", async () => {
+  const proxy = load(fetch);
+  const res = response() as ReturnType<typeof response> & { flush: () => void };
+  let flushes = 0;
+  res.flush = () => {
+    flushes++;
+  };
+  await proxy.writeChatRunChunk(
+    res,
+    new TextEncoder().encode('id: 1\nevent: delta\ndata: {"v":"live"}\n\n'),
+    new AbortController().signal
+  );
+  assert.equal(res.writes.length, 1);
+  assert.equal(flushes, 1);
+});

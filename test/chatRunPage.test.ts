@@ -38,7 +38,7 @@ test("workspace switch drops old view and stale updates without requesting cance
   assert.ok(page.find("WelcomeView"));
   assert.equal(page.calls.stop, 0);
 });
-test("explicit URL session wins over active session and remembered completed run can restore", async () => {
+test("explicit URL session opens history but remembered completed runs do not reopen", async () => {
   const explicit = mount({ active: [], search: "?session_id=42" });
   await explicit.settle();
   assert.match(explicit.calls.history[0], /42\/details/);
@@ -46,7 +46,8 @@ test("explicit URL session wins over active session and remembered completed run
     remembered: { "scope:1:3": JSON.stringify({ run_id: "r1", session_id: "11" }) },
   });
   await completed.settle();
-  assert.equal(completed.find("MessageList")?.props.messages[1].content, "done");
+  assert.ok(completed.find("WelcomeView"));
+  assert.equal(completed.calls.history.length, 0);
 });
 test("new conversation while entry discovery is in flight cannot be stolen by late recovery", async () => {
   let resolve!: (runs: ChatRunSnapshot[]) => void;
@@ -68,4 +69,17 @@ test("restored employee is selected after a late app catalog arrives", async () 
   assert.equal(page.calls.apps.length, 0);
   page.readyApps();
   assert.deepEqual(page.calls.apps, ["7"]);
+});
+
+test("a completed lost-response lookup does not automatically reopen history", async () => {
+  const page = mount({ active: [run({ status: "completed" })] });
+  await page.settle();
+  assert.ok(page.find("WelcomeView"));
+  assert.equal(page.calls.history.length, 0);
+});
+test("a session-only history pointer does not reopen a finished conversation", async () => {
+  const page = mount({ remembered: { "scope:1:3": JSON.stringify({ session_id: "11" }) } });
+  await page.settle();
+  assert.ok(page.find("WelcomeView"));
+  assert.equal(page.calls.history.length, 0);
 });

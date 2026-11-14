@@ -149,11 +149,17 @@ export async function proxyChatTurn(
 
 /** Bound buffering for slow subscribers; close/abort always releases a drain wait. */
 export async function writeChatRunChunk(
-  res: Pick<NextApiResponse, "write" | "once" | "off" | "destroyed" | "writableEnded">,
+  res: Pick<NextApiResponse, "write" | "once" | "off" | "destroyed" | "writableEnded"> & {
+    flush?: () => void;
+  },
   chunk: Uint8Array,
   signal: AbortSignal
 ) {
-  if (signal.aborted || res.destroyed || res.writableEnded || res.write(chunk)) return;
+  if (signal.aborted || res.destroyed || res.writableEnded) return;
+  const writable = res.write(chunk);
+  // Next compression needs an explicit flush for incremental SSE delivery.
+  res.flush?.();
+  if (writable) return;
   await new Promise<void>((resolve) => {
     const finish = () => {
       res.off("drain", finish);

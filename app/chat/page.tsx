@@ -589,14 +589,23 @@ export default function ChatPage() {
         const runs = await active(undefined, pending ?? undefined);
         if (!valid()) return;
         if (runs[0]) {
-          await loadHistoryRef.current(runs[0].session_id, runs[0]);
+          if (!terminalRun(runs[0].status))
+            await loadHistoryRef.current(runs[0].session_id, runs[0]);
           return;
         }
         if (remembered.run_id) {
           const last = await snapshot(remembered.run_id);
-          if (valid()) await loadHistoryRef.current(last.session_id, last);
-        } else if (remembered.session_id && valid())
-          await loadHistoryRef.current(remembered.session_id);
+          if (!valid()) return;
+          if (!terminalRun(last.status)) {
+            await loadHistoryRef.current(last.session_id, last);
+          } else {
+            // Finished conversations stay in history, not in automatic entry recovery.
+            try {
+              sessionStorage.removeItem(chatRunStorageKey());
+              localStorage.removeItem(chatRunStorageKey());
+            } catch {}
+          }
+        }
       } catch {
         if (valid()) toast.error(restoreErrorRef.current);
       }
