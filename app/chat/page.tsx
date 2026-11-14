@@ -2,7 +2,7 @@
 import { workspaceUrl } from "@/lib/workspaceBrowser";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
-import { findToolCompletionIndex } from "@/lib/chatSse";
+import { parseWorkspaceBindingWarning } from "@/lib/chatSse";
 import type { ToolStep } from "./components/ToolActivity";
 import KnowledgeWriteCard from "./components/KnowledgeWriteCard";
 import type { KnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
@@ -15,6 +15,13 @@ import ResourcePreviewPanel from "@/app/chat/components/ResourcePreviewPanel";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
+import { useChatRun, chatRunStorageKey } from "@/hooks/useChatRun";
+import { terminalRun, chatRunErrorMessageKey } from "@/lib/chatRun";
+import type { ChatRunSnapshot } from "@/types/chat-run";
+import { parseKnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
+import { normalizeTurnUsage } from "@/types/token-usage";
+import { useWorkspace } from "@/app/components/WorkspaceProvider";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useChatSession } from "@/hooks/useChatSession";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -63,7 +70,16 @@ function toHistoryAttachments(raw: SessionAttachment[] | undefined): Attachment[
 
 export default function ChatPage() {
   const t = useTranslations("chat");
-  const { askStream, sendFeedback, setChatId } = useChatSession();
+  const { sendFeedback } = useChatSession();
+  const { start, subscribe, detach, stop, active, snapshot, setChatId, connection } = useChatRun();
+  const workspace = useWorkspace();
+  const { user } = useCurrentUser();
+  const runRef = useRef<ChatRunSnapshot | null>(null);
+  const [runStatus, setRunStatus] = useState<ChatRunSnapshot["status"] | null>(null);
+  const [stopPending, setStopPending] = useState(false);
+  const [stopFailed, setStopFailed] = useState(false);
+  const restoreEntry = useRef("");
+  const pendingRestoredApp = useRef<string | null>(null);
 
   const { datasets } = useDatasets();
   const { organizedDatasets, loading: orgLoading } = useOrganization();
@@ -126,14 +142,28 @@ export default function ChatPage() {
     operationTenantId,
   } = useAppDatasets();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: actor/workspace identity is the isolation boundary.
   useEffect(() => {
     conversationVersion.current += 1;
+    detach();
     abortControllerRef.current?.();
     abortControllerRef.current = null;
+    pendingRestoredApp.current = null;
+    runRef.current = null;
+    setRunStatus(null);
+    setStopPending(false);
+    setStopFailed(false);
+    setMessages([]);
+    setStreamingMessage("");
+    setToolSteps([]);
+    setChatId(null);
+    setAttachments([]);
+    setInput("");
     setKnowledgeWrites([]);
     setLoading(false);
     setIsStreaming(false);
-  }, [operationTenantId]);
+    // Identity changes intentionally clear the entire view even if setters are stable.
+  }, [operationTenantId, user?.id, detach, setChatId, setAttachments]);
 
   const { messagesContainerRef, messagesEndRef, scrollToBottom } = useMessageScroll(
     messages,
@@ -204,15 +234,17 @@ export default function ChatPage() {
     focusInput();
     return () => {
       conversationVersion.current += 1;
+      detach();
       abortControllerRef.current?.();
       abortControllerRef.current = null;
     };
-  }, [focusInput]);
+  }, [focusInput, detach]);
 
   // Start new conversation
   const startNewConversation = useCallback(() => {
     setKnowledgeWrites([]);
     conversationVersion.current += 1;
+    detach();
     abortControllerRef.current?.();
     abortControllerRef.current = null;
     setLoading(false);
@@ -229,241 +261,183 @@ export default function ChatPage() {
     setIsStreaming(false);
     setToolSteps([]);
     setPreviewResource(null);
-    setChatId(0);
+    pendingRestoredApp.current = null;
+    runRef.current = null;
+    setRunStatus(null);
+    setStopFailed(false);
+    setChatId(null);
+    try {
+      sessionStorage.removeItem(chatRunStorageKey());
+      localStorage.removeItem(chatRunStorageKey());
+      sessionStorage.removeItem(`${chatRunStorageKey()}:pending`);
+    } catch {}
     requestAnimationFrame(focusInput);
-  }, [setChatId, setAttachments, setPreviewFile, cancelRecording, focusInput]);
+  }, [setChatId, setAttachments, setPreviewFile, cancelRecording, focusInput, detach]);
 
   useEffect(() => {
     window.addEventListener("ragent:new-conversation", startNewConversation);
     return () => window.removeEventListener("ragent:new-conversation", startNewConversation);
   }, [startNewConversation]);
 
-  const handleSend = async () => {
-    if (
-      loading ||
-      uploading ||
-      loadingHistorySession ||
-      !input.trim()
-    )
-      return;
-    setKnowledgeWrites([]);
-    const version = conversationVersion.current;
+  const attachRun = (run: ChatRunSnapshot, version: number) => {
     const isCurrent = () => version === conversationVersion.current;
-    // Per-request accumulation also sees chunks queued before React commits state.
-    let partialAnswer = "";
-    let terminal = false;
-
-    const userDisplayContent = input.trim();
-
-    const userMsg: Message = {
-      role: "user",
-      content: userDisplayContent,
-      attachments: [...attachments],
-    };
-
-    setMessages((msgs) => [...msgs, userMsg]);
-    setInput("");
-    const attachmentsToSend = [...attachments];
-    setAttachments([]);
-    setLoading(true);
-    setStreamingMessage("");
-    setIsStreaming(true);
-    setToolSteps([]);
-    abortControllerRef.current = null;
-
-    try {
-      const params: any = {
-        enableWebSearch,
-        attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
-      };
-
-      let datasetIdsForSession: string[] = [];
-
-      if (selectedAppId) {
-        params.app_id = Number(selectedAppId);
-        datasetIdsForSession = appDatasetIds.length > 0 ? appDatasetIds : [];
-
-        const optionalIds = Array.from(optionalDatasetSelections);
-        if (optionalIds.length > 0) {
-          params.datasetId = optionalIds;
-        } else {
-          params.datasetId = undefined;
-        }
-      } else {
-        datasetIdsForSession = selectedDatasetIds;
-        if (selectedDatasetIds.length > 0) {
-          params.datasetId = selectedDatasetIds;
-        }
-      }
-
-      const result = await askStream(userDisplayContent, datasetIdsForSession, params, {
-        onChunk: (chunk: string) => {
-          if (!isCurrent() || terminal) return;
-          partialAnswer += chunk;
-          setStreamingMessage(partialAnswer);
-        },
-        onWorkspaceWarning: (warning) => {
-          if (!isCurrent() || terminal) return;
-          const resources = [
-            warning.skipped.skills > 0 ? t("workspaceSkippedSkills", { count: warning.skipped.skills }) : null,
-            warning.skipped.tools > 0 ? t("workspaceSkippedTools", { count: warning.skipped.tools }) : null,
-            warning.skipped.datasets > 0 ? t("workspaceSkippedDatasets", { count: warning.skipped.datasets }) : null,
-          ].filter(Boolean).join(t("workspaceBindingSeparator"));
-          toast.warning(t("workspaceBindingsSkipped", { resources }), { duration: 10000 });
-        },
-        onKnowledgeWriteConfirmation: (selection) => {
-          if (!isCurrent() || terminal) return;
-          setKnowledgeWrites((previous) => previous.some((item) => item.request_id === selection.request_id)
-            ? previous : [...previous, selection]);
-        },
-        onToolStatus: (status) => {
-          if (!isCurrent()) return;
-          const label = status.display_name || status.skill || status.name;
-          if (status.phase === "started") {
-            setToolSteps((prev) => [
-              ...prev,
-              {
-                id: prev.length,
-                label,
-                toolCallId: status.tool_call_id,
-                purpose: status.purpose,
-                detail: status.detail,
-                startedAt: Date.now(),
-              },
-            ]);
-          } else {
-            // Correlate parallel invocations by their backend ID.
-            setToolSteps((prev) => {
-              const i = findToolCompletionIndex(prev, status);
-              if (i < 0 || prev[i].ok !== undefined) return prev;
-              const next = [...prev];
-              next[i] = { ...next[i], ok: status.ok !== false, endedAt: Date.now() };
-              return next;
-            });
+    const unsubscribe = subscribe(
+      run,
+      (next) => {
+        if (!isCurrent()) return;
+        runRef.current = next;
+        setRunStatus(next.status);
+        setChatId(next.session_id);
+        const done = terminalRun(next.status);
+        setLoading(!done);
+        setIsStreaming(!done);
+        setStreamingMessage(done ? "" : next.answer);
+        setKnowledgeWrites(
+          next.pending_confirmations.flatMap((raw) => {
+            const value = parseKnowledgeWriteConfirmation(raw);
+            return value ? [value] : [];
+          })
+        );
+        setToolSteps(
+          next.tool_steps.map((step, index) => ({
+            id: typeof step.tool_call_id === "string" ? step.tool_call_id : index,
+            toolCallId: typeof step.tool_call_id === "string" ? step.tool_call_id : undefined,
+            label: String(step.display_name || step.skill || step.name || ""),
+            purpose: typeof step.purpose === "string" ? step.purpose : undefined,
+            detail: typeof step.detail === "string" ? step.detail : undefined,
+            startedAt: Date.parse(String(step.started_at || next.updated_at)) || 0,
+            endedAt: step.ended_at ? Date.parse(String(step.ended_at)) : undefined,
+            ok: step.phase === "finished" ? step.ok !== false : undefined,
+          }))
+        );
+        setMessages((previous) => {
+          const messages = previous.filter(
+            (message) => !(message.role === "assistant" && message.detail_id === next.detail_id)
+          );
+          const last = messages[messages.length - 1];
+          if (last?.role === "user" && last.detail_id == null)
+            messages[messages.length - 1] = { ...last, detail_id: next.detail_id };
+          if (!done) return messages;
+          const result = next.result ?? {};
+          let content = next.answer;
+          if (next.status !== "completed") {
+            const notice =
+              next.status === "cancelled"
+                ? t("runCancelled")
+                : next.status === "interrupted"
+                  ? t("runInterrupted")
+                  : t(chatRunErrorMessageKey(next.error?.code));
+            content = content ? `${content}\n\n${notice}` : notice;
           }
-        },
-        onComplete: (result: any) => {
-          if (!isCurrent() || terminal) return;
-          terminal = true;
-          const { answer, detail_id, reference, segment_ids, usage } = result;
-          setMessages((msgs) => [
-            ...msgs,
-            {
-              role: "assistant",
-              content: answer,
-              reference,
-              segment_ids,
-              detail_id,
-              usage,
-            },
-          ]);
-          setIsStreaming(false);
-          setStreamingMessage("");
+          messages.push({
+            role: "assistant",
+            content,
+            detail_id: next.detail_id,
+            reference: (result.references ?? result.reference) as Message["reference"],
+            segment_ids: Array.isArray(result.segment_ids) ? (result.segment_ids as number[]) : [],
+            usage: normalizeTurnUsage(next.usage ?? result.usage),
+          });
+          return messages;
+        });
+        if (done) {
+          setStopPending(false);
           setToolSteps([]);
-          setLoading(false);
           abortControllerRef.current = null;
-        },
-        onError: (error: any) => {
-          if (!isCurrent() || terminal) return;
-          terminal = true;
-          // 余额不足不是故障，是一个用户自己能解决的状态。套上「抱歉，发生了错误」
-          // 会把「去充值」读成「系统坏了」—— 用户会去找运维，而不是找管理员充值。
-          const insufficient = error?.code === "insufficient_balance";
-          const creditBusy = error?.code === "user_credit_account_busy";
-          const creditReconciliation = error?.code === "user_credit_reconciliation_required";
-          // 余额不足是正常的业务状态，不是故障。用 console.error 打出来会带一条
-          // 红色堆栈（Error 记的是构造点，指向 streamPromise），看起来像崩溃 ——
-          // 用户和排查的人都会被它误导。
-          if (insufficient || creditBusy || creditReconciliation) console.info("[Chat] credit request stopped", error?.code);
-          else console.error("Stream error:", error);
-          const notice = insufficient ? t("insufficientBalance")
-            : creditBusy ? t("creditAccountBusy")
-            : creditReconciliation ? t("creditReconciliationRequired")
-            : error?.code === "MODEL_ENDPOINT_UNREACHABLE" ? t("modelEndpointUnreachable")
-            : error?.code === "MODEL_RESPONSE_TIMEOUT" ? t("modelResponseTimeout")
-            : error?.code === "MODEL_STREAM_INTERRUPTED" ? t("streamInterrupted")
-            : error?.code === "CHAT_STREAM_FAILED" ? t("streamFailed")
-            : t("errorOccurred", { message: error.message });
-          setMessages((msgs) => [
-            ...msgs,
-            {
-              role: "assistant",
-              // 余额不足这条**不插值后端文案**：后端不知道用户选的哪种语言，
-              // 拼进来就会在中文界面里出现英文（或反过来）。界面自己完整表达。
-              content: partialAnswer ? `${partialAnswer}\n\n${notice}` : notice,
-              segment_ids: [],
-              detail_id: Number.isSafeInteger(error?.detail_id) && error.detail_id > 0
-                ? error.detail_id : undefined,
-            },
-          ]);
-          setIsStreaming(false);
-          setStreamingMessage("");
-          setToolSteps([]);
-          setLoading(false);
-          abortControllerRef.current = null;
-        },
-      });
-
-      if (!isCurrent()) {
-        result?.abort?.();
-        return;
+        }
+      },
+      (event) => {
+        if (!isCurrent() || event.event !== "workspace_warning") return;
+        // Only the existing safe count parser can turn warnings into UI data.
+        const warning = parseWorkspaceBindingWarning(event.data);
+        if (warning)
+          toast.warning(
+            t("workspaceBindingsSkipped", {
+              resources: [
+                warning.skipped.skills
+                  ? t("workspaceSkippedSkills", { count: warning.skipped.skills })
+                  : null,
+                warning.skipped.tools
+                  ? t("workspaceSkippedTools", { count: warning.skipped.tools })
+                  : null,
+                warning.skipped.datasets
+                  ? t("workspaceSkippedDatasets", { count: warning.skipped.datasets })
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(t("workspaceBindingSeparator")),
+            })
+          );
       }
-      if (result?.abort) {
-        abortControllerRef.current = result.abort;
-      }
-    } catch (error: any) {
-      if (!isCurrent() || terminal) return;
-      terminal = true;
-      console.error("Send error:", error);
-      setMessages((msgs) => [
-        ...msgs,
-        {
-          role: "assistant",
-          content: partialAnswer
-            ? `${partialAnswer}\n\n${t("streamInterrupted")}`
-            : t("errorOccurred", { message: error.message }),
-          segment_ids: [],
-          detail_id: undefined,
-        },
-      ]);
-      setIsStreaming(false);
-      setStreamingMessage("");
-      setToolSteps([]);
-      setLoading(false);
-      abortControllerRef.current = null;
-    }
-
-    if (isCurrent()) focusInput();
+    );
+    abortControllerRef.current = unsubscribe;
   };
 
-  // Handle stop streaming
-  const handleStop = () => {
-    if (abortControllerRef.current) {
-      try {
-        abortControllerRef.current();
-      } catch (error) {
-        if (error instanceof Error && error.name !== "AbortError") {
-          console.warn("[Chat] Stop error (non-critical):", error);
-        }
-      }
-      abortControllerRef.current = null;
-
-      if (streamingMessage.trim()) {
-        setMessages((msgs) => [
-          ...msgs,
-          {
-            role: "assistant",
-            content: streamingMessage,
-            segment_ids: [],
-            detail_id: undefined,
-          },
-        ]);
-      }
-
-      setIsStreaming(false);
-      setStreamingMessage("");
-      setToolSteps([]);
+  const handleSend = async () => {
+    if (loading || uploading || loadingHistorySession || !input.trim()) return;
+    if (!workspace.ready || !user?.id || !operationTenantId) return;
+    const version = ++conversationVersion.current;
+    const question = input.trim();
+    const uploaded = [...attachments];
+    setMessages((previous) => [
+      ...previous,
+      { role: "user", content: question, attachments: uploaded },
+    ]);
+    setInput("");
+    setAttachments([]);
+    setKnowledgeWrites([]);
+    setStopFailed(false);
+    setLoading(true);
+    setIsStreaming(true);
+    setStreamingMessage("");
+    setToolSteps([]);
+    try {
+      const params: Record<string, unknown> = {
+        enableWebSearch,
+        attachments: uploaded.length ? uploaded : undefined,
+      };
+      const datasets = selectedAppId ? appDatasetIds : selectedDatasetIds;
+      if (selectedAppId) {
+        params.app_id = Number(selectedAppId);
+        params.datasetId = optionalDatasetSelections.size
+          ? Array.from(optionalDatasetSelections)
+          : undefined;
+      } else if (selectedDatasetIds.length) params.datasetId = selectedDatasetIds;
+      const run = await start(question, datasets, params);
+      if (version !== conversationVersion.current) return;
+      attachRun(run, version);
+    } catch (error) {
+      if (version !== conversationVersion.current) return;
+      // Admission was not retried. Keep the submitted question and let re-entry query its request ID.
       setLoading(false);
+      setIsStreaming(false);
+      const code = (error as { response?: { data?: { detail?: { code?: string } } } })?.response
+        ?.data?.detail?.code;
+      toast.error(
+        code === "insufficient_balance"
+          ? t("insufficientBalance")
+          : code === "user_credit_account_busy"
+            ? t("creditAccountBusy")
+            : t("runStartFailed")
+      );
+    }
+    focusInput();
+  };
+
+  const handleStop = async () => {
+    if (stopPending || !runRef.current || terminalRun(runRef.current.status)) return;
+    const version = conversationVersion.current;
+    setStopPending(true);
+    setStopFailed(false);
+    try {
+      await stop();
+      // The returned snapshot or the subscribed status is authoritative; never fake cancellation.
+    } catch {
+      if (version === conversationVersion.current) {
+        setStopFailed(true);
+        toast.error(t("runStopFailed"));
+      }
+    } finally {
+      if (version === conversationVersion.current) setStopPending(false);
     }
   };
 
@@ -478,16 +452,21 @@ export default function ChatPage() {
   };
 
   // Load history session
-  const loadHistorySession = async (sessionId: number) => {
+  const loadHistorySession = async (sessionId: number | string, restoredRun?: ChatRunSnapshot) => {
     setKnowledgeWrites([]);
     const version = ++conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
+    detach();
     abortControllerRef.current?.();
     abortControllerRef.current = null;
     setLoading(false);
     setIsStreaming(false);
     setStreamingMessage("");
     setToolSteps([]);
+    pendingRestoredApp.current = null;
+    runRef.current = null;
+    setRunStatus(null);
+    setStopFailed(false);
     setLoadingHistorySession(true);
     try {
       const response = await axios.get(`/api/chat/sessions/${sessionId}/details`);
@@ -500,6 +479,7 @@ export default function ChatPage() {
         for (const detail of sessionData.details) {
           historyMessages.push({
             role: "user",
+            detail_id: detail.id,
             content: detail.question || "",
             attachments: toHistoryAttachments(detail.attachments),
           });
@@ -515,6 +495,7 @@ export default function ChatPage() {
             formattedReference = refObjects.length === 1 ? refObjects[0] : refObjects;
           }
 
+          if (restoredRun?.detail_id === detail.id) continue;
           historyMessages.push({
             role: "assistant",
             content: detail.answer || "",
@@ -536,12 +517,25 @@ export default function ChatPage() {
       // 强行清空会让它们连默认员工都没有，比不改更糟。
       if (sessionData.appId != null) {
         handleAppSelect(String(sessionData.appId));
+        pendingRestoredApp.current = apps.some((app) => app.id === Number(sessionData.appId))
+          ? null
+          : String(sessionData.appId);
       }
 
       setMessages(historyMessages);
       setPreviewResource(null);
       setHistoryOpen(false);
-      setChatId(sessionId);
+      setChatId(String(sessionId));
+      const running = restoredRun ?? (await active(String(sessionId)))[0];
+      if (!isCurrent()) return;
+      if (running) attachRun(running, version);
+      try {
+        if (!running)
+          sessionStorage.setItem(
+            chatRunStorageKey(),
+            JSON.stringify({ session_id: String(sessionId) })
+          );
+      } catch {}
 
       setTimeout(() => {
         if (isCurrent()) scrollToBottom(true);
@@ -554,6 +548,65 @@ export default function ChatPage() {
       if (isCurrent()) setLoadingHistorySession(false);
     }
   };
+
+  useEffect(() => {
+    const wanted = pendingRestoredApp.current;
+    if (!appsLoading && wanted && apps.some((app) => String(app.id) === wanted)) {
+      handleAppSelect(wanted);
+      pendingRestoredApp.current = null;
+    }
+  }, [apps, appsLoading, handleAppSelect]);
+
+  const loadHistoryRef = useRef(loadHistorySession);
+  loadHistoryRef.current = loadHistorySession;
+  const restoreErrorRef = useRef("");
+  restoreErrorRef.current = t("runRestoreFailed");
+  useEffect(() => {
+    if (!workspace.ready || !user?.id || !operationTenantId) return;
+    const entry = `${user.id}:${operationTenantId}`;
+    if (restoreEntry.current === entry) return;
+    restoreEntry.current = entry;
+    const version = conversationVersion.current;
+    let cancelled = false;
+    const valid = () => !cancelled && version === conversationVersion.current;
+    void (async () => {
+      try {
+        const explicit = new URLSearchParams(window.location.search).get("session_id");
+        let remembered: { run_id?: string; session_id?: string } = {};
+        let pending: string | null = null;
+        try {
+          remembered = JSON.parse(
+            sessionStorage.getItem(chatRunStorageKey()) ||
+              localStorage.getItem(chatRunStorageKey()) ||
+              "{}"
+          );
+          pending = sessionStorage.getItem(`${chatRunStorageKey()}:pending`);
+        } catch {}
+        if (explicit) {
+          if (valid()) await loadHistoryRef.current(explicit);
+          return;
+        }
+        const runs = await active(undefined, pending ?? undefined);
+        if (!valid()) return;
+        if (runs[0]) {
+          await loadHistoryRef.current(runs[0].session_id, runs[0]);
+          return;
+        }
+        if (remembered.run_id) {
+          const last = await snapshot(remembered.run_id);
+          if (valid()) await loadHistoryRef.current(last.session_id, last);
+        } else if (remembered.session_id && valid())
+          await loadHistoryRef.current(remembered.session_id);
+      } catch {
+        if (valid()) toast.error(restoreErrorRef.current);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (restoreEntry.current === entry) restoreEntry.current = "";
+    };
+    // Intentionally run once per ready actor/workspace, not whenever history or selection changes.
+  }, [workspace.ready, user?.id, operationTenantId, active, snapshot]);
 
   // Shared input props for WelcomeView and ChatInputComposite
   const inputProps = {
@@ -597,6 +650,27 @@ export default function ChatPage() {
   return (
     <>
       <div ref={chatContainerRef} className="w-full h-full min-h-0 relative">
+        {loading &&
+          (connection === "reconnecting" ||
+            runStatus === "stopping" ||
+            stopPending ||
+            stopFailed) && (
+            <div
+              role="status"
+              className="absolute top-2 inset-x-4 z-10 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground"
+            >
+              {runStatus === "stopping" || stopPending
+                ? t("runStopping")
+                : connection === "reconnecting"
+                  ? t("runReconnecting")
+                  : t("runStopFailed")}
+              {stopFailed && (
+                <button type="button" className="ml-2 underline" onClick={handleStop}>
+                  {t("runStopRetry")}
+                </button>
+              )}
+            </div>
+          )}
         {showWelcomeView ? (
           <WelcomeView {...inputProps} />
         ) : (
