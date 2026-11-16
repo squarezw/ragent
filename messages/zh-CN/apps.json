@@ -180,6 +180,12 @@
   "noAppsForTenant": "该租户下没有数字员工",
   "clearTenantFilter": "清除筛选",
   "tenantDefaultUpdated": "租户默认已更新",
+  "visibleDepartment": "可见部门",
+  "selectDepartment": "选择部门",
+  "departmentRequired": "请选择所属租户下的可见部门。",
+  "departmentsLoading": "正在加载部门…",
+  "departmentsLoadFailed": "部门加载失败，请关闭后重新打开。",
+  "departmentsEmpty": "该租户暂无部门，请先创建部门。",
   "visibilityLabel": "可见范围",
   "visibilityOptions": {
     "private": "仅创建者",

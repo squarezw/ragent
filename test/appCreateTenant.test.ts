@@ -65,6 +65,11 @@ export async function submitFromPage(
   editing = false,
   options: {
     originalTenant?: number | null;
+    visibility?: string;
+    departmentId?: number | null;
+    departmentTenantId?: number;
+    departmentStatus?: "loading" | "ready" | "error";
+    departments?: { id: number; name: string }[];
     defaultOnly?: boolean;
     fail?: boolean;
     modelCode?: string;
@@ -122,10 +127,18 @@ export async function submitFromPage(
       : null,
     formData: {
       name: "Employee",
+      visibility: options.visibility || "private",
+      owner_dept_id: options.departmentId ?? null,
       ai_model: options.modelCode || "deepseek-flash",
       settings: { workflow: { source: "form" } },
       dataset_ids: [],
       is_default: false,
+    },
+    modelOwnerTenantId: Number(tenantId) || null,
+    departmentOptions: {
+      tenantId: options.departmentTenantId ?? (Number(tenantId) || null),
+      status: options.departmentStatus || "ready",
+      items: options.departments || [],
     },
     autoSelectDatasets: true,
     datasets: [],

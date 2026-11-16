@@ -53,6 +53,7 @@ import {
   LayoutGrid,
   List,
 } from "lucide-react";
+import VisibilityIcon from "@/components/VisibilityIcon";
 import { appStatusBadge, type ReviewStatus } from "@/lib/reviewStatus";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -225,11 +226,12 @@ export default function AppsPage() {
   const handleCreateTenantChange = (tenantId: string) => {
     if (editingApp) {
       setEditTenantId(tenantId);
+      setFormData(previous => ({ ...previous, owner_dept_id: null }));
       // Preserve bindings and the user's default choice when switching back.
       // A saved migration omits is_default; the backend clears the old default.
     } else {
       setCreateTenantId(tenantId);
-      setFormData(previous => clearTenantBindings(previous));
+      setFormData(previous => ({ ...clearTenantBindings(previous), owner_dept_id: null }));
       setAutoSelectDatasets(true);
     }
   };
@@ -267,6 +269,7 @@ export default function AppsPage() {
     settings: Record<string, any>;
     is_default?: boolean;
     visibility: string;
+    owner_dept_id: number | null;
   }>({
     name: "",
     description: "",
@@ -279,6 +282,7 @@ export default function AppsPage() {
     settings: {},
     is_default: false,
     visibility: "private",
+    owner_dept_id: null,
   });
   const previewDatasets = editingApp && isSuperAdmin
     ? datasetsForEditTenant(datasets, formData.dataset_ids, editTenantId, tenantChanged)
@@ -288,6 +292,29 @@ export default function AppsPage() {
     : (isSuperAdmin ? Number(createTenantId) || null : operationTenantId);
   const modelAccess = modelCatalogAccess(operationTenantId, isSuperAdmin, modelOwnerTenantId);
   const llmModels = useTenantModelCatalog(modelAccess.tenantId, modelAccess.includeCustom);
+
+  const [departmentOptions, setDepartmentOptions] = useState<{
+    tenantId: number | null;
+    items: { id: number; name: string }[];
+    status: "loading" | "ready" | "error";
+  }>({ tenantId: null, items: [], status: "loading" });
+
+  useEffect(() => {
+    if (!dialogOpen || formData.visibility !== "dept" || !modelOwnerTenantId) return;
+    let active = true;
+    const tenantId = modelOwnerTenantId;
+    setDepartmentOptions({ tenantId, items: [], status: "loading" });
+    axios.get(`/api/organization/depts?tenant_id=${tenantId}`).then(response => {
+      if (!active) return;
+      const items = (response.data.depts || []).filter(
+        (dept: { tenant_id: number }) => Number(dept.tenant_id) === tenantId
+      );
+      setDepartmentOptions({ tenantId, items, status: "ready" });
+    }).catch(() => {
+      if (active) setDepartmentOptions({ tenantId, items: [], status: "error" });
+    });
+    return () => { active = false; };
+  }, [dialogOpen, formData.visibility, modelOwnerTenantId]);
 
   // 定义加载函数（必须在 useEffect 之前）
   const loadApps = useCallback(async () => {
@@ -367,7 +394,8 @@ export default function AppsPage() {
       email: "",
       settings: {},
       is_default: false,
-    visibility: "private",
+      visibility: "private",
+      owner_dept_id: null,
     });
     setAutoSelectDatasets(true);
     setDialogOpen(true);
@@ -438,6 +466,7 @@ export default function AppsPage() {
       settings: app.settings || {},
       is_default: app.is_default || false,
       visibility: app.visibility || "private",
+      owner_dept_id: app.owner_dept_id ?? null,
     });
     setAutoSelectDatasets(resolveAutoSelectDatasets(app.settings, datasetIds));
 
@@ -470,8 +499,19 @@ export default function AppsPage() {
         return;
       }
 
+      if (formData.visibility === "dept" && (
+        departmentOptions.tenantId !== modelOwnerTenantId ||
+        departmentOptions.status !== "ready" ||
+        !departmentOptions.items.some(dept => dept.id === formData.owner_dept_id)
+      )) {
+        toast.error(t("departmentRequired"));
+        return;
+      }
+
+      const { owner_dept_id, ...otherFormData } = formData;
       const submitData = {
-        ...formData,
+        ...otherFormData,
+        ...(formData.visibility === "dept" ? { owner_dept_id } : {}),
         dataset_ids: autoSelectDatasets ? [] : formData.dataset_ids,
         settings: {
           ...formData.settings,
@@ -506,7 +546,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, t, tc]);
+  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, departmentOptions, modelOwnerTenantId, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -701,21 +741,17 @@ export default function AppsPage() {
                                 <AppAvatar src={app.avatar_url} name={app.name} size={32} />
                                 <div className="space-y-1 min-w-0">
                                 <div className="font-semibold flex items-center gap-2">
+                                  {(app.visibility === "private" || app.visibility === "dept") && (
+                                    <span role="img" aria-label={t(app.visibility === "private" ? "visibilityOptions.private" : "visibilityOptions.dept")} title={t(app.visibility === "private" ? "visibilityOptions.private" : "visibilityOptions.dept")} className="shrink-0">
+                                      <VisibilityIcon visibility={app.visibility} />
+                                    </span>
+                                  )}
                                   <Link
                                     href={`/apps/${app.id}`}
                                     className="hover:text-primary transition-colors hover:underline"
                                   >
                                     {app.name}
                                   </Link>
-                                  {app.visibility === "private" && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs bg-muted text-muted-foreground border-border font-medium shrink-0"
-                                      title={t("privateEmployee")}
-                                    >
-                                      {t("privateBadge")}
-                                    </Badge>
-                                  )}
                                   {app.is_default && (
                                     <Badge
                                       variant="outline"
@@ -904,18 +940,14 @@ export default function AppsPage() {
                                   badge 必须 shrink-0：名称带 truncate，不锁住的话长名字会
                                   把「默认」压扁到看不见——挤掉的是标识而不是名字。*/}
                               <div className="flex items-center gap-2 min-w-0">
+                                {(app.visibility === "private" || app.visibility === "dept") && (
+                                  <span role="img" aria-label={t(app.visibility === "private" ? "visibilityOptions.private" : "visibilityOptions.dept")} title={t(app.visibility === "private" ? "visibilityOptions.private" : "visibilityOptions.dept")} className="shrink-0">
+                                    <VisibilityIcon visibility={app.visibility} />
+                                  </span>
+                                )}
                                 <CardTitle className="text-lg font-bold truncate hover:text-primary transition-colors">
                                   {app.name}
                                 </CardTitle>
-                                {app.visibility === "private" && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs bg-muted text-muted-foreground border-border font-medium shrink-0"
-                                    title={t("privateEmployee")}
-                                  >
-                                    {t("privateBadge")}
-                                  </Badge>
-                                )}
                                 {app.is_default && (
                                   <Badge
                                     variant="outline"
@@ -1184,7 +1216,7 @@ export default function AppsPage() {
             </div>
 
             </>}
-            {editingApp && !defaultOnlyEditing && <div className="space-y-2">
+            {!defaultOnlyEditing && <div className="space-y-2">
               <Label>{t("visibilityLabel")}</Label>
               <Select value={formData.visibility} onValueChange={(visibility) => setFormData({ ...formData, visibility })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1192,6 +1224,27 @@ export default function AppsPage() {
                   {["private", "dept", "tenant", "public"].map((value) => <SelectItem key={value} value={value}>{t(`visibilityOptions.${value}`)}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>}
+            {!defaultOnlyEditing && formData.visibility === "dept" && <div className="space-y-2">
+              <Label htmlFor="visible-department">{t("visibleDepartment")} *</Label>
+              <Select
+                value={formData.owner_dept_id ? String(formData.owner_dept_id) : ""}
+                onValueChange={(value) => setFormData({ ...formData, owner_dept_id: Number(value) })}
+                disabled={departmentOptions.tenantId !== modelOwnerTenantId || departmentOptions.status !== "ready"}
+              >
+                <SelectTrigger id="visible-department"><SelectValue placeholder={t("selectDepartment")} /></SelectTrigger>
+                <SelectContent>
+                  {departmentOptions.tenantId === modelOwnerTenantId && departmentOptions.items.map(dept =>
+                    <SelectItem key={dept.id} value={String(dept.id)}>{dept.name}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {departmentOptions.tenantId !== modelOwnerTenantId || departmentOptions.status === "loading" ?
+                <p className="text-sm text-muted-foreground">{t("departmentsLoading")}</p> :
+                departmentOptions.status === "error" ?
+                <p className="text-sm text-destructive">{t("departmentsLoadFailed")}</p> :
+                departmentOptions.items.length === 0 ?
+                <p className="text-sm text-muted-foreground">{t("departmentsEmpty")}</p> : null}
             </div>}
             {!tenantChanged && canManageTenantDefault(editingApp, user) && <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
               <div className="flex items-center space-x-2">
