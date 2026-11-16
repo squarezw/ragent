@@ -72,6 +72,7 @@ export async function submitFromPage(
     departments?: { id: number; name: string }[];
     defaultOnly?: boolean;
     fail?: boolean;
+    settings?: Record<string, unknown>;
     modelCode?: string;
     includeCustom?: boolean;
     models?: { code: string }[];
@@ -130,7 +131,7 @@ export async function submitFromPage(
       visibility: options.visibility || "private",
       owner_dept_id: options.departmentId ?? null,
       ai_model: options.modelCode || "deepseek-flash",
-      settings: { workflow: { source: "form" } },
+      settings: options.settings || { workflow: { source: "form" } },
       dataset_ids: [],
       is_default: false,
     },

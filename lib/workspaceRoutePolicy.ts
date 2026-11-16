@@ -46,6 +46,8 @@ export const workspaceProxyRoutes = [
   "/api/v1/apps",
   "/api/v1/apps/[id]/review",
   "/api/v1/apps/[id]/submit-review",
+  "/api/v1/apps/[id]/datasets",
+  "/api/v1/apps/[id]/datasets/[datasetId]",
   "/api/v1/apps/[id]/datasets/cleanup-unavailable",
   "/api/v1/apps/[id]/agent-md/generate",
   "/api/v1/apps/[id]/agent-md",

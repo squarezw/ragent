@@ -64,11 +64,9 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { appSelectionKey, canManageTenantDefault, isTenantDefaultCandidate } from "@/lib/tenantDefaultApp";
 import { modelCatalogAccess } from "@/lib/tenantModels";
 import { useTenantModelCatalog } from "@/hooks/useTenantModelCatalog";
-import { datasetsForEditTenant } from "@/lib/appEditTenant";
 import { createTenantFields, datasetsForCreateTenant, clearTenantBindings } from "@/lib/appCreateTenant";
 import { checkSuperAdmin } from "@/lib/clientPermissions";
 import WorkflowEditor from "./components/WorkflowEditor";
-import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { WorkflowConfig } from "@/types/workflow";
 import { DEFAULT_LLM_MODEL_CODE } from "@/lib/llmModels";
 
@@ -216,7 +214,6 @@ export default function AppsPage() {
   const [embedAppId, setEmbedAppId] = useState<string>("");
 
   const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
-  const [autoSelectDatasets, setAutoSelectDatasets] = useState(true);
 
   const tenantChanged = !!editingApp && isSuperAdmin &&
     Number(editTenantId || 0) !== Number(editingApp.owner_tenant_id || 0);
@@ -232,7 +229,6 @@ export default function AppsPage() {
     } else {
       setCreateTenantId(tenantId);
       setFormData(previous => ({ ...clearTenantBindings(previous), owner_dept_id: null }));
-      setAutoSelectDatasets(true);
     }
   };
   const tenantSelector = !workspace.enabled && isSuperAdmin && !editingApp ? (
@@ -284,9 +280,6 @@ export default function AppsPage() {
     visibility: "private",
     owner_dept_id: null,
   });
-  const previewDatasets = editingApp && isSuperAdmin
-    ? datasetsForEditTenant(datasets, formData.dataset_ids, editTenantId, tenantChanged)
-    : createDatasets;
   const modelOwnerTenantId = editingApp
     ? (isSuperAdmin ? Number(editTenantId) || null : editingApp.owner_tenant_id)
     : (isSuperAdmin ? Number(createTenantId) || null : operationTenantId);
@@ -397,7 +390,6 @@ export default function AppsPage() {
       visibility: "private",
       owner_dept_id: null,
     });
-    setAutoSelectDatasets(true);
     setDialogOpen(true);
   }, [operationTenantId]);
 
@@ -468,7 +460,6 @@ export default function AppsPage() {
       visibility: app.visibility || "private",
       owner_dept_id: app.owner_dept_id ?? null,
     });
-    setAutoSelectDatasets(resolveAutoSelectDatasets(app.settings, datasetIds));
 
     setDialogOpen(true);
   }, []);
@@ -508,15 +499,11 @@ export default function AppsPage() {
         return;
       }
 
-      const { owner_dept_id, ...otherFormData } = formData;
+      const { owner_dept_id, dataset_ids, ...otherFormData } = formData;
       const submitData = {
         ...otherFormData,
         ...(formData.visibility === "dept" ? { owner_dept_id } : {}),
-        dataset_ids: autoSelectDatasets ? [] : formData.dataset_ids,
-        settings: {
-          ...formData.settings,
-          auto_select_datasets: autoSelectDatasets,
-        },
+        ...(!editingApp ? { dataset_ids: [], settings: { ...formData.settings, auto_select_datasets: false } } : {}),
       };
 
       if (!editingApp || !canManageTenantDefault(editingApp, user) ||
@@ -546,7 +533,7 @@ export default function AppsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [formData, autoSelectDatasets, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, departmentOptions, modelOwnerTenantId, t, tc]);
+  }, [formData, editingApp, loadApps, datasets, user, defaultOnlyEditing, isSuperAdmin, createTenantId, editTenantId, tenantChanged, llmModels, modelAccess.includeCustom, departmentOptions, modelOwnerTenantId, t, tc]);
 
   // Tenant admins may open a default-only editor without gaining configuration/delete rights.
   const defaultOnlyEditAction = (app: App) => !canEditApp(app, user, isSuperAdmin) &&
@@ -1201,19 +1188,7 @@ export default function AppsPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-semibold">
-                {t("email")}
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email || ""}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder={t("emailPlaceholder")}
-                className="h-10"
-              />
-            </div>
+
 
             </>}
             {!defaultOnlyEditing && <div className="space-y-2">
@@ -1445,140 +1420,20 @@ export default function AppsPage() {
 
             {formData.platform === "Wechat" && !canSelectWechatBinding && <p className="text-sm text-muted-foreground">{t("crossTenantWechatBinding")}</p>}
 
-            {/*
-              角色设定单独一行：它是这个数字员工的说明书入口，和上面几个下拉不是
-              一类东西，挤在同一行会被当成"又一个选项"。
-              新建态没有 editingApp、也就没有 id 可跳，整块不显示——角色在应用
-              建好之后编辑（后端建应用时已自动铺一份起始角色）。
-            */}
-            {editingApp && formData.app_type === "Chat" && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">{ts("agentMdMode")}</Label>
-                  <div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/apps/${editingApp.id}`)}
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      {ts("editAgentMd")}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{ts("agentMdModeDesc")}</p>
-                </div>
-              )}
-
-            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-                <Label className="text-sm font-semibold">{t("relatedDatasets")}</Label>
-                <div className="flex items-center space-x-2 mb-3">
-                  <Checkbox
-                    id="auto-select-datasets"
-                    checked={autoSelectDatasets}
-                    onCheckedChange={(checked) => {
-                      const isChecked = checked === true;
-                      setAutoSelectDatasets(isChecked);
-                      setFormData({
-                        ...formData,
-                        dataset_ids: isChecked ? [] : formData.dataset_ids,
-                        settings: {
-                          ...formData.settings,
-                          auto_select_datasets: isChecked,
-                        },
-                      });
-                    }}
-                  />
-                  <label
-                    htmlFor="auto-select-datasets"
-                    className="text-sm font-medium cursor-pointer"
-                  >
-                    {t("autoSelectDatasets")}
-                  </label>
-                </div>
-                {!autoSelectDatasets && (
-                  <TooltipProvider>
-                    <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2 bg-background">
-                      {previewDatasets.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">{t("noAvailableDatasets")}</p>
-                      ) : (
-                        (() => {
-                          // 计算已选知识库的 dimension
-                          const selectedDatasetIds = formData.dataset_ids;
-                          const selectedDatasets = datasets.filter((d) =>
-                            selectedDatasetIds.includes(d.id)
-                          );
-                          // 获取所有已选知识库的 dimension，确保它们都相同
-                          const selectedDimensions = selectedDatasets
-                            .map((d) => d.dimension)
-                            .filter((d) => d !== undefined);
-                          const selectedDimension =
-                            selectedDimensions.length > 0 &&
-                            selectedDimensions.every((d) => d === selectedDimensions[0])
-                              ? selectedDimensions[0]
-                              : undefined;
-
-                          return previewDatasets.map((dataset) => {
-                            // 判断是否应该禁用：如果已选知识库有 dimension，且当前知识库的 dimension 不同，则禁用
-                            const isDisabled =
-                              selectedDimension !== undefined &&
-                              dataset.dimension !== undefined &&
-                              dataset.dimension !== selectedDimension &&
-                              !selectedDatasetIds.includes(dataset.id);
-
-                            return (
-                              <Tooltip key={dataset.id}>
-                                <TooltipTrigger asChild>
-                                  <div
-                                    className={`flex items-center space-x-2 ${
-                                      isDisabled ? "opacity-50 cursor-not-allowed" : ""
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      id={`dataset-${dataset.id}`}
-                                      checked={formData.dataset_ids.includes(dataset.id)}
-                                      disabled={isDisabled}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setFormData({
-                                            ...formData,
-                                            dataset_ids: [...formData.dataset_ids, dataset.id],
-                                          });
-                                        } else {
-                                          setFormData({
-                                            ...formData,
-                                            dataset_ids: formData.dataset_ids.filter(
-                                              (id) => id !== dataset.id
-                                            ),
-                                          });
-                                        }
-                                      }}
-                                      className="rounded"
-                                    />
-                                    <label
-                                      htmlFor={`dataset-${dataset.id}`}
-                                      className={`text-sm flex-1 ${
-                                        isDisabled ? "cursor-not-allowed" : "cursor-pointer"
-                                      }`}
-                                    >
-                                      {dataset.name}
-                                    </label>
-                                  </div>
-                                </TooltipTrigger>
-                                {isDisabled && (
-                                  <TooltipContent>
-                                    <p>{t("datasetDimensionWarning")}</p>
-                                  </TooltipContent>
-                                )}
-                              </Tooltip>
-                            );
-                          });
-                        })()
-                      )}
-                    </div>
-                  </TooltipProvider>
-                )}
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-semibold">
+                {t("email")}
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email || ""}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder={t("emailPlaceholder")}
+                className="h-10"
+              />
             </div>
+
             </>}
           </div>
           <DialogFooter className="pt-4 border-t gap-2">
