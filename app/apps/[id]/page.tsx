@@ -1,8 +1,7 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { resolveAutoSelectDatasets } from "@/lib/appDatasets";
 import { useTranslations } from "next-intl";
 import { presentationModeLabel } from "@/lib/appTrigger";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +40,7 @@ import {
   ArrowLeft,
   Braces,
   Copy,
+  Database,
   Loader2,
   Plus,
   Send,
@@ -57,6 +57,7 @@ import { useInvalidateAppSkillDiagnostics } from "@/hooks/useAppSkillDiagnostics
 import { useWorkspace } from "@/app/components/WorkspaceProvider";
 import AppTenantTransfer, { TransferRequestRecovery } from "../components/AppTenantTransfer";
 import AppSkillsSection from "../components/AppSkillsSection";
+import AppKnowledgeBindingsEditor from "../components/AppKnowledgeBindingsEditor";
 import AppSkillDiagnostics from "../components/AppSkillDiagnostics";
 import AgentMdEditor from "../components/AgentMdEditor";
 import AppAvatar from "../components/AppAvatar";
@@ -138,6 +139,9 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [loadingApp, setLoadingApp] = useState(true);
   const [cleaningDatasets, setCleaningDatasets] = useState(false);
+  const [datasetUnbindTarget, setDatasetUnbindTarget] = useState<{ dataset_id: string; name: string } | null>(null);
+  const [datasetUnbinding, setDatasetUnbinding] = useState(false);
+  const datasetUnbindBusy = useRef(false);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [unbindDialogOpen, setUnbindDialogOpen] = useState(false);
   const [selectedAppToolId, setSelectedAppToolId] = useState<number | null>(null);
@@ -189,6 +193,29 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
       toast.error(typeof detail === "string" ? detail : t("cleanupUnavailableDatasetsFailed"));
     } finally {
       setCleaningDatasets(false);
+    }
+  };
+
+  const handleDatasetUnbindOpenChange = (open: boolean) => {
+    if (!open && !datasetUnbindBusy.current) setDatasetUnbindTarget(null);
+  };
+
+  const handleDatasetUnbind = async (event?: { preventDefault: () => void }) => {
+    event?.preventDefault();
+    if (!datasetUnbindTarget || datasetUnbindBusy.current || !canEditThisApp) return;
+    datasetUnbindBusy.current = true;
+    setDatasetUnbinding(true);
+    try {
+      await axios.delete(`/api/v1/apps/${appId}/datasets/${encodeURIComponent(datasetUnbindTarget.dataset_id)}`);
+      await loadAppInfo();
+      setDatasetUnbindTarget(null);
+      toast.success(t("knowledgeUnbindSuccess"));
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : t("knowledgeUnbindFailed"));
+    } finally {
+      datasetUnbindBusy.current = false;
+      setDatasetUnbinding(false);
     }
   };
 
@@ -307,12 +334,20 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
   const fixedDatasetIds = appInfo.dataset_bindings?.length
     ? appInfo.dataset_bindings.map((binding) => binding.dataset_id)
     : appInfo.dataset_ids;
-  const autoSelectKnowledge = resolveAutoSelectDatasets(appInfo.settings, fixedDatasetIds);
+  const autoSelectKnowledge = appInfo.settings?.auto_select_datasets;
 
   const knowledgeBindingsCard = (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
             <CardTitle className="text-base">{t("workspaceKnowledgeBindings")}</CardTitle>
+            {canEditThisApp && <AppKnowledgeBindingsEditor
+              key={accessScope}
+              appId={appId}
+              ownerTenantId={appInfo.owner_tenant_id}
+              settings={appInfo.settings}
+              datasetIds={fixedDatasetIds || []}
+              onSaved={loadAppInfo}
+            />}
             {canEditThisApp && appInfo.dataset_bindings?.some((binding) => !binding.available) && (
               <Button
                 type="button"
@@ -330,29 +365,45 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
               </Button>
             )}
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2">
             {!appInfo.dataset_bindings?.length && (
               <p className="text-sm text-muted-foreground">
-                {t(autoSelectKnowledge ? "autoKnowledgeStatus" : "noKnowledgeBindings")}
+                {t(typeof autoSelectKnowledge !== "boolean" ? "knowledgeSelectionInherited" : autoSelectKnowledge ? "autoKnowledgeStatus" : "noKnowledgeBindings")}
               </p>
             )}
             {appInfo.dataset_bindings?.map((binding) => (
-              <div key={binding.dataset_id} className="text-sm">
-                <div className="flex items-center gap-2">
-                  {binding.available ? (
-                    <Link
-                      href={`/knowledge?dataset=${encodeURIComponent(binding.dataset_id)}`}
-                      className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      {binding.name}
-                    </Link>
-                  ) : (
-                    <span>{t("workspaceUnavailableDataset")}</span>
-                  )}
-                  {!binding.available && <Badge variant="secondary">{ts("workspaceUnavailableStatus")}</Badge>}
+              <div key={binding.dataset_id} className="flex min-w-0 items-start gap-3 rounded-lg border bg-background px-3 py-2.5">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground shrink-0">
+                  <Database className="h-4 w-4" aria-hidden="true" />
                 </div>
-                {binding.owner_tenant_name && <p className="text-xs text-muted-foreground">{ts("workspaceSource", { tenant: binding.owner_tenant_name })}</p>}
-                {!binding.available && <p className="text-xs text-muted-foreground">{ts("workspaceUnavailable")}</p>}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    {binding.available ? (
+                      <Link
+                        href={`/knowledge?dataset=${encodeURIComponent(binding.dataset_id)}`}
+                        className="min-w-0 break-all rounded-sm font-medium text-foreground underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {binding.name}
+                      </Link>
+                    ) : (
+                      <span className="min-w-0 break-all font-medium text-muted-foreground">{t("workspaceUnavailableDataset")}</span>
+                    )}
+                    {!binding.available && <Badge variant="secondary" className="shrink-0">{ts("workspaceUnavailableStatus")}</Badge>}
+                  </div>
+                  {binding.owner_tenant_name && <p className="break-all text-xs text-muted-foreground">{ts("workspaceSource", { tenant: binding.owner_tenant_name })}</p>}
+                  {!binding.available && <p className="break-all text-xs text-muted-foreground">{ts("workspaceUnavailable")}</p>}
+                </div>
+                {canEditThisApp && <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 self-center"
+                  aria-label={t("unbindKnowledge")}
+                  title={t("unbindKnowledge")}
+                  disabled={datasetUnbinding}
+                  onClick={() => setDatasetUnbindTarget({ dataset_id: binding.dataset_id, name: binding.available ? binding.name : t("workspaceUnavailableDataset") })}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>}
               </div>
             ))}
           </CardContent>
@@ -401,7 +452,7 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         </div>
       </div>
 
-      {appInfo.app_type === "Custom" && !!appInfo.dataset_bindings?.length && knowledgeBindingsCard}
+      {appInfo.app_type === "Custom" && (canEditThisApp || !!appInfo.dataset_bindings?.length) && knowledgeBindingsCard}
 
       {/* 应用基本信息（Custom 应用直接进自定义视图，不展示这块元信息）*/}
       {appInfo.app_type !== "Custom" && (
@@ -723,6 +774,21 @@ export default function AppDetailPage({ params }: { params: Promise<{ id: string
         boundToolIds={appTools.map((t) => t.tool_id)}
         onBind={handleBindTools}
       />
+
+      <AlertDialog open={datasetUnbindTarget !== null} onOpenChange={handleDatasetUnbindOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("confirmUnbindKnowledge")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("knowledgeUnbindWarning", { name: datasetUnbindTarget?.name || "" })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={datasetUnbinding}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDatasetUnbind} disabled={datasetUnbinding} className="bg-destructive text-destructive-foreground">
+              {datasetUnbinding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{t("unbind")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 解绑确认对话框 */}
       <AlertDialog open={unbindDialogOpen} onOpenChange={setUnbindDialogOpen}>
