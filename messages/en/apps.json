@@ -180,6 +180,12 @@
   "noAppsForTenant": "No digital employees in this tenant",
   "clearTenantFilter": "Clear filter",
   "tenantDefaultUpdated": "Tenant default updated",
+  "visibleDepartment": "Visible department",
+  "selectDepartment": "Select a department",
+  "departmentRequired": "Select a visible department in the owning tenant.",
+  "departmentsLoading": "Loading departments…",
+  "departmentsLoadFailed": "Could not load departments. Close and reopen to retry.",
+  "departmentsEmpty": "This tenant has no departments. Create a department first.",
   "visibilityLabel": "Visibility",
   "visibilityOptions": {
     "private": "Creator only",
