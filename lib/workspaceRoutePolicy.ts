@@ -6,6 +6,7 @@ export const workspaceProxyRoutes = [
   "/api/v1/llm-models",
   "/api/v1/llm-models/custom/[code]",
   "/api/v1/llm-models/custom",
+  "/api/v1/llm-models/custom/test",
   "/api/v1/crawler/fetch",
   "/api/v1/wechat/agents",
   "/api/v1/github/connection",

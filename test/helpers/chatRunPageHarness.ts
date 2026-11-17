@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { terminalRun, chatRunErrorMessageKey } from "../../lib/chatRun.ts";
+import { terminalRun, chatRunFailureNotice } from "../../lib/chatRun.ts";
 import { parseKnowledgeWriteConfirmation } from "../../lib/knowledgeWrite.ts";
 import type { ChatRunSnapshot } from "../../types/chat-run.ts";
 interface Node {
@@ -33,6 +33,7 @@ export function mount(
     remembered?: Record<string, string>;
     activePromise?: Promise<ChatRunSnapshot[]>;
     lateApps?: boolean;
+    details?: Record<string, unknown>[];
   } = {}
 ) {
   const state: any[] = [];
@@ -131,7 +132,7 @@ export function mount(
     "@/hooks/useChatSession": { useChatSession: () => ({ sendFeedback: no }) },
     "@/app/components/WorkspaceProvider": { useWorkspace: () => ({ ready: true }) },
     "@/hooks/useCurrentUser": { useCurrentUser: () => ({ user: { id: actor } }) },
-    "@/lib/chatRun": { terminalRun, chatRunErrorMessageKey },
+    "@/lib/chatRun": { terminalRun, chatRunFailureNotice },
     "@/lib/chatSse": { parseWorkspaceBindingWarning: () => null },
     "@/lib/knowledgeWrite": { parseKnowledgeWriteConfirmation },
     "@/types/token-usage": { normalizeTurnUsage: (value: any) => value },
@@ -185,7 +186,9 @@ export function mount(
           return {
             data: {
               appId: 7,
-              details: [{ id: 12, question: "question", answer: "saved partial", attachments: [] }],
+              details: options.details ?? [
+                { id: 12, question: "question", answer: "saved partial", attachments: [] },
+              ],
             },
           };
         },

@@ -81,6 +81,13 @@
   "tenantModelsClearKey": "清除已存密钥，并关闭密钥认证",
   "tenantModelsTools": "支持工具调用",
   "tenantModelsImages": "支持图片",
+  "tenantModelsTestNow": "立即测试",
+  "tenantModelsTestSuccess": "测试请求已返回",
+  "tenantModelsTestEmptyReply": "服务端未返回回复正文",
+  "tenantModelsServerResponse": "服务端回复",
+  "tenantModelsTestPrompt": "本次测试内容",
+  "tenantModelsTestScope": "每次发送一条随机短句进行非流式测试，不验证完整聊天或工具能力。",
+  "tenantModelsTestFailed": "连接测试失败，请重试。",
   "tenantModelsSave": "保存",
   "tenantModelsCancel": "取消"
 }

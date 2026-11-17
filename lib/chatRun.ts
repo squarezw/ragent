@@ -145,3 +145,14 @@ export function chatRunErrorMessageKey(code: string | undefined) {
     ? RUN_ERROR_KEYS[code as keyof typeof RUN_ERROR_KEYS]
     : "runFailed";
 }
+
+/** Display only the existing sanitized message, never raw provider responses. */
+export function chatRunFailureNotice(
+  error: { message?: unknown; code?: unknown } | null | undefined,
+  translate: (key: ReturnType<typeof chatRunErrorMessageKey>) => string
+): string {
+  if (typeof error?.message === "string" && error.message.length > 0) return error.message;
+  return translate(
+    chatRunErrorMessageKey(typeof error?.code === "string" ? error.code : undefined)
+  );
+}

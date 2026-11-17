@@ -150,6 +150,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const detailsResult = await pool.query(detailsQuery, [id]);
 
+    // Read only the sanitized terminal error projection after session authorization.
+    // Old installations without the optional chat-run migration still serve history.
+    const failedErrors = new Map<number, { message?: string; code?: string }>();
+    if (detailsResult.rows.length > 0) {
+      try {
+        const runs = await pool.query(`
+          SELECT DISTINCT ON (r.detail_id) r.detail_id, r.status,
+            r.projection->'error'->>'message' AS error_message,
+            r.projection->'error'->>'code' AS error_code
+          FROM chat_runs r
+          JOIN chat_session_detail d ON d.id = r.detail_id AND d.session_id::text = r.session_id
+          WHERE d.session_id = $1 AND r.detail_id = ANY($2::int[])
+            ${workspace.enabled ? "AND r.workspace_id = $3" : ""}
+          ORDER BY r.detail_id, r.updated_at DESC
+        `, workspace.enabled ? [id, detailsResult.rows.map(detail => detail.id), workspace.tenantId] : [id, detailsResult.rows.map(detail => detail.id)]);
+        for (const run of runs.rows) {
+          if (run.status !== "failed") continue;
+          failedErrors.set(run.detail_id, {
+            message: typeof run.error_message === "string" ? run.error_message : undefined,
+            code: typeof run.error_code === "string" ? run.error_code : undefined,
+          });
+        }
+      } catch (error: unknown) {
+        if ((error as { code?: string }).code !== "42P01") throw error;
+      }
+    }
+
     // 本会话显式调用过哪些 skill。
     //
     // 口径刻意窄：只统计 execute_skill / load_skill 两条**可观测**路径。
@@ -217,6 +244,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sessionId: detail.session_id,
         question: detail.question,
         answer: detail.answer,
+        error: failedErrors.get(detail.id),
         attachments: normalizeSessionAttachments(detail.attachments),
         submittedAt: detail.submitted_at,
         answeredAt: detail.answered_at,

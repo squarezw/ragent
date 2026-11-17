@@ -81,6 +81,13 @@
   "tenantModelsClearKey": "Remove stored API key and use no authentication",
   "tenantModelsTools": "Supports tool calls",
   "tenantModelsImages": "Supports images",
+  "tenantModelsTestNow": "Test now",
+  "tenantModelsTestSuccess": "Test request returned",
+  "tenantModelsTestEmptyReply": "The server returned no reply content",
+  "tenantModelsServerResponse": "Server response",
+  "tenantModelsTestPrompt": "Test prompt",
+  "tenantModelsTestScope": "Sends a new random short prompt in one non-streaming request; does not verify full chat or tool capabilities.",
+  "tenantModelsTestFailed": "Connection test failed. Please retry.",
   "tenantModelsSave": "Save",
   "tenantModelsCancel": "Cancel"
 }
