@@ -83,3 +83,72 @@ test("a session-only history pointer does not reopen a finished conversation", a
   assert.ok(page.find("WelcomeView"));
   assert.equal(page.calls.history.length, 0);
 });
+
+test("failed live and replayed snapshots retain partial text and expose the safe error on that turn", async () => {
+  const page = mount({ active: [run()] });
+  await page.settle();
+  const failed = run({
+    status: "failed",
+    cursor: 4,
+    answer: "partial answer",
+    error: { code: "CHAT_STREAM_FAILED", message: "DeepSeek HTTP 400: unsupported image input" },
+  });
+  page.emit(failed);
+  page.emit(failed);
+  const messages = page.find("MessageList")?.props.messages;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].content, "partial answer");
+  assert.equal(messages[1].error, "DeepSeek HTTP 400: unsupported image input");
+  assert.equal(page.find("MessageList")?.props.isStreaming, false);
+});
+
+test("initial failed snapshot with no answer still exposes the failure", async () => {
+  const page = mount({
+    search: "?session_id=11",
+    active: [
+      run({ status: "failed", answer: "", error: { code: "MODEL_RESPONSE_TIMEOUT", message: "" } }),
+    ],
+  });
+  await page.settle();
+  const messages = page.find("MessageList")?.props.messages;
+  assert.equal(messages.at(-1).content, "");
+  assert.match(messages.at(-1).error, /modelResponseTimeout/);
+});
+
+test("history failures stay attached to each detail and never mark a successful answer", async () => {
+  const page = mount({
+    search: "?session_id=11",
+    details: [
+      {
+        id: 1,
+        question: "first",
+        answer: "partial",
+        error: { code: "CHAT_STREAM_FAILED", message: "DeepSeek HTTP 400" },
+      },
+      {
+        id: 2,
+        question: "second",
+        answer: "",
+        error: { code: "MODEL_ENDPOINT_UNREACHABLE", message: "" },
+      },
+      { id: 3, question: "third", answer: "success" },
+    ],
+  });
+  await page.settle();
+  const messages = page.find("MessageList")?.props.messages;
+  assert.equal(messages[1].detail_id, 1);
+  assert.equal(messages[1].content, "partial");
+  assert.match(messages[1].error, /DeepSeek HTTP 400/);
+  assert.equal(messages[3].detail_id, 2);
+  assert.match(messages[3].error, /modelEndpointUnreachable/);
+  assert.equal(messages[5].error, undefined);
+});
+
+test("cancelled and successful runs never inherit a failed error notice", async () => {
+  for (const status of ["completed", "cancelled"] as const) {
+    const page = mount({ active: [run()] });
+    await page.settle();
+    page.emit(run({ status, error: { code: "CHAT_STREAM_FAILED", message: "stale" } }));
+    assert.equal(page.find("MessageList")?.props.messages.at(-1).error, undefined);
+  }
+});

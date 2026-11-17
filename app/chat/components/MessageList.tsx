@@ -29,6 +29,7 @@ function getFileIcon(mimetype?: string) {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  error?: string;
   reference?:
     | string
     | { id?: number; originalname: string; path: string; mimetype?: string }
@@ -131,6 +132,7 @@ export default function MessageList({
                     onPreviewResource={onPreviewResource}
                   />
                 </div>
+                {msg.error && <p role="alert" className="mt-2 whitespace-pre-wrap break-words text-sm text-destructive">{msg.error}</p>}
                 <ReferencesDisplay
                   messageIndex={i}
                   reference={msg.reference}

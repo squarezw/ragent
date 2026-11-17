@@ -1,12 +1,13 @@
 "use client";
 import { useWorkspace } from "@/app/components/WorkspaceProvider";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 import axios from "@/lib/axios";
 import { modelPayload, type ModelDraft, type TenantModel } from "@/lib/tenantModels";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
@@ -37,6 +38,17 @@ export function TenantModelsManager() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const testBusy = useRef(false);
+  const currentDraft = useRef({ draft, tenantId });
+  currentDraft.current = { draft, tenantId };
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    draft: ModelDraft;
+    ok: boolean;
+    message: string;
+    reply?: string;
+    test_prompt?: string;
+  } | null>(null);
   useEffect(() => {
     setTenantId(operationTenantId ? String(operationTenantId) : "");
     setDraft(null);
@@ -118,6 +130,65 @@ export function TenantModelsManager() {
       setBusy(false);
     }
   };
+  const testConnection = async () => {
+    if (!draft || !tenantId || busy || testBusy.current) return;
+    const testedDraft = draft;
+    const key = draft.api_key.trim();
+    if (
+      draft.auth_mode === "bearer" &&
+      ((key && /^[*•●\s]+$/.test(key)) || (!key && !editing?.has_api_key))
+    ) {
+      setTestResult({ draft, ok: false, message: t("tenantModelsKeyRequired") });
+      return;
+    }
+    testBusy.current = true;
+    setBusy(true);
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data } = await axios.post<{ ok: true; reply: string; test_prompt: string }>(
+        "/api/v1/llm-models/custom/test",
+        {
+          base_url: draft.base_url.trim(),
+          api_model: draft.api_model.trim(),
+          auth_mode: draft.auth_mode,
+          owner_tenant_id: Number(tenantId),
+          ...(editing ? { model_code: editing.code } : {}),
+          ...(draft.auth_mode === "bearer" && key ? { api_key: key } : {}),
+        }
+      );
+      if (currentDraft.current.draft !== testedDraft || currentDraft.current.tenantId !== tenantId)
+        return;
+      const reply = typeof data.reply === "string" ? data.reply : "";
+      const hasReply = reply.trim().length > 0;
+      setTestResult({
+        draft: testedDraft,
+        ok: hasReply,
+        message: t(hasReply ? "tenantModelsTestSuccess" : "tenantModelsTestEmptyReply"),
+        reply,
+        test_prompt: typeof data.test_prompt === "string" ? data.test_prompt : undefined,
+      });
+    } catch (reason: unknown) {
+      if (currentDraft.current.draft !== testedDraft || currentDraft.current.tenantId !== tenantId)
+        return;
+      const detail = (reason as { response?: { data?: { detail?: unknown } } }).response?.data
+        ?.detail;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : detail &&
+              typeof detail === "object" &&
+              "message" in detail &&
+              typeof detail.message === "string"
+            ? detail.message
+            : t("tenantModelsTestFailed");
+      setTestResult({ draft: testedDraft, ok: false, message });
+    } finally {
+      testBusy.current = false;
+      setBusy(false);
+      setTesting(false);
+    }
+  };
   const toggle = async (model: TenantModel) => {
     setBusy(true);
     setError("");
@@ -149,8 +220,19 @@ export function TenantModelsManager() {
   };
   return (
     <Card className="break-inside-avoid" data-workspace-dirty={draft ? "true" : undefined}>
-      <CardHeader className="pb-3">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 pb-3">
         <CardTitle className="text-base">{t("tenantModelsTitle")}</CardTitle>
+        {!draft && (
+          <Button
+            disabled={busy || !tenantId}
+            onClick={() => {
+              setEditing(null);
+              setDraft(emptyDraft());
+            }}
+          >
+            {t("tenantModelsAdd")}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         <p className="text-sm text-muted-foreground">{t("tenantModelsDescription")}</p>
@@ -171,18 +253,6 @@ export function TenantModelsManager() {
               ))}
             </select>
           </label>
-        )}
-
-        {!draft && (
-          <Button
-            disabled={busy || !tenantId}
-            onClick={() => {
-              setEditing(null);
-              setDraft(emptyDraft());
-            }}
-          >
-            {t("tenantModelsAdd")}
-          </Button>
         )}
 
         {error && (
@@ -324,7 +394,32 @@ export function TenantModelsManager() {
               />
               {t("tenantModelsImages")}
             </label>
+            <p className="text-xs text-muted-foreground">{t("tenantModelsTestScope")}</p>
+            {testResult?.draft === draft && (
+              <div
+                role={testResult.ok ? "status" : "alert"}
+                className={`whitespace-pre-wrap break-words text-sm ${testResult.ok ? "text-muted-foreground" : "text-destructive"}`}
+              >
+                <p>{testResult.message}</p>
+                {testResult.ok && testResult.test_prompt && (
+                  <div className="mt-2 rounded border bg-muted p-3">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{t("tenantModelsTestPrompt")}</p>
+                    <div className="whitespace-pre-wrap break-words text-foreground">{testResult.test_prompt}</div>
+                  </div>
+                )}
+                {testResult.ok && testResult.reply && (
+                  <div className="mt-2 rounded border bg-muted p-3">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{t("tenantModelsServerResponse")}</p>
+                    <div className="whitespace-pre-wrap break-words text-foreground">{testResult.reply}</div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
+              <Button type="button" variant="outline" disabled={busy} onClick={testConnection}>
+                {testing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t("tenantModelsTestNow")}
+              </Button>
               <Button type="submit" disabled={busy}>
                 {t("tenantModelsSave")}
               </Button>

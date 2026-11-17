@@ -17,7 +17,7 @@ import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
 import { useChatRun, chatRunStorageKey } from "@/hooks/useChatRun";
 import { useStreamingText } from "@/hooks/useStreamingText";
-import { terminalRun, chatRunErrorMessageKey } from "@/lib/chatRun";
+import { terminalRun, chatRunFailureNotice } from "@/lib/chatRun";
 import type { ChatRunSnapshot } from "@/types/chat-run";
 import { parseKnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
 import { normalizeTurnUsage } from "@/types/token-usage";
@@ -47,6 +47,7 @@ import {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  error?: string;
   reference?:
     | string
     | { id?: number; originalname: string; path: string; mimetype?: string }
@@ -319,18 +320,15 @@ export default function ChatPage() {
           if (!done) return messages;
           const result = next.result ?? {};
           let content = next.answer;
-          if (next.status !== "completed") {
+          if (next.status === "cancelled" || next.status === "interrupted") {
             const notice =
-              next.status === "cancelled"
-                ? t("runCancelled")
-                : next.status === "interrupted"
-                  ? t("runInterrupted")
-                  : t(chatRunErrorMessageKey(next.error?.code));
+              next.status === "cancelled" ? t("runCancelled") : t("runInterrupted");
             content = content ? `${content}\n\n${notice}` : notice;
           }
           messages.push({
             role: "assistant",
             content,
+            error: next.status === "failed" ? chatRunFailureNotice(next.error, t) : undefined,
             detail_id: next.detail_id,
             reference: (result.references ?? result.reference) as Message["reference"],
             segment_ids: Array.isArray(result.segment_ids) ? (result.segment_ids as number[]) : [],
@@ -494,6 +492,7 @@ export default function ChatPage() {
           historyMessages.push({
             role: "assistant",
             content: detail.answer || "",
+            error: detail.error ? chatRunFailureNotice(detail.error, t) : undefined,
             reference: formattedReference,
             segment_ids: detail.segmentsIds || [],
             detail_id: detail.id,
