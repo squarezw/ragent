@@ -1049,17 +1049,14 @@ export default function SystemSettingsPage() {
       {/* 计费系数。原先是 /billing/rates 独立页面，收进系统设置 ——
           它是全站唯一一份配置（不分租户），和这一页其余内容同性质，
           单开一级菜单占位不配它的使用频率。 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            {t("billingRatesTitle")}
-          </CardTitle>
-          <CardDescription className="text-xs">{t("billingRatesDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <BillingRatesSection />
-        </CardContent>
-      </Card>
+      <CollapsibleCard
+        icon={null}
+        title={t("billingRatesTitle")}
+        description={t("billingRatesDesc")}
+        defaultOpen={false}
+      >
+        <BillingRatesSection />
+      </CollapsibleCard>
 
       {/* Dangerous 区域，仅超级管理员可见 */}
       <Card className="border-red-200">
