@@ -25,6 +25,7 @@ import {
 } from "@/lib/skillImportTree";
 
 interface ValidateResult {
+  login_state?: import("@/types/skill").SkillLoginState | null;
   ok: boolean;
   name: string;
   description: string;
@@ -280,6 +281,7 @@ export default function SkillImportDialog({
 
         {result && (
           <div className="min-h-0 flex-1 overflow-y-auto space-y-3">
+            {result.login_state && <p className="rounded-md border p-3 text-sm">{t("importLoginState")}</p>}
             {result.stripped_root && (
               <div className="text-sm rounded-md bg-muted px-3 py-2">
                 {t("importStrippedRoot", { root: result.stripped_root })}

@@ -894,6 +894,7 @@ export default function SkillAssetsPanel({
               {t("execConfigSection")}
             </p>
             <SkillExecConfigForm
+              skillId={skill.id}
               config={execConfig}
               images={images}
               imagesUnavailable={imagesUnavailable}

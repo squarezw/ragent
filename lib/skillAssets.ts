@@ -7,6 +7,7 @@ import type {
   SkillExecConfigSummary,
 } from "@/types/review";
 import type {
+  SkillLoginState,
   SandboxImage,
   RemoteSandboxEnvironment,
   SkillAssetItem,
@@ -57,6 +58,23 @@ export function normalizeAssetDiff(value: unknown): SkillAssetDiffItem[] {
   return value.map(toAssetDiffItem).filter((item): item is SkillAssetDiffItem => item !== null);
 }
 
+export function normalizeLoginState(value: unknown): SkillLoginState {
+  const item = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const env =
+    item.env && typeof item.env === "object" && !Array.isArray(item.env)
+      ? (Object.fromEntries(
+          Object.entries(item.env).filter(([, v]) => typeof v === "string")
+        ) as Record<string, string>)
+      : {};
+  return {
+    enabled: item.enabled === true,
+    env,
+    paths: Array.isArray(item.paths)
+      ? item.paths.filter((p): p is string => typeof p === "string")
+      : [],
+  };
+}
+
 /** Normalize legacy local records and remote records without accepting mixed execution modes. */
 export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | null {
   if (typeof value !== "object" || value === null) return null;
@@ -80,6 +98,7 @@ export function normalizeExecConfig(value: unknown): SkillExecConfigSummary | nu
     remote_environment:
       parseRemoteSandboxEnvironments({ items: [obj.remote_environment] })[0] ?? null,
     image,
+    login_state: normalizeLoginState(obj.login_state),
     image_enabled: obj.image_enabled !== false,
     timeout_sec: asSize(obj.timeout_sec) ?? 120,
     writable_subdirs: Array.isArray(obj.writable_subdirs)
@@ -157,7 +176,8 @@ export type ExecConfigField =
   | "writable_subdirs"
   | "needs_network"
   | "warm_pool"
-  | "artifact_exclude";
+  | "artifact_exclude"
+  | "login_state";
 
 /**
  * draft vs published exec 配置逐字段对比，返回有差异的字段名。
@@ -185,6 +205,11 @@ export function diffExecConfig(
   if (draft.artifact_exclude.join("\n") !== published.artifact_exclude.join("\n")) {
     changed.push("artifact_exclude");
   }
+  if (
+    JSON.stringify(normalizeLoginState(draft.login_state)) !==
+    JSON.stringify(normalizeLoginState(published.login_state))
+  )
+    changed.push("login_state");
   return changed;
 }
 
@@ -677,6 +702,7 @@ export interface ExecConfigEdits {
   artifact_exclude?: string[];
   /** 同上。2026-08-23 起表单里可编辑（此前只能改库） */
   writable_subdirs?: string[];
+  login_state?: SkillLoginState;
 }
 
 /**
@@ -696,15 +722,15 @@ export interface ExecConfigEdits {
  */
 export function buildExecConfigPayload(
   edits: ExecConfigEdits & { backend: "remote" },
-  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude" | "login_state"> | null
 ): Extract<SkillExecConfigPayload, { backend: "remote" }>;
 export function buildExecConfigPayload(
   edits: ExecConfigEdits & { backend?: "local" },
-  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude" | "login_state"> | null
 ): LocalSkillExecConfigPayload;
 export function buildExecConfigPayload(
   edits: ExecConfigEdits,
-  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude"> | null
+  loaded: Pick<SkillExecConfig, "writable_subdirs" | "artifact_exclude" | "login_state"> | null
 ): SkillExecConfigPayload {
   if (edits.backend === "remote") {
     if (!edits.remote_environment_id?.trim()) throw new Error("Missing remote environment");
@@ -712,6 +738,14 @@ export function buildExecConfigPayload(
       throw new Error("Remote sandbox does not support writable directories");
     }
     return {
+      ...((edits.login_state ?? loaded?.login_state)
+        ? {
+            login_state: {
+              ...normalizeLoginState(edits.login_state ?? loaded?.login_state),
+              enabled: false,
+            },
+          }
+        : {}),
       backend: "remote",
       remote_environment_id: edits.remote_environment_id.trim(),
       timeout_sec: edits.timeout_sec,
@@ -719,6 +753,7 @@ export function buildExecConfigPayload(
     };
   }
   return {
+    login_state: edits.login_state ?? normalizeLoginState(loaded?.login_state),
     image: edits.image,
     timeout_sec: edits.timeout_sec,
     writable_subdirs: edits.writable_subdirs ?? loaded?.writable_subdirs ?? [],

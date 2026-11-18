@@ -1001,3 +1001,19 @@ test("unavailable backend environment metadata retains remote identity without l
   assert.equal(config.image, null);
   assert.equal(config.remote_environment, null);
 });
+
+
+test("login state survives config normalization and unrelated edits", () => {
+  const login = {enabled: true, env: {WHOBOT_AGENT_CLI_HOME: ".whobot-cli"}, paths: []};
+  const loaded = parseExecConfig({image: "ragent-skill-general:latest", login_state: login});
+  assert.ok(loaded);
+  assert.deepEqual(loaded.login_state, login);
+  assert.deepEqual(buildExecConfigPayload(execEdits, loaded).login_state, login);
+  assert.deepEqual(buildExecConfigPayload({...execEdits, login_state: {...login, enabled: false}}, loaded).login_state, {...login, enabled: false});
+});
+
+test("published review exposes a changed login state declaration", () => {
+  const before = normalizeExecConfig({image: "general:latest"});
+  const after = normalizeExecConfig({image: "general:latest", login_state: {enabled: false, env: {WHOBOT_AGENT_CLI_HOME: ".whobot-cli"}, paths: []}});
+  assert.deepEqual(diffExecConfig(before, after), ["login_state"]);
+});

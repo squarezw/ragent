@@ -408,5 +408,20 @@
   "execRemoteRevisionLabel": "Revision",
   "execRemoteTimeoutHint": "Execution timeout: 1–{max} seconds.",
   "execRemoteStateHint": "Results are returned and the instance released after execution. Persistent directories are not supported yet.",
-  "execRemoteStateConfirm": "I confirm that saving removes local persistent directory settings. Existing contents will not be migrated. Unsaved local inputs remain available until leaving this page."
+  "execRemoteStateConfirm": "I confirm that saving removes local persistent directory settings. Existing contents will not be migrated. Unsaved local inputs remain available until leaving this page.",
+  "execLoginState": "Keep login state",
+  "execLoginHint": "Reuse your login across conversations, isolated by tenant, user and skill. Save and publish to apply.",
+  "execLoginMissing": "No login state declaration. The skill author can configure it in advanced settings or import it with the skill package.",
+  "execLoginRemote": "Remote sandboxes do not support persistent login state yet.",
+  "execLoginClear": "Clear my login state",
+  "execLoginClearConfirm": "Clear your login state for this skill? You will need to sign in again.",
+  "execLoginCleared": "Login state cleared",
+  "execLoginClearFailed": "Unable to clear login state. Please try again.",
+  "execAdvanced": "Advanced settings",
+  "execLoginDeclaration": "Login state declaration",
+  "execLoginDeclarationHint": "For skill authors. env maps state variables to isolated directories; paths supports .lark-cli. Include the declaration in ragent.json when importing.",
+  "execLoginInvalid": "Enter a valid env and paths declaration.",
+  "importLoginState": "This skill declares persistent login state. You can enable it in execution settings after import.",
+  "execLoginPersonalHint": "Login state belongs only to you in this tenant. Clearing it requires signing in again.",
+  "execLoginPoolHint": "Persistent login state uses isolated containers and temporarily bypasses the warm pool."
 }

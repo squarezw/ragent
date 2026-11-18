@@ -80,6 +80,12 @@ export interface SkillAssetList {
   total_bytes: number;
 }
 
+export interface SkillLoginState {
+  enabled: boolean;
+  env: Record<string, string>;
+  paths: string[];
+}
+
 /** GET|PUT /api/v1/skills/{id}/exec-config 响应 */
 export interface SkillExecConfig {
   stage: string;
@@ -91,6 +97,7 @@ export interface SkillExecConfig {
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];
+  login_state?: SkillLoginState;
   /** 只管要不要出网；false = 容器完全禁网（--network none） */
   needs_network: boolean;
   warm_pool: boolean;
@@ -105,6 +112,7 @@ export interface LocalSkillExecConfigPayload {
   image: string;
   timeout_sec: number;
   writable_subdirs: string[];
+  login_state?: SkillLoginState;
   needs_network: boolean;
   warm_pool: boolean;
   artifact_exclude: string[];
@@ -123,6 +131,7 @@ export interface RemoteSandboxEnvironment {
 export type SkillExecConfigPayload =
   | LocalSkillExecConfigPayload
   | {
+      login_state?: SkillLoginState;
       backend: "remote";
       remote_environment_id: string;
       timeout_sec: number;

@@ -12,6 +12,7 @@ import SkillEditor from "../components/SkillEditor";
 import SkillDiffDialog from "../components/SkillDiffDialog";
 import SkillAssetsPanel from "../components/SkillAssetsPanel";
 import SkillGitPanel from "../components/SkillGitPanel";
+import SkillLoginStatePanel from "../components/SkillLoginStatePanel";
 import SkillUserEnvPanel from "../components/SkillUserEnvPanel";
 import { useSkill, type SkillPayload } from "@/hooks/useSkills";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -187,6 +188,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         他通常既不是作者也不是管理员；写的也只是自己那一行。
         skill 没声明 env 模板时组件自己整块不渲染。
       */}
+      {skill.is_executable === true && <SkillLoginStatePanel skillId={skill.id} />}
       {skill.is_executable === true && <SkillUserEnvPanel skillId={skill.id} skillDisplayName={skill.display_name || skill.name} />}
 
       {/* 草稿 vs 已发布对照 */}

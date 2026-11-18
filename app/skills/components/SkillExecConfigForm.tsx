@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ClearLoginStateButton } from "./SkillLoginStatePanel";
 import { Loader2 } from "lucide-react";
 import {
   buildExecConfigPayload,
@@ -28,6 +29,7 @@ import type {
 } from "@/types/skill";
 
 interface SkillExecConfigFormProps {
+  skillId: number;
   config: SkillExecConfig | null;
   images: SandboxImage[];
   /** 白名单端点不可用：镜像字段降级为手工输入 */
@@ -42,6 +44,7 @@ interface SkillExecConfigFormProps {
 const DEFAULT_TIMEOUT = 120;
 
 export default function SkillExecConfigForm({
+  skillId,
   config,
   images,
   imagesUnavailable,
@@ -53,6 +56,47 @@ export default function SkillExecConfigForm({
 }: SkillExecConfigFormProps) {
   const t = useTranslations("skills");
 
+  const [loginEnabled, setLoginEnabled] = useState(config?.login_state?.enabled ?? false);
+  const [loginDeclaration, setLoginDeclaration] = useState(
+    JSON.stringify(
+      { env: config?.login_state?.env ?? {}, paths: config?.login_state?.paths ?? [] },
+      null,
+      2
+    )
+  );
+  const parsedLogin = useMemo(() => {
+    try {
+      const value = JSON.parse(loginDeclaration);
+      if (
+        !value ||
+        typeof value !== "object" ||
+        Array.isArray(value) ||
+        Object.keys(value).some((k) => k !== "env" && k !== "paths")
+      )
+        return null;
+      const env = value.env ?? {};
+      const paths = value.paths ?? [];
+      if (
+        typeof env !== "object" ||
+        !env ||
+        Array.isArray(env) ||
+        Object.values(env).some((v) => typeof v !== "string") ||
+        !Array.isArray(paths) ||
+        paths.some((v) => typeof v !== "string")
+      )
+        return null;
+      return {
+        enabled: loginEnabled,
+        env: env as Record<string, string>,
+        paths: paths as string[],
+      };
+    } catch {
+      return null;
+    }
+  }, [loginDeclaration, loginEnabled]);
+  const hasLoginDeclaration = Boolean(
+    parsedLogin && (Object.keys(parsedLogin.env).length || parsedLogin.paths.length)
+  );
   const [backend, setBackend] = useState<"local" | "remote">(config?.backend ?? "local");
   const [environmentId, setEnvironmentId] = useState(config?.remote_environment_id ?? "");
   const [remoteTimeout, setRemoteTimeout] = useState(
@@ -87,6 +131,14 @@ export default function SkillExecConfigForm({
 
   // 配置或镜像清单异步到达后回填（digest 形态的 image 在此映射回可提交的 name:tag）
   useEffect(() => {
+    setLoginEnabled(config?.login_state?.enabled ?? false);
+    setLoginDeclaration(
+      JSON.stringify(
+        { env: config?.login_state?.env ?? {}, paths: config?.login_state?.paths ?? [] },
+        null,
+        2
+      )
+    );
     setBackend(config?.backend ?? "local");
     setEnvironmentId(config?.remote_environment_id ?? "");
     setRemoteTimeout(String(config?.backend === "remote" ? config.timeout_sec : DEFAULT_TIMEOUT));
@@ -127,6 +179,7 @@ export default function SkillExecConfigForm({
   const hasLocalState = writableSubdirs.split("\n").some((line) => line.trim());
   const canSave =
     !saving &&
+    (backend === "remote" || Boolean(parsedLogin && (!loginEnabled || hasLoginDeclaration))) &&
     (backend === "remote"
       ? Boolean(selectedEnvironment) &&
         !remoteEnvironmentsLoading &&
@@ -135,7 +188,31 @@ export default function SkillExecConfigForm({
         (!hasLocalState || acknowledgeState)
       : !timeoutInvalid && !imageMissing);
 
+  // Unrelated edits must not overwrite a declaration loaded by an older client.
+  const loginDirty =
+    loginEnabled !== (config?.login_state?.enabled ?? false) ||
+    loginDeclaration !==
+      JSON.stringify(
+        { env: config?.login_state?.env ?? {}, paths: config?.login_state?.paths ?? [] },
+        null,
+        2
+      );
+  const savePayload = (payload: SkillExecConfigPayload) => {
+    if (config && !loginDirty && backend === (config.backend ?? "local")) {
+      const { login_state: _unchanged, ...unchangedLogin } = payload;
+      onSave(unchangedLogin);
+    } else {
+      onSave(payload);
+    }
+  };
   const configDirty =
+    loginEnabled !== (config?.login_state?.enabled ?? false) ||
+    loginDeclaration !==
+      JSON.stringify(
+        { env: config?.login_state?.env ?? {}, paths: config?.login_state?.paths ?? [] },
+        null,
+        2
+      ) ||
     backend !== (config?.backend ?? "local") ||
     environmentId !== (config?.remote_environment_id ?? "") ||
     remoteTimeout !== String(config?.backend === "remote" ? config.timeout_sec : DEFAULT_TIMEOUT) ||
@@ -169,6 +246,27 @@ export default function SkillExecConfigForm({
           ))}
         </div>
       </fieldset>
+      <div className="rounded-md border p-3 space-y-2">
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="exec-login-state">{t("execLoginState")}</Label>
+          <Switch
+            id="exec-login-state"
+            checked={backend === "local" && loginEnabled}
+            disabled={backend === "remote" || !hasLoginDeclaration}
+            onCheckedChange={setLoginEnabled}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            backend === "remote"
+              ? "execLoginRemote"
+              : hasLoginDeclaration
+                ? "execLoginHint"
+                : "execLoginMissing"
+          )}
+        </p>
+        {backend === "local" && <ClearLoginStateButton skillId={skillId} />}
+      </div>
       {backend === "remote" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -335,51 +433,72 @@ export default function SkillExecConfigForm({
           <ToggleRow
             id="exec-warm-pool"
             label={t("execWarmPool")}
-            hint={t("execWarmPoolHint")}
+            hint={t(loginEnabled ? "execLoginPoolHint" : "execWarmPoolHint")}
             checked={warmPool}
             onChange={setWarmPool}
           />
         </div>
 
-        {/* 两个都是「一行一条」的列表字段，并排放：它们的形态一样，
+        <details className="rounded-md border p-3 space-y-3">
+          <summary className="cursor-pointer text-sm font-medium">{t("execAdvanced")}</summary>
+          <div className="space-y-1.5 mt-3">
+            <Label htmlFor="exec-login-declaration">{t("execLoginDeclaration")}</Label>
+            <Textarea
+              id="exec-login-declaration"
+              value={loginDeclaration}
+              onChange={(event) => setLoginDeclaration(event.target.value)}
+              rows={5}
+              className="font-mono text-xs"
+              placeholder={'{"env":{"WHOBOT_AGENT_CLI_HOME":".whobot-cli"},"paths":[]}'}
+            />
+            <p className="text-xs text-muted-foreground">{t("execLoginDeclarationHint")}</p>
+            {!parsedLogin && (
+              <p role="alert" className="text-xs text-destructive">
+                {t("execLoginInvalid")}
+              </p>
+            )}
+          </div>
+          {/* 两个都是「一行一条」的列表字段，并排放：它们的形态一样，
           而且一个管「什么不给用户看」、一个管「什么跨执行留下来」，
           放在一起比隔开更容易一起想清楚。 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
-            <Textarea
-              id="exec-artifact-exclude"
-              rows={2}
-              value={artifactExclude}
-              onChange={(e) => setArtifactExclude(e.target.value)}
-              placeholder="**/findings.json"
-              className="font-mono text-xs"
-            />
-            <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="exec-artifact-exclude">{t("execArtifactExclude")}</Label>
+              <Textarea
+                id="exec-artifact-exclude"
+                rows={2}
+                value={artifactExclude}
+                onChange={(e) => setArtifactExclude(e.target.value)}
+                placeholder="**/findings.json"
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">{t("execArtifactExcludeHelp")}</p>
+            </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="exec-writable-subdirs">{t("execWritableSubdirs")}</Label>
-            <Textarea
-              id="exec-writable-subdirs"
-              rows={2}
-              value={writableSubdirs}
-              onChange={(e) => setWritableSubdirs(e.target.value)}
-              placeholder=".lark"
-              className="font-mono text-xs"
-            />
-            <p className="text-xs text-muted-foreground">{t("execWritableSubdirsHelp")}</p>
+            <div className="space-y-1.5">
+              <Label htmlFor="exec-writable-subdirs">{t("execWritableSubdirs")}</Label>
+              <Textarea
+                id="exec-writable-subdirs"
+                rows={2}
+                value={writableSubdirs}
+                onChange={(e) => setWritableSubdirs(e.target.value)}
+                placeholder=".lark"
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">{t("execWritableSubdirsHelp")}</p>
+            </div>
           </div>
-        </div>
+        </details>
       </div>
       <div className="flex justify-end">
         <Button
           disabled={!canSave}
           onClick={() =>
             backend === "remote"
-              ? onSave(
+              ? savePayload(
                   buildExecConfigPayload(
                     {
+                      login_state: parsedLogin ? { ...parsedLogin, enabled: false } : undefined,
                       backend: "remote",
                       remote_environment_id: environmentId,
                       image: "",
@@ -395,9 +514,10 @@ export default function SkillExecConfigForm({
                     config
                   )
                 )
-              : onSave(
+              : savePayload(
                   buildExecConfigPayload(
                     {
+                      login_state: parsedLogin ?? undefined,
                       image: image.trim(),
                       timeout_sec: timeoutValue,
                       needs_network: needsNetwork,
