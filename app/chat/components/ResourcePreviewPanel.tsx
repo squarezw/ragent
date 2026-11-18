@@ -1,6 +1,7 @@
 "use client";
 import { workspaceUrl } from "@/lib/workspaceBrowser";
 
+import { attachmentPreviewUrl } from "@/lib/sessionAttachments";
 import DxfPreview from "./DxfPreview";
 import { Download, ExternalLink, LoaderCircle, X } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -34,6 +35,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
   const t = useTranslations("chat");
   const [loading, setLoading] = useState(resource.kind === "url");
   const [embedWarning, setEmbedWarning] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [panelWidth, setPanelWidth] = useState<number | null>(null);
@@ -52,6 +54,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
     setLoading(resource.kind === "url");
     setEmbedWarning(false);
     setImageError(false);
+    setMediaError(false);
   }, [resource, attempt]);
 
   useEffect(() => {
@@ -73,8 +76,8 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const title = resource.kind === "dxf" ? t("dxfPreview") : resource.kind === "image" ? t("imagePreview") : t("webPreview");
-  const embedUrl = workspaceUrl(getEmbedUrl(resource));
+  const title = resource.kind === "audio" ? t("audioPreview") : resource.kind === "video" ? t("videoPreview") : resource.kind === "dxf" ? t("dxfPreview") : resource.kind === "image" ? t("imagePreview") : t("webPreview");
+  const embedUrl = workspaceUrl(resource.kind === "audio" || resource.kind === "video" ? attachmentPreviewUrl(resource.url) : getEmbedUrl(resource));
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -158,7 +161,18 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border bg-muted">
-          {resource.kind === "dxf" ? <DxfPreview key={resource.url} url={resource.url} /> : resource.kind === "image" ? (
+          {resource.kind === "audio" || resource.kind === "video" ? (
+            <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 p-4">
+              {resource.filename && <p className="break-all text-center text-sm">{resource.filename}</p>}
+              {resource.kind === "audio" ? (
+                <audio key={embedUrl} aria-label={resource.filename || t("audioPreview")} className="w-full" controls preload="metadata" src={embedUrl} onError={() => setMediaError(true)} />
+              ) : (
+                <video key={embedUrl} aria-label={resource.filename || t("videoPreview")} className="max-h-full w-full min-h-0" controls playsInline preload="metadata" src={embedUrl} onError={() => setMediaError(true)} />
+              )}
+              {mediaError && <p role="alert" className="text-sm text-muted-foreground">{t("mediaLoadFailed")}</p>}
+              <Button asChild variant="outline"><a href={workspaceUrl(resource.url)} download={resource.filename}>{t("downloadMedia")}</a></Button>
+            </div>
+          ) : resource.kind === "dxf" ? <DxfPreview key={resource.url} url={resource.url} /> : resource.kind === "image" ? (
             imageError ? (
               <p className="p-4 text-sm text-muted-foreground">{t("imageLoadFailed")}</p>
             ) : (

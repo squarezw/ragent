@@ -163,5 +163,9 @@
   "runReconnecting": "连接已中断，后台继续运行，正在重新连接…",
   "runStopping": "正在安全停止…",
   "runRunning": "后台正在运行。",
-  "runStopRetry": "重试停止"
+  "runStopRetry": "重试停止",
+  "audioPreview": "音频预览",
+  "videoPreview": "视频预览",
+  "mediaLoadFailed": "无法播放此文件，请下载后查看。",
+  "downloadMedia": "下载原文件"
 }

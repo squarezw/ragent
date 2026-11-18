@@ -26,7 +26,7 @@ test("resource preview puts the external-open action in the accessible header to
   );
   assert.doesNotMatch(
     panel,
-    /className="w-full"/,
+    /<Button[^>]*className="w-full"/,
     "the former full-width footer action should be removed"
   );
 });

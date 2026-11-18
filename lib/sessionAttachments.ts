@@ -14,6 +14,8 @@ export interface SessionAttachment {
 
 const MIME_BY_EXT: Record<string, string> = {
   ".pdf": "application/pdf",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
   ".doc": "application/msword",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xls": "application/vnd.ms-excel",

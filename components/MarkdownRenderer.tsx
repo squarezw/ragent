@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import { isChatDownloadOnly, toPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
+import { chatMediaKind, isChatDownloadOnly, toPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
 
 interface MarkdownRendererProps {
   content: string;
@@ -144,7 +144,8 @@ export function MarkdownRenderer({
               href={href ? workspaceUrl(href) : href}
               download={onPreviewResource && isChatDownloadOnly(href || "") ? "" : undefined}
               onClick={(event) => {
-                const resource = toPreviewResource("url", href);
+                const label = event.currentTarget.textContent || "";
+                const resource = toPreviewResource("url", href, chatMediaKind(label) ? label : undefined);
                 if (resource && onPreviewResource) {
                   event.preventDefault();
                   onPreviewResource(resource);

@@ -691,7 +691,7 @@ export default function ChatPage() {
                     : file.sourceUrl || file.path;
                   if (!url) return;
                   const absoluteUrl = new URL(url, window.location.origin).href;
-                  const resource = attachmentPreviewResource({ filename, url: absoluteUrl });
+                  const resource = attachmentPreviewResource({ filename, url: url.startsWith("/api/oss/") ? url : absoluteUrl });
                   if (resource) setPreviewResource(resource);
                   else downloadChatLink(workspaceUrl(absoluteUrl), filename);
                 }}

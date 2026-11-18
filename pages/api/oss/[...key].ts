@@ -35,7 +35,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 会触发下载，所以 inline=1 时由我们把字节流回去并改成 inline。
     if (req.query.inline === "1") {
       const { url } = await ossClient.sign({ objectKey, expiresIn: 600 });
-      const upstream = await fetch(url);
+      const headers: Record<string, string> = {"Accept-Encoding": "identity"};
+      if (typeof req.headers.range === "string") headers.Range = req.headers.range;
+      if (typeof req.headers["if-range"] === "string") headers["If-Range"] = req.headers["if-range"];
+      const upstream = await fetch(url, {headers});
+      if (upstream.status === 416) {
+        const range = upstream.headers.get("content-range");
+        if (range) res.setHeader("Content-Range", range);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(416).end();
+      }
       if (!upstream.ok || !upstream.body) {
         return res.status(502).json({ error: "Failed to fetch file" });
       }
@@ -45,6 +54,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.setHeader("Content-Type", contentType || "application/octet-stream");
       res.setHeader("Content-Disposition", "inline");
       res.setHeader("Cache-Control", "private, no-store");
+      for (const name of ["content-length", "content-range", "accept-ranges"]) {
+        const value = upstream.headers.get(name);
+        if (value) res.setHeader(name, value);
+      }
+      res.status(upstream.status);
       Readable.fromWeb(upstream.body).pipe(res);
       return;
     }
