@@ -2,6 +2,7 @@
 import { workspaceUrl } from "@/lib/workspaceBrowser";
 
 import { attachmentPreviewUrl } from "@/lib/sessionAttachments";
+import { downloadPreviewMedia } from "@/lib/downloadPreviewMedia";
 import DxfPreview from "./DxfPreview";
 import { Download, ExternalLink, LoaderCircle, X } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -36,6 +37,8 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
   const [loading, setLoading] = useState(resource.kind === "url");
   const [embedWarning, setEmbedWarning] = useState(false);
   const [mediaError, setMediaError] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [panelWidth, setPanelWidth] = useState<number | null>(null);
@@ -55,6 +58,7 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
     setEmbedWarning(false);
     setImageError(false);
     setMediaError(false);
+    setDownloadError(false);
   }, [resource, attempt]);
 
   useEffect(() => {
@@ -170,7 +174,20 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
                 <video key={embedUrl} aria-label={resource.filename || t("videoPreview")} className="max-h-full w-full min-h-0" controls playsInline preload="metadata" src={embedUrl} onError={() => setMediaError(true)} />
               )}
               {mediaError && <p role="alert" className="text-sm text-muted-foreground">{t("mediaLoadFailed")}</p>}
-              <Button asChild variant="outline"><a href={workspaceUrl(resource.url)} download={resource.filename}>{t("downloadMedia")}</a></Button>
+              <Button type="button" variant="outline" disabled={downloading} onClick={async () => {
+                setDownloading(true);
+                setDownloadError(false);
+                try {
+                  let downloadUrl = resource.url;
+                  const parsed = new URL(downloadUrl, window.location.origin);
+                  if (parsed.protocol === "https:" && parsed.hostname.endsWith(".cos.ap-shanghai.myqcloud.com") && parsed.pathname.startsWith("/skill-artifacts/")) {
+                    downloadUrl = `/api/oss${parsed.pathname}`;
+                  }
+                  await downloadPreviewMedia(workspaceUrl(attachmentPreviewUrl(downloadUrl)), resource.filename || decodeURIComponent(parsed.pathname.split("/").pop() || "download"));
+                } catch { setDownloadError(true); }
+                finally { setDownloading(false); }
+              }}>{downloading ? t("mediaDownloading") : t("downloadMedia")}</Button>
+              {downloadError && <p role="alert" className="text-sm text-destructive">{t("mediaDownloadFailed")}</p>}
             </div>
           ) : resource.kind === "dxf" ? <DxfPreview key={resource.url} url={resource.url} /> : resource.kind === "image" ? (
             imageError ? (

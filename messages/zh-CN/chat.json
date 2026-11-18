@@ -167,5 +167,7 @@
   "audioPreview": "音频预览",
   "videoPreview": "视频预览",
   "mediaLoadFailed": "无法播放此文件，请下载后查看。",
-  "downloadMedia": "下载原文件"
+  "downloadMedia": "下载原文件",
+  "mediaDownloading": "下载中…",
+  "mediaDownloadFailed": "下载失败，请重试。"
 }

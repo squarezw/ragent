@@ -167,5 +167,7 @@
   "audioPreview": "Audio preview",
   "videoPreview": "Video preview",
   "mediaLoadFailed": "Unable to play this file. Download it to view it locally.",
-  "downloadMedia": "Download original file"
+  "downloadMedia": "Download original file",
+  "mediaDownloading": "Downloading…",
+  "mediaDownloadFailed": "Download failed. Please try again."
 }
