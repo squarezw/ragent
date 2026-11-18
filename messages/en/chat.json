@@ -163,5 +163,9 @@
   "runReconnecting": "Connection interrupted. Work continues in the background; reconnecting…",
   "runStopping": "Stopping safely…",
   "runRunning": "Running in the background.",
-  "runStopRetry": "Retry stop"
+  "runStopRetry": "Retry stop",
+  "audioPreview": "Audio preview",
+  "videoPreview": "Video preview",
+  "mediaLoadFailed": "Unable to play this file. Download it to view it locally.",
+  "downloadMedia": "Download original file"
 }
