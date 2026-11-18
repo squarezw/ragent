@@ -27,6 +27,7 @@ export const workspaceProxyRoutes = [
   "/api/v1/skills/[id]/submit-review",
   "/api/v1/skills/[id]/asset-content",
   "/api/v1/skills/[id]/exec-config",
+  "/api/v1/skills/[id]/login-state",
   "/api/v1/skills/[id]",
   "/api/v1/skills/[id]/tenant",
   "/api/v1/skills/[id]/user-env/meta",
