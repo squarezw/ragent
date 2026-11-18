@@ -203,6 +203,12 @@ test("actual runtime configuration dirty marker covers every unsaved config inpu
   visit(source);
   assert.ok(expression);
   const base = {
+    backend: "local",
+    environmentId: "",
+    remoteTimeout: "120",
+    remoteExclusions: "*.tmp",
+    loginEnabled: false,
+    loginDeclaration: JSON.stringify({env: {}, paths: []}, null, 2),
     image: "python:tag",
     selection: { value: "python:tag" },
     timeout: "120",
@@ -221,6 +227,8 @@ test("actual runtime configuration dirty marker covers every unsaved config inpu
   };
   assert.equal(vm.runInNewContext(expression, base), false);
   for (const change of [
+    { loginEnabled: true },
+    { loginDeclaration: JSON.stringify({env: {WHOBOT_AGENT_CLI_HOME: ".whobot-cli"}, paths: []}) },
     { image: "other" },
     { timeout: "121" },
     { needsNetwork: true },

@@ -67,6 +67,7 @@ export interface SkillExecConfigSummary {
   image_enabled: boolean;
   timeout_sec: number;
   writable_subdirs: string[];
+  login_state?: import("./skill").SkillLoginState;
   /** 只管要不要出网；false = 容器完全禁网（--network none） */
   needs_network: boolean;
   warm_pool: boolean;

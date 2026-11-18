@@ -408,5 +408,20 @@
   "execRemoteRevisionLabel": "环境版本",
   "execRemoteTimeoutHint": "执行超时为 1–{max} 秒。",
   "execRemoteStateHint": "远程运行完成后回传产物并释放实例，暂不支持持久化目录。",
-  "execRemoteStateConfirm": "我确认保存远程配置将移除本地持久化目录设置；已有目录内容不会迁移。切回本地前仍保留本页输入。"
+  "execRemoteStateConfirm": "我确认保存远程配置将移除本地持久化目录设置；已有目录内容不会迁移。切回本地前仍保留本页输入。",
+  "execLoginState": "保留登录状态",
+  "execLoginHint": "同一用户跨会话复用登录，按租户和技能隔离。保存并发布后生效。",
+  "execLoginMissing": "技能尚未声明登录状态配置，由技能作者在高级设置中配置或随技能包导入。",
+  "execLoginRemote": "远程沙箱暂不支持保留登录状态。",
+  "execLoginClear": "清除我的登录状态",
+  "execLoginClearConfirm": "确认清除此技能中你自己的登录状态？之后需要重新登录。",
+  "execLoginCleared": "已清除登录状态",
+  "execLoginClearFailed": "清除失败，请稍后重试。",
+  "execAdvanced": "高级设置",
+  "execLoginDeclaration": "登录状态声明",
+  "execLoginDeclarationHint": "由技能作者配置。env 将状态环境变量映射到隔离目录；paths 支持 .lark-cli。技能包可通过 ragent.json 携带声明。",
+  "execLoginInvalid": "请输入有效的 env 和 paths 声明。",
+  "importLoginState": "此技能声明需要保留登录状态。导入后可在运行配置中确认开启。",
+  "execLoginPersonalHint": "登录状态仅属于当前租户中的你，清除后需重新登录。",
+  "execLoginPoolHint": "保留登录状态时使用独立容器执行，暂不使用预热池。"
 }

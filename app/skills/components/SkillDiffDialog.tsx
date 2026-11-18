@@ -151,6 +151,11 @@ function ExecConfigColumn({
       value: t("execTimeoutValue", { seconds: config.timeout_sec }),
     },
     {
+      field: "login_state",
+      label: t("execLoginState"),
+      value: <span>{config.login_state?.enabled ? t("execEnabled") : t("execDisabled")}<code className="block whitespace-pre-wrap">{JSON.stringify({env: config.login_state?.env ?? {}, paths: config.login_state?.paths ?? []})}</code></span>,
+    },
+    {
       field: "writable_subdirs",
       label: t("execWritableSubdirs"),
       value: config.writable_subdirs.length > 0 ? config.writable_subdirs.join(", ") : "-",
