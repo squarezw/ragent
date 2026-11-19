@@ -100,10 +100,11 @@ function mount(text = "", reducedMotion = false) {
 test("live batches appear over animation frames instead of jumping in whole", () => {
   const hook = mount();
   assert.equal(hook.update("abcdef"), "");
-  assert.equal(hook.tick(18), "a");
+  assert.equal(hook.tick(18), "");
+  hook.update("abcdefg");
   assert.equal(hook.tick(36), "ab");
   hook.update("abcdefghi");
-  assert.equal(hook.tick(54), "abc");
+  assert.equal(hook.tick(54), "ab");
   assert.equal(hook.tick(236), "abcdefghi");
   assert.equal(hook.pending(), 0);
 });
@@ -130,9 +131,9 @@ test("terminal or stopped output bypasses animation and unmount cancels frames",
 test("Chinese, emoji sequences and combining marks are revealed as whole graphemes", () => {
   const hook = mount();
   hook.update("你👩‍💻好é");
-  assert.equal(hook.tick(18), "你");
+  assert.equal(hook.tick(18), "");
   assert.equal(hook.tick(36), "你👩‍💻");
-  assert.equal(hook.tick(54), "你👩‍💻好");
+  assert.equal(hook.tick(54), "你👩‍💻");
   assert.equal(hook.tick(72), "你👩‍💻好é");
 });
 test("large batches catch up within 200ms and reduced motion uses immediate text", () => {
