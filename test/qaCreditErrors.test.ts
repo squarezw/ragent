@@ -96,9 +96,23 @@ for (const [code, expected] of [
   }
 }
 
-test("unknown conflicts do not become known credit states; 402 stays insufficient balance", () => {
+test("unknown conflicts do not become known credit states; 402 alone does not identify insufficient balance", () => {
   assert.equal(helpers.creditChatCode({ statusCode: 409, code: "OTHER_CONFLICT" }), undefined);
-  assert.equal(helpers.creditChatCode({ statusCode: 402 }), "insufficient_balance");
+  assert.equal(helpers.creditChatCode({ statusCode: 402 }), undefined);
   const error = helpers.makeQaBackendError(503, "<html>gateway</html>") as Error;
   assert.equal(error.message, "External service error (503)");
+});
+
+test("admission errors translate known codes and preserve other business and system messages", () => {
+  const t = Object.assign(() => "Translated credit notice", {
+    has: (key: string) => key === "admissionErrors.INSUFFICIENT_BALANCE",
+  });
+  for (const [status, type, code, expected] of [
+    [402, "business", "INSUFFICIENT_BALANCE", "Translated credit notice"],
+    [402, "business", "PLAN_REQUIRED", "Server message"],
+    [503, "system", "CAPACITY", "Server message"],
+  ]) {
+    const detail = { type, code, message: "Server message" };
+    assert.equal(helpers.chatAdmissionNotice({ response: { status, data: { detail } } }, t), expected);
+  }
 });

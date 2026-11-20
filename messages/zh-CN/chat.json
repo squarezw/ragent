@@ -109,7 +109,7 @@
   "tokenCalls": "{count} 次模型调用",
   "tokenPartialMark": "（部分）",
   "tokenCached": "缓存命中 {count}",
-  "insufficientBalance": "余额不足，请联系管理员为本租户充值后继续。",
+  "insufficientBalance": "可用积分不足，本次消息未能发送。请联系管理员补充积分后再试。",
   "activityRunning": "执行中",
   "activityDone": "已完成",
   "resourcePreview": "资源预览",
@@ -169,5 +169,10 @@
   "mediaLoadFailed": "无法播放此文件，请下载后查看。",
   "downloadMedia": "下载原文件",
   "mediaDownloading": "下载中…",
-  "mediaDownloadFailed": "下载失败，请重试。"
+  "mediaDownloadFailed": "下载失败，请重试。",
+  "admissionErrors": {
+    "INSUFFICIENT_BALANCE": "可用积分不足，本次消息未能发送。请联系管理员补充积分后再试。",
+    "USER_CREDIT_ACCOUNT_BUSY": "你的个人积分账户已有对话正在进行，请等待该对话结束后再试。",
+    "USER_CREDIT_RECONCILIATION_REQUIRED": "上一次对话的积分结算尚未确认，请联系管理员核对后恢复使用。"
+  }
 }

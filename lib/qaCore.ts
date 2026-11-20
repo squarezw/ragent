@@ -3,17 +3,6 @@ import axios from "@/lib/axios";
 import { closeQaReader, forwardQaStream } from "@/lib/qaCancellation";
 import { creditChatCode, makeQaBackendError } from "@/lib/qaBusinessError";
 
-/**
- * 402 余额不足。两条路径（流式 fetch / 非流式 axios）把状态码放在不同位置，
- * 所以两边都认 —— 只认一处的话，另一条路径上的用户会看到一句技术错误。
- */
-function isInsufficientBalance(error: {
-  statusCode?: number;
-  response?: { status?: number };
-}): boolean {
-  return error?.statusCode === 402 || error?.response?.status === 402;
-}
-
 export async function runQA(
   params: any,
   req?: any,
@@ -254,9 +243,7 @@ export async function runQA(
 
       // 402 余额不足：把后端写给用户的那句话原样抛出，不加包装
       if (completionRes.status === 402) {
-        const err = new Error(completionRes.data?.detail || "余额不足 (insufficient balance)");
-        (err as Error & { statusCode?: number }).statusCode = 402;
-        throw err;
+        throw makeQaBackendError(402, completionRes.data);
       }
 
       // 检查响应状态码
@@ -337,8 +324,8 @@ export async function runQA(
       // 402 排在最前且**原样透出**：这条是写给用户看的（「余额不足」），
       // 不是给运维看的。下面每个分支都会给它套一层前缀，而任何一层前缀都会
       // 把「你需要充值」变成「系统出错了」—— 用户的下一步动作完全不同。
-      if (isInsufficientBalance(error)) {
-        callbacks.onError(new Error(error.message));
+      if (backendStatus === 402) {
+        callbacks.onError(error);
       } else if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {
         const errorMsg = `External service connection failed: ${error.message}. Please check if the Python backend service is running.`;
         callbacks.onError(new Error(errorMsg));
@@ -360,7 +347,7 @@ export async function runQA(
     }
 
     // 非流式请求的错误处理
-    if (isInsufficientBalance(error)) {
+    if (backendStatus === 402) {
       throw error;
     }
     if (error.code === "ECONNRESET" || error.code === "ECONNREFUSED") {

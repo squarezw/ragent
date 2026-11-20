@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { terminalRun, chatRunFailureNotice } from "../../lib/chatRun.ts";
+import { chatAdmissionNotice } from "../../lib/qaBusinessError.ts";
+import { terminalRun, chatRunFailureNotice, chatRunErrorMessageKey } from "../../lib/chatRun.ts";
 import { parseKnowledgeWriteConfirmation } from "../../lib/knowledgeWrite.ts";
 import type { ChatRunSnapshot } from "../../types/chat-run.ts";
 interface Node {
@@ -28,6 +29,7 @@ export const run = (patch: Partial<ChatRunSnapshot> = {}): ChatRunSnapshot => ({
 });
 export function mount(
   options: {
+    startError?: unknown;
     active?: ChatRunSnapshot[];
     search?: string;
     remembered?: Record<string, string>;
@@ -89,7 +91,7 @@ export function mount(
   const setAttachments = no;
   const scrollToBottom = no;
   const focusRef = { current: null };
-  const translator = (key: string) => key;
+  const translator = Object.assign((key: string) => key, { has: (key: string) => key === "admissionErrors.INSUFFICIENT_BALANCE" });
   const useRun = {
     setChatId: no,
     connection: "connected",
@@ -99,6 +101,7 @@ export function mount(
     },
     start: async () => {
       calls.starts++;
+      if (options.startError) throw options.startError;
       return run();
     },
     stop: async () => {
@@ -132,7 +135,8 @@ export function mount(
     "@/hooks/useChatSession": { useChatSession: () => ({ sendFeedback: no }) },
     "@/app/components/WorkspaceProvider": { useWorkspace: () => ({ ready: true }) },
     "@/hooks/useCurrentUser": { useCurrentUser: () => ({ user: { id: actor } }) },
-    "@/lib/chatRun": { terminalRun, chatRunFailureNotice },
+    "@/lib/qaBusinessError": { chatAdmissionNotice },
+    "@/lib/chatRun": { terminalRun, chatRunFailureNotice, chatRunErrorMessageKey },
     "@/lib/chatSse": { parseWorkspaceBindingWarning: () => null },
     "@/lib/knowledgeWrite": { parseKnowledgeWriteConfirmation },
     "@/types/token-usage": { normalizeTurnUsage: (value: any) => value },

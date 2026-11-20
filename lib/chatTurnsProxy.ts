@@ -10,14 +10,16 @@ export async function proxyChatTurn(
 ) {
   res.setHeader("Cache-Control", "private, no-store");
   const method = action === "start" || action === "stop" ? "POST" : "GET";
+  const reject = (status: number, type: "business" | "system", code: string, message: string) =>
+    res.status(status).json({ detail: { type, code, message } });
   if (req.method !== method) {
     res.setHeader("Allow", method);
-    return res.status(405).end();
+    return reject(405, "business", "METHOD_NOT_ALLOWED", "Method not allowed");
   }
-  if (!getUserIdFromRequest(req)) return res.status(401).json({ detail: "Unauthorized" });
+  if (!getUserIdFromRequest(req)) return reject(401, "business", "AUTH_REQUIRED", "Sign in to continue");
   const tenant = req.headers["x-workspace-tenant-id"];
   if (typeof tenant !== "string" || !/^[1-9]\d*$/.test(tenant))
-    return res.status(409).json({ detail: { code: "WORKSPACE_TENANT_REQUIRED" } });
+    return reject(409, "business", "WORKSPACE_TENANT_REQUIRED", "Select a workspace to continue");
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Workspace-Tenant-ID": tenant,
@@ -26,7 +28,7 @@ export async function proxyChatTurn(
     headers.Authorization = req.headers.authorization;
   else if (typeof req.headers["x-api-key"] === "string")
     headers["X-API-Key"] = req.headers["x-api-key"];
-  else return res.status(401).json({ detail: "Unauthorized" });
+  else return reject(401, "business", "AUTH_REQUIRED", "Sign in to continue");
   const id = req.query.id;
   if (
     !["start", "current"].includes(action) &&
@@ -62,7 +64,7 @@ export async function proxyChatTurn(
       enableWebSearch,
     } = req.body ?? {};
     if (typeof question !== "string" || !question.trim())
-      return res.status(400).json({ detail: "Missing question" });
+      return reject(400, "business", "MISSING_QUESTION", "Enter a question");
     // Preserve the old QA attachment manifest and inline text alongside authorized upload receipts.
     const messages: { role: string; content: string }[] = [];
     if (Array.isArray(attachments) && attachments.length) {
@@ -118,7 +120,7 @@ export async function proxyChatTurn(
       }
     );
     if (!upstream.ok || action !== "events") {
-      const data = await upstream.json().catch(() => ({ detail: "Chat service unavailable" }));
+      const data = await upstream.json().catch(() => ({ detail: { type: "system", code: "CHAT_GATEWAY_UNAVAILABLE", message: "Chat service unavailable" } }));
       return res.status(upstream.status).json(data);
     }
     if (!upstream.body) return res.status(502).json({ detail: "Missing subscription" });
@@ -140,7 +142,7 @@ export async function proxyChatTurn(
   } catch {
     if (subscription?.signal.aborted || res.destroyed || res.writableEnded) return;
     if (res.headersSent) res.end();
-    else res.status(502).json({ detail: "Chat service unavailable" });
+    else reject(502, "system", "CHAT_GATEWAY_UNAVAILABLE", "Chat service unavailable");
   } finally {
     if (timeout) clearTimeout(timeout);
     subscription?.dispose();
