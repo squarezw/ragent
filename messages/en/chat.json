@@ -109,7 +109,7 @@
   "tokenCalls": "{count} model calls",
   "tokenPartialMark": " (partial)",
   "tokenCached": "{count} cached",
-  "insufficientBalance": "Insufficient balance. Ask an administrator to add credits to continue.",
+  "insufficientBalance": "Insufficient credits to start this reply. Ask your administrator to add credits, then try again.",
   "activityRunning": "Working",
   "activityDone": "Done",
   "resourcePreview": "Resource preview",
@@ -169,5 +169,10 @@
   "mediaLoadFailed": "Unable to play this file. Download it to view it locally.",
   "downloadMedia": "Download original file",
   "mediaDownloading": "Downloading…",
-  "mediaDownloadFailed": "Download failed. Please try again."
+  "mediaDownloadFailed": "Download failed. Please try again.",
+  "admissionErrors": {
+    "INSUFFICIENT_BALANCE": "Insufficient credits to start this reply. Ask your administrator to add credits, then try again.",
+    "USER_CREDIT_ACCOUNT_BUSY": "Your personal credit account already has a conversation in progress. Wait for it to finish, then try again.",
+    "USER_CREDIT_RECONCILIATION_REQUIRED": "The previous conversation’s credit settlement is not confirmed. Contact an administrator to reconcile it and restore access."
+  }
 }

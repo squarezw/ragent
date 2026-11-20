@@ -152,3 +152,13 @@ test("cancelled and successful runs never inherit a failed error notice", async 
     assert.equal(page.find("MessageList")?.props.messages.at(-1).error, undefined);
   }
 });
+
+test("a plain HTTP 402 stays visible in the conversation as a credit error", async () => {
+  const page = mount({ startError: { response: { status: 402, data: { detail: "余额不足" } } } });
+  await page.settle();
+  page.find("WelcomeView")!.props.onInputChange("hi");
+  page.render();
+  await page.find("WelcomeView")!.props.onSend();
+  page.render();
+  assert.equal(page.find("MessageList")!.props.messages.at(-1).error, "insufficientBalance");
+});

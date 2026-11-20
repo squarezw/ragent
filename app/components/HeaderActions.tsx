@@ -1,8 +1,9 @@
 "use client";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useMyCreditAccount } from "@/hooks/useBilling";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Bell, RefreshCw } from "lucide-react";
+import { Bell, RefreshCw, Wallet } from "lucide-react";
 import TenantSwitcher from "./TenantSwitcher";
 import LocaleSwitcher from "@/components/LocaleSwitcher";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -16,8 +17,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { checkSuperAdmin, checkTenantAdmin } from "@/lib/clientPermissions";
 
+function HeaderCreditBalance() {
+  const { account, error } = useMyCreditAccount();
+  const t = useTranslations("user");
+  const balance = error || account?.source === "none" ? null : account?.balance;
+  const label = t(error ? "creditBalanceLoadFailed" : "creditMyBalance");
+  return (
+    <span
+      title={label}
+      className={`inline-flex items-center gap-1 whitespace-nowrap text-xs tabular-nums ${balance != null && balance < 100 ? "text-destructive" : "text-muted-foreground"}`}
+    >
+      <Wallet aria-hidden="true" className="h-3.5 w-3.5" />
+      <span className="sr-only">{label} </span>
+      {balance?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "—"}
+    </span>
+  );
+}
+
 export default function HeaderActions() {
   const t = useTranslations("navigation");
+  const pathname = usePathname();
   const router = useRouter();
   const { user } = useCurrentUser();
 
@@ -31,6 +50,7 @@ export default function HeaderActions() {
 
   return (
     <div className="flex items-center gap-4">
+      {(pathname === "/" || pathname === "/chat") && user && <HeaderCreditBalance />}
       <TenantSwitcher />
       {canReviewQueue && (
         <DropdownMenu>

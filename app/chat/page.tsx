@@ -17,6 +17,7 @@ import { useChatHistory } from "@/hooks/useChatHistory";
 import { useChatSegments } from "@/hooks/useChatSegments";
 import { useChatRun, chatRunStorageKey } from "@/hooks/useChatRun";
 import { useStreamingText } from "@/hooks/useStreamingText";
+import { chatAdmissionNotice } from "@/lib/qaBusinessError";
 import { terminalRun, chatRunFailureNotice } from "@/lib/chatRun";
 import type { ChatRunSnapshot } from "@/types/chat-run";
 import { parseKnowledgeWriteConfirmation } from "@/lib/knowledgeWrite";
@@ -405,15 +406,12 @@ export default function ChatPage() {
       // Admission was not retried. Keep the submitted question and let re-entry query its request ID.
       setLoading(false);
       setIsStreaming(false);
-      const code = (error as { response?: { data?: { detail?: { code?: string } } } })?.response
-        ?.data?.detail?.code;
-      toast.error(
-        code === "insufficient_balance"
-          ? t("insufficientBalance")
-          : code === "user_credit_account_busy"
-            ? t("creditAccountBusy")
-            : t("runStartFailed")
-      );
+      const message = chatAdmissionNotice(error, t);
+      if (message) {
+        setMessages(previous => [...previous, { role: "assistant", content: "", error: message }]);
+      } else {
+        toast.error(t("runStartFailed"));
+      }
     }
     focusInput();
   };
