@@ -175,6 +175,8 @@ export default function SkillEditor({
       computeUnpublishedChanges(skill.content, skill.published_content) ||
       computeUnpublishedChanges(content, skill.published_content));
 
+  const canChooseDept = !readOnly && (isSuperAdmin || isTenantAdmin);
+
   const payload = useMemo<SkillPayload>(
     () => ({
       name: name.trim(),
@@ -186,12 +188,13 @@ export default function SkillEditor({
         tools: requiresTools,
       },
       visibility,
-      // 只在真的选了部门时才带上：不带 = 让后端保持原样（编辑）或落成作者部门（新建）。
-      // 带一个 null 上去会被理解成"清空归属部门"，那是另一个意思。
-      ...(ownerDeptId != null ? { owner_dept_id: ownerDeptId } : {}),
+      // 只有有权修改且实际更改了部门才发送；省略时后端保留原值或采用作者部门。
+      ...(canChooseDept && ownerDeptId != null && ownerDeptId !== skill?.owner_dept_id
+        ? { owner_dept_id: ownerDeptId }
+        : {}),
     }),
     [name, displayName, category, description, content, requiresTools, visibility,
-     ownerDeptId]
+     ownerDeptId, canChooseDept, skill?.owner_dept_id]
   );
 
   // 谁能改归属部门：超管与租户管理员。部门管理员按 2026-08-20 的裁定只看不改，
@@ -200,8 +203,6 @@ export default function SkillEditor({
   const { user: currentUser } = useCurrentUser();
   const workspace = useWorkspace();
   const currentUserTenantId = workspace.enabled ? workspace.tenant?.id ?? null : currentUser?.tenant_id ?? null;
-
-  const canChooseDept = !readOnly && (isSuperAdmin || isTenantAdmin);
 
   // 只列该 skill 所属租户的部门。列全部的话，超管会在一个属于租户 A 的 skill 上
   // 选到租户 B 的部门 —— 那是一条跨租户的悬空归属，后端会拒，但用户不知道为什么。
