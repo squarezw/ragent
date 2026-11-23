@@ -7,7 +7,6 @@
   "voiceChatTools": "Chat tools",
   "voiceSecureMicrophone": "Microphone access requires a supported browser on HTTPS or localhost. Allow microphone access to start.",
   "sendMessage": "Send message",
-  "voiceInterrupted": "Playback stopped here",
   "voiceFinishDictation": "Finish dictation",
   "voicePlaybackFailed": "Speech playback failed. The reply is available in the conversation.",
   "voiceNoLocalVoice": "No local voice is available for this language. Install a system voice or select remote synthesis in settings.",

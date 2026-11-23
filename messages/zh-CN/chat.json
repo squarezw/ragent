@@ -7,7 +7,6 @@
   "voiceChatTools": "聊天工具",
   "voiceSecureMicrophone": "浏览器无法使用麦克风。请使用 HTTPS 或本机 localhost，并允许麦克风访问。",
   "sendMessage": "发送",
-  "voiceInterrupted": "朗读到这里",
   "voiceFinishDictation": "结束听写",
   "voicePlaybackFailed": "语音播放失败，回复文字保存在会话中。",
   "voiceNoLocalVoice": "设备缺少当前语言的本地音色，可安装系统语音或在系统设置选择远程合成。",

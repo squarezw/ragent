@@ -26,6 +26,7 @@ interface Session {
 }
 
 export function useVoiceConversation(options: Options) {
+  const meterRef = useRef<HTMLButtonElement>(null);
   const callbacks = useRef(options);
   callbacks.current = options;
   const current = useRef<Session | null>(null);
@@ -145,6 +146,7 @@ export function useVoiceConversation(options: Options) {
       node.port.onmessage = ({ data }: MessageEvent<Float32Array>) => {
         if (session.muted || session.abort.signal.aborted) return;
         const capture = session.detector.push(data, callbacks.current.awaitingReply() || !!session.playback?.pendingAudio);
+        meterRef.current?.style.setProperty("--level", session.detector.meterLevel.toFixed(2));
         if (capture === "start") {
           session.hearing = true;
           setHearing(true);
@@ -172,6 +174,7 @@ export function useVoiceConversation(options: Options) {
     if (!session) return;
     session.muted = !session.muted;
     session.stream?.getAudioTracks().forEach(track => { track.enabled = !session.muted; });
+    meterRef.current?.style.removeProperty("--level");
     session.detector.reset();
     session.hearing = false;
     if (session.muted) {
@@ -187,5 +190,5 @@ export function useVoiceConversation(options: Options) {
   const update = useCallback((id: string, answer: string, done: boolean) => {
     current.current?.playback?.update(id, answer, done);
   }, []);
-  return { active, ready, muted, hearing, speaking, preparing, transcribing, enter, exit, interrupt, toggleMute, update };
+  return { meterRef, active, ready, muted, hearing, speaking, preparing, transcribing, enter, exit, interrupt, toggleMute, update };
 }

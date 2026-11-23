@@ -48,6 +48,7 @@ export class SpeechDetector {
   private silent = 0;
   private duration = 0;
   private attackGap = 0;
+  meterLevel = 0;
   private floor = 0.003;
   constructor(private rate: number) {}
 
@@ -61,6 +62,9 @@ export class SpeechDetector {
     let energy = 0;
     for (const amplitude of frame) energy += amplitude * amplitude;
     const level = Math.sqrt(energy / frame.length);
+    // Normalize RMS above the ambient floor for the visual meter only.
+    const aboveFloor = Math.max(0, level - Math.max(.007, this.floor * 1.4));
+    this.meterLevel = Math.min(1, Math.log1p(aboveFloor * 35) / Math.log1p(7));
     const seconds = frame.length / this.rate;
     const threshold = Math.max(interrupting ? 0.04 : 0.011, this.floor * (interrupting ? 4 : 2.6));
     const voiced = level > threshold;

@@ -140,7 +140,6 @@ export default function MessageList({
                       <div className="mt-1 text-xs text-muted-foreground">{t("voiceUnread")}</div>
                     </> : <>
                       {spokenText(Array.from(msg.content).slice(0, msg.heardChars).join(""))}
-                      <div className="my-1 text-xs text-muted-foreground">{t("voiceInterrupted")}</div>
                       <span className="text-muted-foreground">{spokenText(Array.from(msg.content).slice(msg.heardChars).join(""))}</span>
                     </>}
                   </div> : <MarkdownRenderer

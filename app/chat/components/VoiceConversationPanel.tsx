@@ -1,5 +1,6 @@
 "use client";
 
+import styles from "./VoiceConversationPanel.module.css";
 import { ArrowUp, Mic, MicOff, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
@@ -21,7 +22,9 @@ export function VoiceConversationPanel({ voice, busy, input, setInput, send, con
     <div className="flex flex-1 min-h-0 flex-col items-center justify-end gap-3 overflow-y-auto pb-6 sm:justify-center">
       <button type="button" onClick={voice.interrupt} disabled={!busy && !voice.speaking}
         aria-label={t("voiceInterrupt")} title={t("voiceInterrupt")}
-        className={`voice-orb relative size-24 shrink-0 overflow-hidden rounded-full sm:size-32 ${voice.speaking || voice.hearing ? "voice-orb-active" : ""}`} />
+        ref={voice.meterRef} className={styles.wave} data-phase={label}>
+        {[0, 1, 2, 3, 4, 5, 6].map(index => <span key={index} aria-hidden="true" className={styles.bar} />)}
+      </button>
       <span role="status" className="text-xs font-medium text-muted-foreground">{t(label)}</span>
       {confirmations}
     </div>
@@ -42,11 +45,5 @@ export function VoiceConversationPanel({ voice, busy, input, setInput, send, con
       <button type="button" onClick={voice.exit} aria-label={t("voiceExit")}
         className="flex size-12 shrink-0 items-center justify-center rounded-full bg-foreground text-background"><X size={21}/></button>
     </div>
-    <style jsx>{`
-      .voice-orb { background: radial-gradient(ellipse at 24% 25%, #e4faff 3%, transparent 50%), radial-gradient(ellipse at 85% 75%, #4caaff 2%, transparent 55%), linear-gradient(135deg,#b5edff 18%,#b9dcfa 45%,#368abf 65%,#0077c8 90%); box-shadow: inset 0 0 20px #ffffff88; }
-      .voice-orb-active { animation: voice-breathe 1.5s ease-in-out infinite alternate; }
-      @keyframes voice-breathe { from { transform: scale(.94); } to { transform: scale(1.06); } }
-      @media (prefers-reduced-motion: reduce) { .voice-orb-active { animation: none; } }
-    `}</style>
   </section>;
 }
