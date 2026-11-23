@@ -13,8 +13,11 @@ const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf8");
  * 不会报任何错 —— 只会让用户看到一个已经不对的版本号，而这种错没人会去核对。
  */
 
-test("界面徽标读 package.json，不写死版本号", () => {
-  const src = read("app/components/DynamicTitle.tsx");
+test("设置页底部的版本链接读 package.json", () => {
+  assert.doesNotMatch(read("app/components/DynamicTitle.tsx"), /pkg\.version|href="\/about"/);
+  assert.doesNotMatch(read("app/system-settings/page.tsx"), /pkg\.version/);
+  const src = read("app/settings/page.tsx");
+  assert.match(src, /href="\/about"[^>]*>v\{pkg\.version\}/);
   assert.match(src, /import pkg from "\.\.\/\.\.\/package\.json"/);
   assert.match(src, /v\{pkg\.version\}/);
   // 只查 JSX 里渲染出来的内容 —— 注释里提到「原本写死 v0.5.0」是在解释历史，
