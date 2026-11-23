@@ -1,4 +1,5 @@
 "use client";
+import pkg from "../../package.json";
 import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -468,6 +469,9 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+      <footer className="py-2 text-center text-xs text-muted-foreground">
+        <a href="/about" className="hover:underline focus-visible:underline">v{pkg.version}</a>
+      </footer>
     </div>
   );
 }
