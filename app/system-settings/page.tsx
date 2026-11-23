@@ -105,6 +105,7 @@ interface SmtpSettings {
 }
 
 interface SystemSettings {
+  stt_model_mode: "local" | "remote";
   platform_name?: string;
   platform_logo?: string;
   platform_subtitle?: string;
@@ -138,6 +139,7 @@ export default function SystemSettingsPage() {
 
   // 系统设置状态（平台名称、Logo等）
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    stt_model_mode: "local",
     platform_name: "",
     platform_logo: "",
     platform_subtitle: "",
@@ -176,22 +178,17 @@ export default function SystemSettingsPage() {
         });
         if (!active) return;
         if (response.data) {
-          setSystemSettings({
+          const loadedSettings: SystemSettings = {
+            stt_model_mode: response.data.stt_model_mode === "remote" ? "remote" : "local",
             platform_name: response.data.platform_name || "",
             platform_logo: response.data.platform_logo || "",
             platform_subtitle: response.data.platform_subtitle || "",
             login_left_panel_html: response.data.login_left_panel_html || "",
             theme_primary_color: response.data.theme_primary_color || "",
             theme_secondary_color: response.data.theme_secondary_color || "",
-          });
-          setSavedSystemSettings({
-            platform_name: response.data.platform_name || "",
-            platform_logo: response.data.platform_logo || "",
-            platform_subtitle: response.data.platform_subtitle || "",
-            login_left_panel_html: response.data.login_left_panel_html || "",
-            theme_primary_color: response.data.theme_primary_color || "",
-            theme_secondary_color: response.data.theme_secondary_color || "",
-          });
+          };
+          setSystemSettings(loadedSettings);
+          setSavedSystemSettings(loadedSettings);
 
           // 加载 SMTP 配置
           if (response.data.smtp_config) {
@@ -297,6 +294,9 @@ export default function SystemSettingsPage() {
 
     try {
       await axios.put("/api/system", {
+        ...(systemSettings.stt_model_mode !== savedSystemSettings.stt_model_mode
+          ? { stt_model_mode: systemSettings.stt_model_mode }
+          : {}),
         platform_name: systemSettings.platform_name,
         platform_logo: systemSettings.platform_logo,
         platform_subtitle: systemSettings.platform_subtitle,
@@ -304,6 +304,7 @@ export default function SystemSettingsPage() {
         theme_primary_color: systemSettings.theme_primary_color,
       });
       setSavedSystemSettings((previous) => ({ ...previous,
+        stt_model_mode: systemSettings.stt_model_mode,
         platform_name: systemSettings.platform_name, platform_logo: systemSettings.platform_logo,
         platform_subtitle: systemSettings.platform_subtitle, login_left_panel_html: systemSettings.login_left_panel_html,
         theme_primary_color: systemSettings.theme_primary_color,
@@ -544,6 +545,26 @@ export default function SystemSettingsPage() {
                 className="h-8 text-sm"
               />
               <p className="text-xs text-muted-foreground">{t("subtitleTip")}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stt_model_mode" className="text-xs">{t("speechRecognitionModel")}</Label>
+              <select
+                id="stt_model_mode"
+                aria-describedby="stt_model_mode_help"
+                className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={systemSettings.stt_model_mode}
+                onChange={(event) => {
+                  const stt_model_mode = event.target.value === "remote" ? "remote" : "local";
+                  setSystemSettings((previous) => ({ ...previous, stt_model_mode }));
+                }}
+              >
+                <option value="local">{t("speechModelLocal")}</option>
+                <option value="remote">{t("speechModelRemote")}</option>
+              </select>
+              <p id="stt_model_mode_help" className="text-xs text-muted-foreground">
+                {systemSettings.stt_model_mode === "remote" ? t("speechModelRemoteHint") : t("speechModelLocalHint")}
+              </p>
             </div>
 
             {systemError && (

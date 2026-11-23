@@ -12,6 +12,7 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
     true,
     ts.ScriptKind.TSX
   );
+  let mode: unknown;
   let callback = "";
   function visit(node: ts.Node) {
     if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect")
@@ -45,7 +46,8 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
           return response;
         },
       },
-      setSystemSettings: () => {
+      setSystemSettings: (settings: { stt_model_mode: string }) => {
+        mode = settings.stt_model_mode;
         updates++;
       },
       setSmtpSettings: () => {
@@ -64,6 +66,9 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
     resolve,
     get requests() {
       return requests;
+    },
+    get mode() {
+      return mode;
     },
     get updates() {
       return updates;
@@ -93,4 +98,17 @@ test("actual administrator settings effect loads once but ignores response after
   revoked.resolve({ data: { platform_name: "Fixture" } });
   await new Promise((done) => setImmediate(done));
   assert.equal(revoked.updates, 0);
+});
+
+test("administrator loads remote speech recognition and legacy settings default to local", async () => {
+  for (const [data, expected] of [
+    [{ stt_model_mode: "remote" }, "remote"],
+    [{ stt_model_mode: "local" }, "local"],
+    [{}, "local"],
+  ] as const) {
+    const h = settingsLoad(false, true);
+    h.resolve({ data });
+    await new Promise((done) => setImmediate(done));
+    assert.equal(h.mode, expected);
+  }
 });
