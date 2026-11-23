@@ -1,0 +1,37 @@
+.wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 112px;
+  height: 72px;
+  flex: none;
+  background: transparent;
+  color: var(--foreground, #27272a);
+}
+.bar {
+  width: 5px;
+  height: 5px;
+  border-radius: 4px;
+  background: currentColor;
+  --peak: 12px;
+}
+.bar:nth-child(2n) { --peak: 24px; --delay: -.25s; }
+.bar:nth-child(3), .bar:nth-child(5) { --peak: 36px; --delay: -.45s; }
+.bar:nth-child(4) { --peak: 48px; --delay: -.1s; }
+.wave[data-phase="voiceSpeaking"] { color: #8861cf; }
+.wave:is([data-phase="voiceThinking"], [data-phase="voiceTranscribing"], [data-phase="voiceMuted"]) { opacity: .55; }
+@media (prefers-reduced-motion: no-preference) {
+  .wave:is([data-phase="voiceListening"], [data-phase="voiceHearing"]) .bar {
+    height: calc(5px + var(--level, 0) * var(--peak));
+    transition: height 85ms ease-out;
+  }
+  .wave[data-phase="voiceSpeaking"] .bar {
+    height: var(--peak);
+    animation: reply .72s ease-in-out var(--delay, 0s) infinite alternate;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wave:is([data-phase="voiceHearing"], [data-phase="voiceSpeaking"]) .bar { height: var(--peak); }
+}
+@keyframes reply { from { transform: scaleY(.4); } to { transform: scaleY(1); } }

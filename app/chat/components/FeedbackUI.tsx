@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import ReadAnswerButton from "./ReadAnswerButton";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { ThumbsUp, ThumbsDown, Download, Copy, Check } from "lucide-react";
@@ -153,6 +154,7 @@ const FeedbackUI: React.FC<FeedbackUIProps> = ({ detailId, sendFeedback, content
           )}
         </Button>
       )}
+      {content && <ReadAnswerButton key={detailId} content={content} />}
       <Button
         size="icon"
         variant="ghost"

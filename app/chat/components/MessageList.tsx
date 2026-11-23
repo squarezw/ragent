@@ -1,4 +1,5 @@
 import React from "react";
+import { spokenText } from "@/lib/voiceDialogue";
 import ToolActivity, { type ToolStep } from "./ToolActivity";
 import { useTranslations } from "next-intl";
 import { Bot, FileSpreadsheet, FileText, FileType } from "lucide-react";
@@ -27,6 +28,8 @@ function getFileIcon(mimetype?: string) {
 }
 
 interface Message {
+  voice?: boolean;
+  heardChars?: number;
   role: "user" | "assistant";
   content: string;
   error?: string;
@@ -43,6 +46,7 @@ interface Message {
 interface MessageListProps {
   messages: Message[];
   streamingMessage: string;
+  streamingVoice?: boolean;
   isStreaming: boolean;
   segments: { [key: number]: any[] };
   segmentsLoading: { [key: number]: boolean };
@@ -64,6 +68,7 @@ interface MessageListProps {
 export default function MessageList({
   messages,
   streamingMessage,
+  streamingVoice,
   isStreaming,
   segments,
   segmentsLoading,
@@ -119,6 +124,8 @@ export default function MessageList({
               </div>
             </div>
           </div>
+        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error ? (
+          <p key={i} className="self-end text-xs text-muted-foreground">{t("voiceInterruptedBeforeReply")}</p>
         ) : (
           <div key={i} className="flex justify-start">
             <div className="flex flex-col items-start gap-2 min-w-0 w-full">
@@ -127,10 +134,18 @@ export default function MessageList({
               </div>
               <div className="py-3 min-w-0 w-full">
                 <div className="break-words">
-                  <MarkdownRenderer
+                  {msg.voice ? <div className="whitespace-pre-wrap">
+                    {msg.heardChars == null ? spokenText(msg.content) : msg.heardChars === 0 ? <>
+                      {spokenText(msg.content)}
+                      <div className="mt-1 text-xs text-muted-foreground">{t("voiceUnread")}</div>
+                    </> : <>
+                      {spokenText(Array.from(msg.content).slice(0, msg.heardChars).join(""))}
+                      <span className="text-muted-foreground">{spokenText(Array.from(msg.content).slice(msg.heardChars).join(""))}</span>
+                    </>}
+                  </div> : <MarkdownRenderer
                     content={msg.content}
                     onPreviewResource={onPreviewResource}
-                  />
+                  />}
                 </div>
                 {msg.error && <p role="alert" className="mt-2 whitespace-pre-wrap break-words text-sm text-destructive">{msg.error}</p>}
                 <ReferencesDisplay
@@ -213,10 +228,10 @@ export default function MessageList({
             </div>
             <div className="py-3 min-w-0 w-full">
               <div className="break-words">
-                <MarkdownRenderer
+                {streamingVoice ? <span className="whitespace-pre-wrap">{spokenText(streamingMessage)}</span> : <MarkdownRenderer
                   content={streamingMessage}
                   onPreviewResource={onPreviewResource}
-                />
+                />}
                 <span className="inline-flex items-center gap-1 ml-1 align-middle">
                   <span className="streaming-dot" />
                   <span className="streaming-dot" />

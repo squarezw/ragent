@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "./ChatComposer.module.css";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -11,6 +13,7 @@ import {
   FileType,
   FileSpreadsheet,
   Mic,
+  AudioLines,
   Loader2,
   Upload,
 } from "lucide-react";
@@ -66,9 +69,11 @@ interface ChatInputCompositeProps {
   orgLoading: boolean;
   // Voice input
   voiceStatus?: "idle" | "recording" | "stopping";
+  voiceLevel?: number;
   voiceSecondsElapsed?: number;
   voiceMaxSeconds?: number;
   sttStatus?: "idle" | "uploading" | "processing" | "completed" | "failed";
+  onVoiceEnter?: () => void;
   onMicClick?: () => void;
   onVoiceStop?: () => void;
   onVoiceCancel?: () => void;
@@ -120,14 +125,17 @@ export default function ChatInputComposite({
   organizedDatasets,
   orgLoading,
   voiceStatus = "idle",
+  voiceLevel = 0,
   voiceSecondsElapsed = 0,
   voiceMaxSeconds = 15,
   sttStatus = "idle",
+  onVoiceEnter,
   onMicClick,
   onVoiceStop,
   onVoiceCancel,
 }: ChatInputCompositeProps) {
   const t = useTranslations("chat");
+  const [mobileTools, setMobileTools] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -206,12 +214,12 @@ export default function ChatInputComposite({
   }, [input, adjustTextareaHeight]);
 
   useEffect(() => {
-    textareaRef.current?.focus();
+    if (!window.matchMedia?.("(pointer: coarse)").matches) textareaRef.current?.focus();
   }, []);
 
   return (
     <div
-      className={`w-full rounded-2xl border bg-card shadow-sm overflow-hidden relative transition-colors ${
+      className={`${styles.composer} border bg-card shadow-sm overflow-hidden relative transition-colors ${
         isDragOver ? "border-primary border-dashed bg-primary/5" : "border-border"
       }`}
       onDragEnter={handleDragEnter}
@@ -230,7 +238,7 @@ export default function ChatInputComposite({
       )}
       {/* File previews */}
       {(attachments.length > 0 || pendingAttachments.length > 0) && (
-        <div className="px-4 pt-3 pb-2 border-b border-border">
+        <div className={`${styles.previews} px-4 pt-3 pb-2 border-b border-border`}>
           <div className="flex flex-wrap gap-2">
             {pendingAttachments.map((attachment) => (
               <div
@@ -267,8 +275,11 @@ export default function ChatInputComposite({
         </div>
       )}
 
+      <button type="button" aria-label={t("voiceChatTools")} aria-expanded={mobileTools}
+        className={styles.mobileToolsButton}
+        onClick={() => setMobileTools(open => !open)}><Plus className="size-5" /></button>
       {/* Textarea */}
-      <div className="px-4 py-3">
+      <div className={styles.draft}>
         <Textarea
           ref={textareaRef}
           value={input}
@@ -278,13 +289,13 @@ export default function ChatInputComposite({
           onPaste={(event) => pasteChatAttachments(event, onFileDrop, onInputChange)}
           placeholder={placeholder || t("inputPlaceholder")}
           disabled={loading || isStreaming}
-          className="min-h-[44px] max-h-[120px] resize-none overflow-y-auto border-0 shadow-none focus-visible:ring-0 p-0 text-base"
+          className="min-h-[44px] max-h-[120px] resize-none overflow-y-auto border-0 shadow-none focus-visible:ring-0 px-0 py-2.5 sm:p-0 text-base"
           style={{ height: "44px" }}
         />
       </div>
 
       {/* Action bar */}
-      <div className="px-3 pb-3 flex items-center gap-1">
+      <div className={styles.toolbar}>
         {/* Left side: attachment + history */}
         <input
           ref={fileInputRef}
@@ -295,6 +306,7 @@ export default function ChatInputComposite({
           className="hidden"
         />
 
+        <div className={styles.tools} data-open={mobileTools}>
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -359,6 +371,7 @@ export default function ChatInputComposite({
           />
         )}
 
+        </div>
         {isStreaming ? (
           <Button onClick={onStop} variant="default" size="icon" className="h-8 w-8 rounded-full">
             <svg
@@ -376,92 +389,34 @@ export default function ChatInputComposite({
               <rect width="14" height="14" x="5" y="5" rx="2"></rect>
             </svg>
           </Button>
-        ) : voiceStatus === "recording" ? (
-          <div className="flex items-center gap-1.5">
-            <TooltipProvider delayDuration={100}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={onVoiceCancel}
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 rounded-full"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{t("voiceRecordingCancel")}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <span className="text-xs text-destructive font-medium tabular-nums min-w-[28px] text-center">
-              {voiceMaxSeconds - voiceSecondsElapsed}s
-            </span>
-            <Button
-              onClick={onVoiceStop}
-              variant="destructive"
-              size="icon"
-              className="h-8 w-8 rounded-full animate-pulse"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect width="14" height="14" x="5" y="5" rx="2"></rect>
-              </svg>
-            </Button>
-          </div>
-        ) : sttStatus === "uploading" || sttStatus === "processing" ? (
-          <Button disabled variant="default" size="icon" className="h-8 w-8 rounded-full">
-            <Loader2 className="w-4 h-4 animate-spin" />
-          </Button>
-        ) : input.trim() ? (
-          <Button
-            onClick={onSend}
-            disabled={loading || uploading}
-            variant="default"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-          >
-            <ArrowUp className="w-4 h-4" />
-          </Button>
-        ) : onMicClick ? (
-          <TooltipProvider delayDuration={100}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={onMicClick}
-                  disabled={loading || uploading}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-full"
-                >
-                  <Mic className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("voiceInput")}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         ) : (
-          <Button
-            onClick={onSend}
-            disabled={loading || uploading || !canSend}
-            variant="default"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-          >
-            <ArrowUp className="w-4 h-4" />
-          </Button>
+          <div className={styles.primaryActions}>
+            {voiceStatus === "recording" ? <>
+              <button type="button" aria-label={t("voiceRecordingCancel")} onClick={onVoiceCancel}
+                className="p-1 text-muted-foreground"><X size={16}/></button>
+              <span className="text-xs tabular-nums">{voiceMaxSeconds - voiceSecondsElapsed}s</span>
+              <Button type="button" size="icon" variant="ghost" aria-label={t("voiceFinishDictation")}
+                className="size-9 rounded-full text-primary" onClick={onVoiceStop}>
+                <AudioLines className="size-5 transition-transform motion-reduce:transform-none" style={{ transform: `scaleY(${0.6 + voiceLevel})` }}/>
+              </Button>
+            </> : <Button type="button" size="icon" variant="ghost" aria-label={t("voiceInput")}
+              title={t("voiceInput")} disabled={!onMicClick || uploading || loading || sttStatus === "processing" || sttStatus === "uploading"}
+              className="size-9 rounded-full" onClick={onMicClick}>
+              {sttStatus === "processing" || sttStatus === "uploading" ? <Loader2 className="size-4 animate-spin"/> : <Mic className="size-4"/>}
+            </Button>}
+            <button
+              type="button"
+              aria-label={t(canSend ? "sendMessage" : "voiceConversation")}
+              title={t(canSend ? "sendMessage" : "voiceConversation")}
+              disabled={loading || uploading || voiceStatus !== "idle" || sttStatus === "processing" || sttStatus === "uploading" || (!canSend && !onVoiceEnter)}
+              className={styles.primaryTrigger}
+              onClick={canSend ? onSend : onVoiceEnter}
+            >
+              <span className={styles.primaryDisc} aria-hidden="true">
+                {canSend ? <ArrowUp size={16} /> : <AudioLines size={16} strokeWidth={2.5} />}
+              </span>
+            </button>
+          </div>
         )}
       </div>
     </div>

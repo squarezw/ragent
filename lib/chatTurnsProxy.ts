@@ -6,10 +6,10 @@ import { chatAttachmentPayload } from "@/lib/sessionAttachments";
 export async function proxyChatTurn(
   req: NextApiRequest,
   res: NextApiResponse,
-  action: "start" | "current" | "snapshot" | "events" | "stop"
+  action: "start" | "current" | "snapshot" | "events" | "stop" | "playback"
 ) {
   res.setHeader("Cache-Control", "private, no-store");
-  const method = action === "start" || action === "stop" ? "POST" : "GET";
+  const method = action === "start" || action === "stop" || action === "playback" ? "POST" : "GET";
   const reject = (status: number, type: "business" | "system", code: string, message: string) =>
     res.status(status).json({ detail: { type, code, message } });
   if (req.method !== method) {
@@ -53,6 +53,7 @@ export async function proxyChatTurn(
         ? "/current"
         : `/${encodeURIComponent(String(id))}${action === "snapshot" ? "" : `/${action}`}`;
   let body: string | undefined;
+  if (action === "playback") body = JSON.stringify({ heard_chars: req.body?.heard_chars });
   if (action === "start") {
     const {
       question,
@@ -101,6 +102,8 @@ export async function proxyChatTurn(
       chat_id,
       app_id,
       enableWebSearch,
+      ...(req.body.interaction_mode === "voice" ? { interaction_mode: "voice" } : {}),
+      ...(req.body.previous_voice_turn ? { previous_voice_turn: req.body.previous_voice_turn } : {}),
       messages,
       ...(datasetId ? { dataset_id: Array.isArray(datasetId) ? datasetId : [datasetId] } : {}),
       ...(Array.isArray(attachments) ? { attachments: chatAttachmentPayload(attachments) } : {}),

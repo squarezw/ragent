@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "./ChatComposer.module.css";
+
 import React from "react";
 import { Bot } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -58,9 +60,11 @@ interface WelcomeViewProps {
   orgLoading: boolean;
   // Voice input
   voiceStatus?: "idle" | "recording" | "stopping";
+  voiceLevel?: number;
   voiceSecondsElapsed?: number;
   voiceMaxSeconds?: number;
   sttStatus?: "idle" | "uploading" | "processing" | "completed" | "failed";
+  onVoiceEnter?: () => void;
   onMicClick?: () => void;
   onVoiceStop?: () => void;
   onVoiceCancel?: () => void;
@@ -94,9 +98,11 @@ export default function WelcomeView({
   organizedDatasets,
   orgLoading,
   voiceStatus,
+  voiceLevel,
   voiceSecondsElapsed,
   voiceMaxSeconds,
   sttStatus,
+  onVoiceEnter,
   onMicClick,
   onVoiceStop,
   onVoiceCancel,
@@ -108,23 +114,23 @@ export default function WelcomeView({
   const username = user?.username || user?.name || "";
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full px-4">
+    <div className={`flex flex-col items-center h-full min-h-0 w-full ${styles.welcome}`}>
       <div className="flex flex-col items-center max-w-3xl w-full">
         {/* AI Icon */}
-        <div className="mb-6">
+        <div className={`${styles.welcomeIntro} mb-6`}>
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
             <Bot className="w-8 h-8 text-primary" />
           </div>
         </div>
 
         {/* Greeting */}
-        <h1 className="text-2xl font-semibold text-foreground mb-8">
+        <h1 className={`${styles.welcomeIntro} text-2xl font-semibold text-foreground mb-8`}>
           {greeting}
           {username && <span className="text-primary">, {username}</span>}
         </h1>
 
         {/* Input Composite */}
-        <div className="w-full">
+        <div className={`${styles.welcomeInput} w-full`}>
           <ChatInputComposite
             input={input}
             onInputChange={onInputChange}
@@ -154,9 +160,11 @@ export default function WelcomeView({
             organizedDatasets={organizedDatasets}
             orgLoading={orgLoading}
             voiceStatus={voiceStatus}
+            voiceLevel={voiceLevel}
             voiceSecondsElapsed={voiceSecondsElapsed}
             voiceMaxSeconds={voiceMaxSeconds}
             sttStatus={sttStatus}
+            onVoiceEnter={onVoiceEnter}
             onMicClick={onMicClick}
             onVoiceStop={onVoiceStop}
             onVoiceCancel={onVoiceCancel}
@@ -164,7 +172,7 @@ export default function WelcomeView({
         </div>
 
         {/* App Shortcuts */}
-        <div className="w-full mt-6">
+        <div className={`${styles.welcomeShortcuts} w-full`}>
           <AppShortcuts
             apps={apps}
             appsLoading={appsLoading}

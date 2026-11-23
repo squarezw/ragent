@@ -81,6 +81,7 @@ export const workspaceProxyRoutes = [
   "/api/chat/turns/[id]",
   "/api/chat/turns/[id]/events",
   "/api/chat/turns/[id]/stop",
+  "/api/chat/turns/[id]/playback",
   "/api/chat/feedback",
   "/api/images/[filename]",
   "/api/uploads/convert-docx",
@@ -102,6 +103,8 @@ export const workspaceProxyRoutes = [
   "/api/apps/[id]/tools",
   "/api/stt/single-speaker",
   "/api/stt/tasks/[taskId]",
+  "/api/tts/settings",
+  "/api/tts/synthesize",
 ] as const;
 export const workspaceDirectRoutes: string[] = [
   "/api/v1/email/unread-config",

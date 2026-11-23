@@ -13,6 +13,7 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
     ts.ScriptKind.TSX
   );
   let mode: unknown;
+  let synthesisMode: unknown;
   let callback = "";
   function visit(node: ts.Node) {
     if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect")
@@ -46,8 +47,9 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
           return response;
         },
       },
-      setSystemSettings: (settings: { stt_model_mode: string }) => {
+      setSystemSettings: (settings: { stt_model_mode: string; tts_model_mode: string }) => {
         mode = settings.stt_model_mode;
+        synthesisMode = settings.tts_model_mode;
         updates++;
       },
       setSmtpSettings: () => {
@@ -66,6 +68,9 @@ function settingsLoad(userLoading: boolean, isSuperAdmin: boolean) {
     resolve,
     get requests() {
       return requests;
+    },
+    get synthesisMode() {
+      return synthesisMode;
     },
     get mode() {
       return mode;
@@ -110,5 +115,15 @@ test("administrator loads remote speech recognition and legacy settings default 
     h.resolve({ data });
     await new Promise((done) => setImmediate(done));
     assert.equal(h.mode, expected);
+  }
+});
+
+test("playback and recognition modes load independently", async () => {
+  for (const [input, output] of [["remote", "local"], ["local", "remote"]] as const) {
+    const h = settingsLoad(false, true);
+    h.resolve({ data: { stt_model_mode: input, tts_model_mode: output } });
+    await new Promise((done) => setImmediate(done));
+    assert.equal(h.mode, input);
+    assert.equal(h.synthesisMode, output);
   }
 });
