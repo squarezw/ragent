@@ -58,9 +58,11 @@ interface WelcomeViewProps {
   orgLoading: boolean;
   // Voice input
   voiceStatus?: "idle" | "recording" | "stopping";
+  voiceLevel?: number;
   voiceSecondsElapsed?: number;
   voiceMaxSeconds?: number;
   sttStatus?: "idle" | "uploading" | "processing" | "completed" | "failed";
+  onVoiceEnter?: () => void;
   onMicClick?: () => void;
   onVoiceStop?: () => void;
   onVoiceCancel?: () => void;
@@ -94,9 +96,11 @@ export default function WelcomeView({
   organizedDatasets,
   orgLoading,
   voiceStatus,
+  voiceLevel,
   voiceSecondsElapsed,
   voiceMaxSeconds,
   sttStatus,
+  onVoiceEnter,
   onMicClick,
   onVoiceStop,
   onVoiceCancel,
@@ -154,9 +158,11 @@ export default function WelcomeView({
             organizedDatasets={organizedDatasets}
             orgLoading={orgLoading}
             voiceStatus={voiceStatus}
+            voiceLevel={voiceLevel}
             voiceSecondsElapsed={voiceSecondsElapsed}
             voiceMaxSeconds={voiceMaxSeconds}
             sttStatus={sttStatus}
+            onVoiceEnter={onVoiceEnter}
             onMicClick={onMicClick}
             onVoiceStop={onVoiceStop}
             onVoiceCancel={onVoiceCancel}

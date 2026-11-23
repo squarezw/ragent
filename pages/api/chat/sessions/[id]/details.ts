@@ -119,6 +119,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         session_id,
         question,
         answer,
+        interaction_mode,
+        voice_heard_chars,
         submitted_at,
         answered_at,
         duration_ms,
@@ -242,6 +244,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       details: detailsResult.rows.map((detail) => ({
         id: detail.id,
         sessionId: detail.session_id,
+        interaction_mode: detail.interaction_mode,
+        voice_heard_chars: detail.voice_heard_chars,
         question: detail.question,
         answer: detail.answer,
         error: failedErrors.get(detail.id),

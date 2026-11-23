@@ -45,7 +45,11 @@ export function mount(
   let tree: Node;
   const events: Record<string, () => void> = {};
   const storage = new Map(Object.entries(options.remembered ?? {}));
-  const calls = { stop: 0, detach: 0, starts: 0, apps: [] as string[], history: [] as string[] };
+  const voiceUpdates: unknown[][] = [];
+  const requests: any[] = [];
+  let voiceCallbacks: any;
+  let callActive = false;
+  const calls = { voiceUpdates, requests, stop: 0, detach: 0, starts: 0, apps: [] as string[], history: [] as string[] };
   let tenant = 3;
   let catalog = options.lateApps ? [] : [{ id: 7 }];
   const actor = 1;
@@ -99,10 +103,11 @@ export function mount(
       calls.detach++;
       update = undefined;
     },
-    start: async () => {
+    start: async (question: string, datasets: unknown, params: unknown) => {
+      requests.push({question, datasets, params});
       calls.starts++;
       if (options.startError) throw options.startError;
-      return run();
+      return run({ run_id: "r" + calls.starts });
     },
     stop: async () => {
       calls.stop++;
@@ -149,6 +154,11 @@ export function mount(
     "@/hooks/useVoiceRecorder": {
       useVoiceRecorder: () => ({ startRecording: no, stopRecording: no, cancelRecording: no }),
     },
+    "@/hooks/useVoiceConversation": { useVoiceConversation: (opts: any) => {
+      voiceCallbacks = opts;
+      return { active: callActive, exit: () => { callActive = false; }, enter: () => { callActive = true; },
+        update: (...args: unknown[]) => voiceUpdates.push(args), interrupt: () => opts.onInterrupt() };
+    } },
     "@/hooks/useSpeechToText": { useSpeechToText: () => ({ transcribe: no }) },
     "@/app/chat/hooks/useFileAttachments": {
       useFileAttachments: () => ({
@@ -185,6 +195,7 @@ export function mount(
     },
     "@/lib/axios": {
       default: {
+        post: async () => ({}),
         get: async (path: string) => {
           calls.history.push(path);
           return {
@@ -212,6 +223,7 @@ export function mount(
     }).outputText,
     {
       module,
+      queueMicrotask,
       exports: module.exports,
       require: (name: string) =>
         imports[name] ?? { default: name.split("/").pop(), FilePreviewDialog: "FilePreviewDialog" },
@@ -261,6 +273,8 @@ export function mount(
   render();
   return {
     calls,
+    voiceText(text: string) { voiceCallbacks.onText(text); render(); },
+    barge(boundary?: { run_id: string; heard_chars: number }) { voiceCallbacks.onInterrupt(boundary); render(); },
     events,
     render,
     find,

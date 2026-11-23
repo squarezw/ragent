@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type VoiceRecorderStatus = "idle" | "recording" | "stopping";
 
@@ -29,10 +29,21 @@ export function useVoiceRecorder({
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [level, setLevel] = useState(0);
+  const meter = useRef<AudioContext | null>(null);
+  const meterTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const permission = useRef(0);
+  const starting = useRef(false);
   const cancelledRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
 
   const cleanup = useCallback(() => {
+    starting.current = false;
+    if (meterTimer.current) clearInterval(meterTimer.current);
+    meterTimer.current = null;
+    if (meter.current) void meter.current.close().catch(() => {});
+    meter.current = null;
+    setLevel(0);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -51,7 +62,7 @@ export function useVoiceRecorder({
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (status !== "idle") return;
+    if (status !== "idle" || starting.current) return;
 
     const mimeType = getSupportedMimeType();
     if (!mimeType) {
@@ -59,11 +70,27 @@ export function useVoiceRecorder({
       return;
     }
 
+    const ticket = ++permission.current;
+    starting.current = true;
     cancelledRef.current = false;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (ticket !== permission.current) { stream.getTracks().forEach(track => track.stop()); return; }
       streamRef.current = stream;
+      if (window.AudioContext) {
+        const context = new AudioContext();
+        meter.current = context;
+        const analyser = context.createAnalyser();
+        context.createMediaStreamSource(stream).connect(analyser);
+        const samples = new Float32Array(analyser.fftSize);
+        void context.resume().catch(() => {});
+        meterTimer.current = setInterval(() => {
+          analyser.getFloatTimeDomainData(samples);
+          const rms = Math.sqrt(samples.reduce((sum, v) => sum + v * v, 0) / samples.length);
+          setLevel(Math.min(1, rms * 10));
+        }, 90);
+      }
 
       const recorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = recorder;
@@ -114,6 +141,7 @@ export function useVoiceRecorder({
         }
       }, maxSeconds * 1000);
     } catch (err: any) {
+      if (ticket !== permission.current) return;
       cleanup();
       setStatus("idle");
 
@@ -135,6 +163,7 @@ export function useVoiceRecorder({
   }, []);
 
   const cancelRecording = useCallback(() => {
+    permission.current++;
     cancelledRef.current = true;
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
@@ -144,7 +173,10 @@ export function useVoiceRecorder({
     }
   }, [cleanup]);
 
+  useEffect(() => () => { permission.current++; cancelledRef.current = true; cleanup(); }, [cleanup]);
+
   return {
+    level,
     status,
     secondsElapsed,
     isRecording: status === "recording",

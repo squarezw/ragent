@@ -8,6 +8,7 @@ export type ChatRunStatus =
   | "interrupted";
 export interface ChatRunSnapshot {
   run_id: string;
+  interaction_mode?: "text" | "voice";
   session_id: string;
   detail_id: number;
   app_id: number | null;

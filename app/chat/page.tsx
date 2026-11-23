@@ -28,6 +28,9 @@ import { useChatSession } from "@/hooks/useChatSession";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { useVoiceConversation } from "@/hooks/useVoiceConversation";
+import { VoiceConversationPanel } from "./components/VoiceConversationPanel";
+import type { PlaybackBoundary } from "@/lib/voicePlayback";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import axios from "@/lib/axios";
 import { useFileAttachments } from "@/app/chat/hooks/useFileAttachments";
@@ -46,6 +49,8 @@ import {
 } from "@/lib/chatResourcePreview";
 
 interface Message {
+  voice?: boolean;
+  heardChars?: number;
   role: "user" | "assistant";
   content: string;
   error?: string;
@@ -176,6 +181,64 @@ export default function ChatPage() {
     visibleStreamingMessage
   );
 
+  const admissionPending = useRef(false);
+  const voiceTurn = useRef<{ run: string | null; interrupted: boolean } | null>(null);
+  const boundary = useRef<PlaybackBoundary | null>(null);
+  const pendingQuestion = useRef("");
+  const [streamingVoice, setStreamingVoice] = useState(false);
+  const call = useVoiceConversation({
+    onError: key => toast.error(t(key)),
+    onText: text => {
+      pendingQuestion.current = text;
+      deliverPendingQuestion();
+    },
+    onInterrupt: heard => {
+      const turn = voiceTurn.current;
+      if (!turn || turn.interrupted) return;
+      turn.interrupted = true;
+      const mark = heard ?? (turn.run && !terminalRun(runRef.current?.status ?? "queued")
+        ? { run_id: turn.run, heard_chars: 0 } : undefined);
+      if (mark) savePlaybackBoundary(mark);
+      if (turn.run && runRef.current?.run_id === turn.run && !terminalRun(runRef.current.status))
+        void handleStop();
+    },
+  });
+  const currentCall = useRef(call);
+  currentCall.current = call;
+
+  function savePlaybackBoundary(mark: PlaybackBoundary) {
+    boundary.current = mark;
+    void axios.post(`/api/chat/turns/${encodeURIComponent(mark.run_id)}/playback`, { heard_chars: mark.heard_chars })
+      .catch(() => { /* The subsequent turn also carries the same validated boundary. */ });
+    const run = runRef.current;
+    if (run?.run_id === mark.run_id) {
+      setMessages(previous => previous.map(m => m.role === "assistant" && m.detail_id === run.detail_id
+        ? { ...m, heardChars: mark.heard_chars } : m));
+    }
+  }
+  function deliverPendingQuestion() {
+    if (!pendingQuestion.current || !currentCall.current.active || admissionPending.current ||
+        (runRef.current && !terminalRun(runRef.current.status))) return;
+    const question = pendingQuestion.current;
+    pendingQuestion.current = "";
+    void sendQuestion(question, true);
+  }
+  const deliverRef = useRef(deliverPendingQuestion);
+  deliverRef.current = deliverPendingQuestion;
+  const exitCall = useCallback(() => {
+    pendingQuestion.current = "";
+    currentCall.current.exit();
+  }, []);
+  useEffect(() => {
+    if (!call.active) pendingQuestion.current = "";
+  }, [call.active]);
+  useEffect(() => {
+    exitCall();
+    voiceTurn.current = null;
+    boundary.current = null;
+    admissionPending.current = false;
+  }, [operationTenantId, user?.id, exitCall]);
+
   // Voice input
   const voiceMaxSeconds = 15;
 
@@ -190,6 +253,7 @@ export default function ChatPage() {
   });
 
   const {
+    level: voiceLevel,
     status: voiceStatus,
     secondsElapsed: voiceSecondsElapsed,
     startRecording,
@@ -245,6 +309,10 @@ export default function ChatPage() {
 
   // Start new conversation
   const startNewConversation = useCallback(() => {
+    exitCall();
+    voiceTurn.current = null;
+    boundary.current = null;
+    admissionPending.current = false;
     setKnowledgeWrites([]);
     conversationVersion.current += 1;
     detach();
@@ -273,7 +341,7 @@ export default function ChatPage() {
       sessionStorage.removeItem(`${chatRunStorageKey()}:pending`);
     } catch {}
     requestAnimationFrame(focusInput);
-  }, [setChatId, setAttachments, setPreviewFile, cancelRecording, focusInput, detach]);
+  }, [setChatId, setAttachments, setPreviewFile, cancelRecording, focusInput, detach, exitCall]);
 
   useEffect(() => {
     window.addEventListener("ragent:new-conversation", startNewConversation);
@@ -290,6 +358,15 @@ export default function ChatPage() {
         setRunStatus(next.status);
         setChatId(next.session_id);
         const done = terminalRun(next.status);
+        const voice = next.interaction_mode === "voice" || voiceTurn.current?.run === next.run_id;
+        setStreamingVoice(voice);
+        if (voiceTurn.current?.run === next.run_id && !voiceTurn.current.interrupted) {
+          if (next.status === "failed" || next.status === "cancelled" || next.status === "interrupted") {
+            currentCall.current.interrupt();
+          } else {
+            currentCall.current.update(next.run_id, next.answer, done);
+          }
+        }
         setLoading(!done);
         setIsStreaming(!done);
         setStreamingMessage(done ? "" : next.answer);
@@ -329,6 +406,8 @@ export default function ChatPage() {
           messages.push({
             role: "assistant",
             content,
+            voice,
+            heardChars: boundary.current?.run_id === next.run_id ? boundary.current.heard_chars : undefined,
             error: next.status === "failed" ? chatRunFailureNotice(next.error, t) : undefined,
             detail_id: next.detail_id,
             reference: (result.references ?? result.reference) as Message["reference"],
@@ -338,6 +417,7 @@ export default function ChatPage() {
           return messages;
         });
         if (done) {
+          queueMicrotask(() => deliverRef.current());
           setStopPending(false);
           setToolSteps([]);
         }
@@ -368,17 +448,32 @@ export default function ChatPage() {
     );
   };
 
-  const handleSend = async () => {
-    if (loading || uploading || loadingHistorySession || !input.trim()) return;
+  const handleSend = () => {
+    if (!input.trim()) return;
+    if (call.active) {
+      currentCall.current.interrupt();
+      pendingQuestion.current = input.trim();
+      setInput("");
+      deliverPendingQuestion();
+    } else if (!loading) return sendQuestion(input, false);
+  };
+
+  async function sendQuestion(value: string, voice: boolean) {
+    if (admissionPending.current || uploading || loadingHistorySession || !value.trim()) return;
     if (!workspace.ready || !user?.id || !operationTenantId) return;
     const version = ++conversationVersion.current;
-    const question = input.trim();
+    const question = value.trim();
+    admissionPending.current = true;
+    const turn = voice ? { run: null as string | null, interrupted: false } : null;
+    voiceTurn.current = turn;
+    setStreamingVoice(voice);
+    const heard = boundary.current;
     const uploaded = [...attachments];
     setMessages((previous) => [
       ...previous,
       { role: "user", content: question, attachments: uploaded },
     ]);
-    setInput("");
+    if (!voice) setInput("");
     setAttachments([]);
     setKnowledgeWrites([]);
     setStopFailed(false);
@@ -389,6 +484,8 @@ export default function ChatPage() {
     try {
       const params: Record<string, unknown> = {
         enableWebSearch,
+        ...(voice ? { interaction_mode: "voice" } : {}),
+        ...(heard ? { previous_voice_turn: heard } : {}),
         attachments: uploaded.length ? uploaded : undefined,
       };
       const datasets = selectedAppId ? appDatasetIds : selectedDatasetIds;
@@ -400,9 +497,18 @@ export default function ChatPage() {
       } else if (selectedDatasetIds.length) params.datasetId = selectedDatasetIds;
       const run = await start(question, datasets, params);
       if (version !== conversationVersion.current) return;
+      admissionPending.current = false;
+      if (heard === boundary.current) boundary.current = null;
+      if (turn) turn.run = run.run_id;
       attachRun(run, version);
+      if (turn?.interrupted) {
+        savePlaybackBoundary({ run_id: run.run_id, heard_chars: 0 });
+        if (!terminalRun(run.status)) void handleStop();
+      }
     } catch (error) {
       if (version !== conversationVersion.current) return;
+      admissionPending.current = false;
+      queueMicrotask(() => deliverRef.current());
       // Admission was not retried. Keep the submitted question and let re-entry query its request ID.
       setLoading(false);
       setIsStreaming(false);
@@ -413,8 +519,8 @@ export default function ChatPage() {
         toast.error(t("runStartFailed"));
       }
     }
-    focusInput();
-  };
+    if (!voice) focusInput();
+  }
 
   const handleStop = async () => {
     if (stopPending || !runRef.current || terminalRun(runRef.current.status)) return;
@@ -446,6 +552,10 @@ export default function ChatPage() {
 
   // Load history session
   const loadHistorySession = async (sessionId: number | string, restoredRun?: ChatRunSnapshot) => {
+    exitCall();
+    voiceTurn.current = null;
+    boundary.current = null;
+    admissionPending.current = false;
     setKnowledgeWrites([]);
     const version = ++conversationVersion.current;
     const isCurrent = () => version === conversationVersion.current;
@@ -490,6 +600,8 @@ export default function ChatPage() {
           historyMessages.push({
             role: "assistant",
             content: detail.answer || "",
+            voice: detail.interaction_mode === "voice",
+            heardChars: detail.voice_heard_chars ?? undefined,
             error: detail.error ? chatRunFailureNotice(detail.error, t) : undefined,
             reference: formattedReference,
             segment_ids: detail.segmentsIds || [],
@@ -631,9 +743,11 @@ export default function ChatPage() {
     organizedDatasets,
     orgLoading,
     voiceStatus,
+    voiceLevel,
     voiceSecondsElapsed,
     voiceMaxSeconds,
     sttStatus,
+    onVoiceEnter: () => { cancelRecording(); void call.enter(); },
     onMicClick: startRecording,
     onVoiceStop: stopRecording,
     onVoiceCancel: cancelRecording,
@@ -665,13 +779,18 @@ export default function ChatPage() {
               )}
             </div>
           )}
-        {showWelcomeView ? (
+        {call.active ? (
+          <VoiceConversationPanel voice={{ ...call, exit: exitCall }} busy={loading || isStreaming}
+            input={input} setInput={setInput} send={handleSend}
+            confirmations={knowledgeWrites.map(selection => <KnowledgeWriteCard key={selection.request_id} selection={selection} />)} />
+        ) : showWelcomeView ? (
           <WelcomeView {...inputProps} />
         ) : (
           <div className="relative flex h-full min-h-0 w-full">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col mx-auto px-1 sm:px-4 max-w-4xl">
               <MessageList
                 messages={messages}
+                streamingVoice={streamingVoice}
                 streamingMessage={visibleStreamingMessage}
                 isStreaming={isStreaming}
                 knowledgeWriteCards={knowledgeWrites.map((selection) => (
