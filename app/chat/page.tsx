@@ -102,6 +102,7 @@ export default function ChatPage() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const conversationVersion = useRef(0);
   const focusInput = useCallback(() => {
+    if (window.matchMedia?.("(pointer: coarse)").matches) return;
     chatContainerRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   }, []);
 

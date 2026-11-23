@@ -133,6 +133,7 @@ export default function ChatInputComposite({
   onVoiceCancel,
 }: ChatInputCompositeProps) {
   const t = useTranslations("chat");
+  const [mobileTools, setMobileTools] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -211,12 +212,12 @@ export default function ChatInputComposite({
   }, [input, adjustTextareaHeight]);
 
   useEffect(() => {
-    textareaRef.current?.focus();
+    if (!window.matchMedia?.("(pointer: coarse)").matches) textareaRef.current?.focus();
   }, []);
 
   return (
     <div
-      className={`w-full rounded-2xl border bg-card shadow-sm overflow-hidden relative transition-colors ${
+      className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center sm:block w-full rounded-3xl sm:rounded-2xl border bg-card shadow-sm overflow-hidden relative transition-colors ${
         isDragOver ? "border-primary border-dashed bg-primary/5" : "border-border"
       }`}
       onDragEnter={handleDragEnter}
@@ -235,7 +236,7 @@ export default function ChatInputComposite({
       )}
       {/* File previews */}
       {(attachments.length > 0 || pendingAttachments.length > 0) && (
-        <div className="px-4 pt-3 pb-2 border-b border-border">
+        <div className="col-span-3 px-4 pt-3 pb-2 border-b border-border">
           <div className="flex flex-wrap gap-2">
             {pendingAttachments.map((attachment) => (
               <div
@@ -272,8 +273,11 @@ export default function ChatInputComposite({
         </div>
       )}
 
+      <button type="button" aria-label={t("voiceChatTools")} aria-expanded={mobileTools}
+        className="ml-1 grid size-10 place-items-center rounded-full sm:hidden"
+        onClick={() => setMobileTools(open => !open)}><Plus className="size-5" /></button>
       {/* Textarea */}
-      <div className="px-4 py-3">
+      <div className="min-w-0 px-1 py-1 sm:px-4 sm:py-3">
         <Textarea
           ref={textareaRef}
           value={input}
@@ -283,13 +287,13 @@ export default function ChatInputComposite({
           onPaste={(event) => pasteChatAttachments(event, onFileDrop, onInputChange)}
           placeholder={placeholder || t("inputPlaceholder")}
           disabled={loading || isStreaming}
-          className="min-h-[44px] max-h-[120px] resize-none overflow-y-auto border-0 shadow-none focus-visible:ring-0 p-0 text-base"
+          className="min-h-[44px] max-h-[120px] resize-none overflow-y-auto border-0 shadow-none focus-visible:ring-0 px-0 py-2.5 sm:p-0 text-base"
           style={{ height: "44px" }}
         />
       </div>
 
       {/* Action bar */}
-      <div className="px-3 pb-3 flex items-center gap-1">
+      <div className="contents sm:flex sm:items-center sm:gap-1 sm:px-3 sm:pb-3">
         {/* Left side: attachment + history */}
         <input
           ref={fileInputRef}
@@ -300,6 +304,7 @@ export default function ChatInputComposite({
           className="hidden"
         />
 
+        <div className={`order-last col-span-3 items-center gap-1 border-t px-3 py-1 sm:contents ${mobileTools ? "flex" : "hidden"}`}>
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -364,6 +369,7 @@ export default function ChatInputComposite({
           />
         )}
 
+        </div>
         {isStreaming ? (
           <Button onClick={onStop} variant="default" size="icon" className="h-8 w-8 rounded-full">
             <svg
@@ -382,7 +388,7 @@ export default function ChatInputComposite({
             </svg>
           </Button>
         ) : (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="mr-1 flex shrink-0 items-center sm:mr-0 sm:gap-1">
             {voiceStatus === "recording" ? <>
               <button type="button" aria-label={t("voiceRecordingCancel")} onClick={onVoiceCancel}
                 className="p-1 text-muted-foreground"><X size={16}/></button>

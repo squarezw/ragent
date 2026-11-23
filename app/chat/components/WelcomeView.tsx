@@ -112,23 +112,23 @@ export default function WelcomeView({
   const username = user?.username || user?.name || "";
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full px-4">
+    <div className="flex flex-col items-center justify-end sm:justify-center h-full min-h-0 w-full px-2 sm:px-4 pb-[max(.5rem,env(safe-area-inset-bottom))] sm:pb-0">
       <div className="flex flex-col items-center max-w-3xl w-full">
         {/* AI Icon */}
-        <div className="mb-6">
+        <div className="hidden sm:block mb-6">
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
             <Bot className="w-8 h-8 text-primary" />
           </div>
         </div>
 
         {/* Greeting */}
-        <h1 className="text-2xl font-semibold text-foreground mb-8">
+        <h1 className="hidden sm:block text-2xl font-semibold text-foreground mb-8">
           {greeting}
           {username && <span className="text-primary">, {username}</span>}
         </h1>
 
         {/* Input Composite */}
-        <div className="w-full">
+        <div className="order-last sm:order-none w-full">
           <ChatInputComposite
             input={input}
             onInputChange={onInputChange}
@@ -170,7 +170,7 @@ export default function WelcomeView({
         </div>
 
         {/* App Shortcuts */}
-        <div className="w-full mt-6">
+        <div className="w-full mb-3 sm:mb-0 sm:mt-6">
           <AppShortcuts
             apps={apps}
             appsLoading={appsLoading}

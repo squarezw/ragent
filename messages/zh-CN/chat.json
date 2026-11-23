@@ -1,4 +1,5 @@
 {
+  "voiceChatTools": "聊天工具",
   "voiceSecureMicrophone": "浏览器无法使用麦克风。请使用 HTTPS 或本机 localhost，并允许麦克风访问。",
   "sendMessage": "发送",
   "voiceInterrupted": "朗读已打断",

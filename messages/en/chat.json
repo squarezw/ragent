@@ -1,4 +1,5 @@
 {
+  "voiceChatTools": "Chat tools",
   "voiceSecureMicrophone": "Microphone access requires a supported browser on HTTPS or localhost. Allow microphone access to start.",
   "sendMessage": "Send message",
   "voiceInterrupted": "Playback interrupted",
