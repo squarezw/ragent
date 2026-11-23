@@ -409,10 +409,12 @@ export default function ChatInputComposite({
               aria-label={t(canSend ? "sendMessage" : "voiceConversation")}
               title={t(canSend ? "sendMessage" : "voiceConversation")}
               disabled={loading || uploading || voiceStatus !== "idle" || sttStatus === "processing" || sttStatus === "uploading" || (!canSend && !onVoiceEnter)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 dark:bg-white dark:text-black"
+              className={styles.primaryTrigger}
               onClick={canSend ? onSend : onVoiceEnter}
             >
-              {canSend ? <ArrowUp size={22} aria-hidden="true" /> : <AudioLines size={22} strokeWidth={2.75} aria-hidden="true" />}
+              <span className={styles.primaryDisc} aria-hidden="true">
+                {canSend ? <ArrowUp size={16} /> : <AudioLines size={16} strokeWidth={2.5} />}
+              </span>
             </button>
           </div>
         )}

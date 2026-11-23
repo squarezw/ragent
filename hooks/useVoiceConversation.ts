@@ -6,6 +6,7 @@ import { VoicePlayback, type PlaybackBoundary } from "@/lib/voicePlayback";
 
 export type VoiceError = "voiceRecordingFailed" | "voiceRecognitionFailed" | "voicePlaybackFailed" | "voiceNoLocalVoice" | "micPermissionDenied" | "micNotFound" | "voiceSecureMicrophone";
 interface Options {
+  awaitingReply: () => boolean;
   onText: (text: string) => void;
   onInterrupt: (boundary?: PlaybackBoundary) => void;
   onError: (key: VoiceError) => void;
@@ -31,6 +32,7 @@ export function useVoiceConversation(options: Options) {
   const [active, setActive] = useState(false);
   const [ready, setReady] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [hearing, setHearing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -54,6 +56,7 @@ export function useVoiceConversation(options: Options) {
     setActive(false);
     setReady(false);
     setHearing(false);
+    setPreparing(false);
     setSpeaking(false);
     setTranscribing(false);
     setMuted(false);
@@ -106,7 +109,7 @@ export function useVoiceConversation(options: Options) {
       const mode = settings.data?.tts_model_mode;
       if (mode !== "local" && mode !== "remote") throw new Error("Invalid speech synthesis settings");
       session.playback = new VoicePlayback(context, mode, document.documentElement.lang || "zh-CN",
-        setSpeaking, key => callbacks.current.onError(key));
+        setSpeaking, key => callbacks.current.onError(key), setPreparing);
       const input = context.createMediaStreamSource(session.stream);
       const node = new AudioWorkletNode(context, "voice-capture");
       session.node = node;
@@ -141,7 +144,7 @@ export function useVoiceConversation(options: Options) {
       }
       node.port.onmessage = ({ data }: MessageEvent<Float32Array>) => {
         if (session.muted || session.abort.signal.aborted) return;
-        const capture = session.detector.push(data, !!session.playback?.isPlaying);
+        const capture = session.detector.push(data, callbacks.current.awaitingReply() || !!session.playback?.pendingAudio);
         if (capture === "start") {
           session.hearing = true;
           setHearing(true);
@@ -184,5 +187,5 @@ export function useVoiceConversation(options: Options) {
   const update = useCallback((id: string, answer: string, done: boolean) => {
     current.current?.playback?.update(id, answer, done);
   }, []);
-  return { active, ready, muted, hearing, speaking, transcribing, enter, exit, interrupt, toggleMute, update };
+  return { active, ready, muted, hearing, speaking, preparing, transcribing, enter, exit, interrupt, toggleMute, update };
 }

@@ -188,6 +188,7 @@ export default function ChatPage() {
   const pendingQuestion = useRef("");
   const [streamingVoice, setStreamingVoice] = useState(false);
   const call = useVoiceConversation({
+    awaitingReply: () => admissionPending.current || !!(runRef.current && !terminalRun(runRef.current.status)),
     onError: key => toast.error(t(key)),
     onText: text => {
       pendingQuestion.current = text;
@@ -399,7 +400,7 @@ export default function ChatPage() {
           if (!done) return messages;
           const result = next.result ?? {};
           let content = next.answer;
-          if (next.status === "cancelled" || next.status === "interrupted") {
+          if ((!voice || boundary.current?.run_id !== next.run_id) && (next.status === "cancelled" || next.status === "interrupted")) {
             const notice =
               next.status === "cancelled" ? t("runCancelled") : t("runInterrupted");
             content = content ? `${content}\n\n${notice}` : notice;

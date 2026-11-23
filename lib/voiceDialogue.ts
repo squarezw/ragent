@@ -47,21 +47,22 @@ export class SpeechDetector {
   private attack = 0;
   private silent = 0;
   private duration = 0;
+  private attackGap = 0;
   private floor = 0.003;
   constructor(private rate: number) {}
 
   reset() {
     this.recording = [];
     this.lead = [];
-    this.attack = this.silent = this.duration = 0;
+    this.attackGap = this.attack = this.silent = this.duration = 0;
   }
 
-  push(frame: Float32Array, playing: boolean): "start" | Float32Array[] | undefined {
+  push(frame: Float32Array, interrupting: boolean): "start" | Float32Array[] | undefined {
     let energy = 0;
     for (const amplitude of frame) energy += amplitude * amplitude;
     const level = Math.sqrt(energy / frame.length);
     const seconds = frame.length / this.rate;
-    const threshold = Math.max(playing ? 0.027 : 0.011, this.floor * (playing ? 3.5 : 2.6));
+    const threshold = Math.max(interrupting ? 0.04 : 0.011, this.floor * (interrupting ? 4 : 2.6));
     const voiced = level > threshold;
     if (this.recording.length) {
       this.recording.push(frame);
@@ -76,9 +77,16 @@ export class SpeechDetector {
     }
     if (!voiced) this.floor = Math.min(.035, .96 * this.floor + .04 * level);
     this.lead.push(frame);
-    while (this.lead.length > Math.ceil(.32 / seconds)) this.lead.shift();
-    this.attack = voiced ? this.attack + seconds : 0;
-    if (this.attack >= (playing ? .12 : .075)) {
+    while (this.lead.length > Math.ceil((interrupting ? .75 : .32) / seconds)) this.lead.shift();
+    if (voiced) {
+      this.attack += seconds;
+      this.attackGap = 0;
+    } else {
+      this.attackGap += seconds;
+      // Allow a brief dip between syllables, but do not accumulate separate noises.
+      if (!interrupting || this.attackGap > .08) this.attack = 0;
+    }
+    if (this.attack >= (interrupting ? .36 : .075)) {
       this.recording = this.lead;
       this.lead = [];
       return "start";

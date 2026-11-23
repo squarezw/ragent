@@ -124,6 +124,8 @@ export default function MessageList({
               </div>
             </div>
           </div>
+        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error ? (
+          <p key={i} className="self-end text-xs text-muted-foreground">{t("voiceInterruptedBeforeReply")}</p>
         ) : (
           <div key={i} className="flex justify-start">
             <div className="flex flex-col items-start gap-2 min-w-0 w-full">
@@ -133,7 +135,10 @@ export default function MessageList({
               <div className="py-3 min-w-0 w-full">
                 <div className="break-words">
                   {msg.voice ? <div className="whitespace-pre-wrap">
-                    {msg.heardChars == null ? spokenText(msg.content) : <>
+                    {msg.heardChars == null ? spokenText(msg.content) : msg.heardChars === 0 ? <>
+                      {spokenText(msg.content)}
+                      <div className="mt-1 text-xs text-muted-foreground">{t("voiceUnread")}</div>
+                    </> : <>
                       {spokenText(Array.from(msg.content).slice(0, msg.heardChars).join(""))}
                       <div className="my-1 text-xs text-muted-foreground">{t("voiceInterrupted")}</div>
                       <span className="text-muted-foreground">{spokenText(Array.from(msg.content).slice(msg.heardChars).join(""))}</span>

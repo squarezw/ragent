@@ -15,7 +15,7 @@ export function VoiceConversationPanel({ voice, busy, input, setInput, send, con
 }) {
   const t = useTranslations("chat");
   const label = !voice.ready ? "voiceConnecting" : voice.hearing ? "voiceHearing" :
-    voice.speaking ? "voiceSpeaking" : busy || voice.transcribing ? "voiceThinking" : voice.muted ? "voiceMuted" : "voiceListening";
+    voice.speaking ? "voiceSpeaking" : voice.transcribing ? "voiceTranscribing" : busy || voice.preparing ? "voiceThinking" : voice.muted ? "voiceMuted" : "voiceListening";
   return <section className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col px-3 sm:px-5"
     aria-label={t("voiceConversation")}>
     <div className="flex flex-1 min-h-0 flex-col items-center justify-end gap-3 overflow-y-auto pb-6 sm:justify-center">
@@ -25,7 +25,8 @@ export function VoiceConversationPanel({ voice, busy, input, setInput, send, con
       <span role="status" className="text-xs font-medium text-muted-foreground">{t(label)}</span>
       {confirmations}
     </div>
-    <div className="mx-auto flex w-full items-center gap-2 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex w-full items-center gap-2"
+      style={{ paddingBottom: "calc(clamp(24px, 5dvh, 48px) + env(safe-area-inset-bottom, 0px))" }}>
       <form className="flex min-w-0 flex-1 items-center rounded-full border bg-background px-4 shadow-sm"
         onSubmit={event => { event.preventDefault(); if (input.trim()) send(); }}>
         <input aria-label={t("placeholderReply")} placeholder={t("placeholderReply")} value={input}

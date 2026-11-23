@@ -55,3 +55,26 @@
   .welcomeInput { order: 1; }
   .welcomeShortcuts { margin: 0 0 .75rem; }
 }
+
+.primaryTrigger {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.primaryDisc {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+}
+.primaryTrigger:focus-visible { outline: 2px solid hsl(var(--ring)); }
+.primaryTrigger:disabled { opacity: .5; }
