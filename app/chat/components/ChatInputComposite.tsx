@@ -388,7 +388,7 @@ export default function ChatInputComposite({
             </svg>
           </Button>
         ) : (
-          <div className="mr-1 flex shrink-0 items-center sm:mr-0 sm:gap-1">
+          <div className="mr-1 flex shrink-0 items-center gap-2 sm:mr-0">
             {voiceStatus === "recording" ? <>
               <button type="button" aria-label={t("voiceRecordingCancel")} onClick={onVoiceCancel}
                 className="p-1 text-muted-foreground"><X size={16}/></button>
@@ -402,11 +402,16 @@ export default function ChatInputComposite({
               className="size-9 rounded-full" onClick={onMicClick}>
               {sttStatus === "processing" || sttStatus === "uploading" ? <Loader2 className="size-4 animate-spin"/> : <Mic className="size-4"/>}
             </Button>}
-            <Button type="button" size="icon" aria-label={t(canSend ? "sendMessage" : "voiceConversation")}
+            <button
+              type="button"
+              aria-label={t(canSend ? "sendMessage" : "voiceConversation")}
               title={t(canSend ? "sendMessage" : "voiceConversation")}
               disabled={loading || uploading || voiceStatus !== "idle" || sttStatus === "processing" || sttStatus === "uploading" || (!canSend && !onVoiceEnter)}
-              className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/85"
-              onClick={canSend ? onSend : onVoiceEnter}>{canSend ? <ArrowUp className="size-4"/> : <AudioLines className="size-5"/>}</Button>
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 dark:bg-white dark:text-black"
+              onClick={canSend ? onSend : onVoiceEnter}
+            >
+              {canSend ? <ArrowUp size={22} aria-hidden="true" /> : <AudioLines size={22} strokeWidth={2.75} aria-hidden="true" />}
+            </button>
           </div>
         )}
       </div>
