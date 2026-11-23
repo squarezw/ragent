@@ -58,7 +58,7 @@ export const FloatingUploadButton = forwardRef<FloatingUploadButtonHandle, Float
         ref={fileInputRef}
         onChange={handleFileSelect}
         multiple
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv,image/*"
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,image/*"
         className="hidden"
       />
 

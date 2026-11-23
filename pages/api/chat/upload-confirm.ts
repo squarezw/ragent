@@ -89,6 +89,13 @@ function describeType(contentType: string | undefined, filename: string): string
     name.endsWith(".xls")
   )
     return "Excel";
+  if (
+    mime === "application/vnd.ms-powerpoint" ||
+    mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+    name.endsWith(".ppt") ||
+    name.endsWith(".pptx")
+  )
+    return "PowerPoint";
   if (mime === "text/csv" || name.endsWith(".csv")) return "CSV";
   if (mime.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) return "Text";
   if (mime === "application/postscript" || name.endsWith(".ai")) return "AI";

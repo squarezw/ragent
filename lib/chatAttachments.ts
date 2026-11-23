@@ -28,6 +28,8 @@ export const ATTACHMENT_EXTENSIONS = [
   ".pdf",
   ".doc",
   ".docx",
+  ".ppt",
+  ".pptx",
   ".xls",
   ".xlsx",
   ".csv",
@@ -55,6 +57,8 @@ export const ATTACHMENT_EXTENSIONS = [
 export const ATTACHMENT_MIME_TYPES = [
   "application/pdf",
   "application/msword",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
