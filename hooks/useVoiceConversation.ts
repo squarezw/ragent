@@ -188,7 +188,7 @@ export function useVoiceConversation(options: Options) {
   }, []);
 
   const update = useCallback((id: string, answer: string, done: boolean) => {
-    current.current?.playback?.update(id, answer, done);
+    current.current?.playback?.update(id, answer, done, true);
   }, []);
   return { meterRef, active, ready, muted, hearing, speaking, preparing, transcribing, enter, exit, interrupt, toggleMute, update };
 }
