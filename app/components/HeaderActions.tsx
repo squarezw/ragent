@@ -29,7 +29,7 @@ function HeaderCreditBalance() {
     >
       <Wallet aria-hidden="true" className="h-3.5 w-3.5" />
       <span className="sr-only">{label} </span>
-      {balance?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "—"}
+      {balance?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "—"}
     </span>
   );
 }
