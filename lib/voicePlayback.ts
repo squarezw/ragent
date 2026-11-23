@@ -1,5 +1,5 @@
 import axios from "@/lib/axios";
-import { nextSpeechPhrase } from "./voiceDialogue";
+import { nextSpeechPhrase, spokenText } from "./voiceDialogue";
 
 export interface PlaybackBoundary { run_id: string; heard_chars: number; }
 
@@ -27,7 +27,7 @@ export class VoicePlayback {
 
   get isPlaying() { return this.playing; }
 
-  update(run: string, answer: string, final: boolean) {
+  update(run: string, answer: string, final: boolean, wholeReply = false) {
     if (run !== this.run) {
       this.stop();
       this.run = run;
@@ -37,7 +37,8 @@ export class VoicePlayback {
     if (this.stopped) return;
     this.answer = answer;
     this.final = final;
-    if (!this.request) void this.drain();
+    if (wholeReply && !final) return;
+    if (!this.request && this.offset < answer.length) void this.drain(wholeReply);
   }
 
   stop(): PlaybackBoundary | undefined {
@@ -61,12 +62,18 @@ export class VoicePlayback {
     if (interrupted) return { run_id: this.run, heard_chars: Array.from(this.answer.slice(0, boundary)).length };
   }
 
-  private async drain() {
+  private async drain(wholeReply: boolean) {
     const request = new AbortController();
     this.request = request;
     try {
       while (!request.signal.aborted) {
-        const phrase = nextSpeechPhrase(this.answer, this.offset, this.final);
+        if (this.offset >= this.answer.length) break;
+        // Normal voice replies fit in one synthesis request. Keep the existing
+        // phrase path for manual read-aloud and replies above the TTS limit.
+        const fullText = wholeReply && this.offset === 0 ? spokenText(this.answer) : "";
+        const phrase = fullText && Array.from(fullText).length <= 1200
+          ? { text: fullText, end: this.answer.length }
+          : nextSpeechPhrase(this.answer, this.offset, this.final);
         if (!phrase) break;
         if (phrase.text) {
           this.phraseEnd = phrase.end;
