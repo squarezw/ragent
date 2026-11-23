@@ -1,0 +1,39 @@
+.tenantIndicator {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .chatHeader > div {
+    gap: 4px;
+  }
+
+  .chatHeader h1 {
+    white-space: nowrap;
+    font-size: 1rem;
+  }
+
+  .chatHeader button {
+    padding-inline: 0;
+    width: 32px;
+    flex-shrink: 0;
+  }
+
+  .chatHeader button svg {
+    margin-inline: 0;
+  }
+
+  .chatHeader .tenantName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .chatHeader .tenantIndicator {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+  }
+}

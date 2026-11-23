@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import HeaderActions from "./HeaderActions";
 import { WorkspaceProvider } from "./WorkspaceProvider";
 import WorkspaceBoundary from "./WorkspaceBoundary";
+import styles from "./ChatHeader.module.css";
 import DynamicTitle from "./DynamicTitle";
 import { UserProvider } from "@/hooks/useCurrentUser";
 
@@ -48,7 +49,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         >
           <AppSidebar />
           <SidebarInset className={`flex-1 min-w-0 ${isChat ? "h-full min-h-0" : "h-screen"}`}>
-            <header className="flex h-16 shrink-0 items-center justify-between border-b px-2 sm:px-6">
+            <header className={`flex h-16 shrink-0 items-center justify-between border-b px-2 sm:px-6 ${isChat ? styles.chatHeader : ""}`}>
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
                 <DynamicTitle />

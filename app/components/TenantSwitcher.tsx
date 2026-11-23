@@ -1,4 +1,5 @@
 "use client";
+import styles from "./ChatHeader.module.css";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Building2, Check } from "lucide-react";
@@ -22,15 +23,21 @@ export default function TenantSwitcher() {
   const [search, setSearch] = useState("");
   if (!enabled || !ready) return null;
   const name = tenant?.name || t("workspaceSelect");
-  if (!isSuperAdmin) return <span className="text-sm text-muted-foreground">{tenant?.name || t("workspaceTenantUnavailableShort")}</span>;
+  if (!isSuperAdmin) {
+    const label = tenant?.name || t("workspaceTenantUnavailableShort");
+    return <span className="text-sm text-muted-foreground" title={label}>
+      <Building2 aria-hidden="true" className={styles.tenantIndicator} />
+      <span className={styles.tenantName}>{label}</span>
+    </span>;
+  }
   const filtered = tenants.filter((item) =>
     `${item.name} ${item.code || ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())
   );
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" aria-label={name} title={name} onClick={() => setOpen(true)}>
         <Building2 className="mr-2 h-4 w-4" />
-        {name}
+        <span className={styles.tenantName}>{name}</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg" data-workspace-switcher="true">
