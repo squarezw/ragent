@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "./ChatComposer.module.css";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -217,7 +219,7 @@ export default function ChatInputComposite({
 
   return (
     <div
-      className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center sm:block w-full rounded-3xl sm:rounded-2xl border bg-card shadow-sm overflow-hidden relative transition-colors ${
+      className={`${styles.composer} border bg-card shadow-sm overflow-hidden relative transition-colors ${
         isDragOver ? "border-primary border-dashed bg-primary/5" : "border-border"
       }`}
       onDragEnter={handleDragEnter}
@@ -236,7 +238,7 @@ export default function ChatInputComposite({
       )}
       {/* File previews */}
       {(attachments.length > 0 || pendingAttachments.length > 0) && (
-        <div className="col-span-3 px-4 pt-3 pb-2 border-b border-border">
+        <div className={`${styles.previews} px-4 pt-3 pb-2 border-b border-border`}>
           <div className="flex flex-wrap gap-2">
             {pendingAttachments.map((attachment) => (
               <div
@@ -274,10 +276,10 @@ export default function ChatInputComposite({
       )}
 
       <button type="button" aria-label={t("voiceChatTools")} aria-expanded={mobileTools}
-        className="ml-1 grid size-10 place-items-center rounded-full sm:hidden"
+        className={styles.mobileToolsButton}
         onClick={() => setMobileTools(open => !open)}><Plus className="size-5" /></button>
       {/* Textarea */}
-      <div className="min-w-0 px-1 py-1 sm:px-4 sm:py-3">
+      <div className={styles.draft}>
         <Textarea
           ref={textareaRef}
           value={input}
@@ -293,7 +295,7 @@ export default function ChatInputComposite({
       </div>
 
       {/* Action bar */}
-      <div className="contents sm:flex sm:items-center sm:gap-1 sm:px-3 sm:pb-3">
+      <div className={styles.toolbar}>
         {/* Left side: attachment + history */}
         <input
           ref={fileInputRef}
@@ -304,7 +306,7 @@ export default function ChatInputComposite({
           className="hidden"
         />
 
-        <div className={`order-last col-span-3 items-center gap-1 border-t px-3 py-1 sm:contents ${mobileTools ? "flex" : "hidden"}`}>
+        <div className={styles.tools} data-open={mobileTools}>
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -388,7 +390,7 @@ export default function ChatInputComposite({
             </svg>
           </Button>
         ) : (
-          <div className="mr-1 flex shrink-0 items-center gap-2 sm:mr-0">
+          <div className={styles.primaryActions}>
             {voiceStatus === "recording" ? <>
               <button type="button" aria-label={t("voiceRecordingCancel")} onClick={onVoiceCancel}
                 className="p-1 text-muted-foreground"><X size={16}/></button>
