@@ -49,7 +49,7 @@
   "attachmentsAdded": "Attachments added:",
   "pleaseLoginFirst": "Please login before uploading files",
   "fileUploadFailed": "File {name} upload failed",
-  "unsupportedFileFormat": "Unsupported file format: {files}. Only PDF, Word(.docx), Excel(.xlsx/.xls), and text files are supported",
+  "unsupportedFileFormat": "Unsupported file format: {files}. Supported formats include PDF, Word, PowerPoint (.ppt/.pptx), Excel, CSV, TXT, images, AI, DWG, and DXF",
   "fileSizeExceeded": "File size exceeds 10MB: {files}",
   "errorOccurred": "Sorry, an error occurred: {message}",
   "loadingHistory": "Loading...",

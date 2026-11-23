@@ -179,7 +179,7 @@ export const FileEditDialog = ({
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileSelect}
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv,image/*"
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,image/*"
                       className="hidden"
                       disabled={saving || uploading}
                     />

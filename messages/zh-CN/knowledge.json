@@ -168,7 +168,7 @@
   "uploadFilesTitle": "上传文件",
   "continueAddFiles": "继续添加文件",
   "selectFiles": "选择文件",
-  "supportedFormats": "支持 PDF、Word、Excel、文本、图片等格式",
+  "supportedFormats": "支持 PDF、Word、PowerPoint（.ppt/.pptx）、Excel、文本、图片等格式",
   "canAddMoreFiles": " - 可以继续添加更多文件",
   "checkingDuplicates": "正在检查重复文件...",
   "filesToUpload": "待上传文件",

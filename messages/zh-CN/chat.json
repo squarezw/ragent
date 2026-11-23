@@ -49,7 +49,7 @@
   "attachmentsAdded": "已添加附件：",
   "pleaseLoginFirst": "请先登录后再上传文件",
   "fileUploadFailed": "文件 {name} 上传失败",
-  "unsupportedFileFormat": "以下文件格式不支持: {files}，仅支持 PDF、Word(.docx)、Excel(.xlsx/.xls)、文本文件",
+  "unsupportedFileFormat": "以下文件格式不支持: {files}，支持 PDF、Word、PowerPoint（.ppt/.pptx）、Excel、CSV、TXT、图片、AI、DWG 和 DXF",
   "fileSizeExceeded": "以下文件大小超过 10MB: {files}",
   "errorOccurred": "抱歉，发生了错误：{message}",
   "loadingHistory": "加载中...",

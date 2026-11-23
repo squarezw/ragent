@@ -27,6 +27,17 @@ for (const [label, mime] of CSV_MIMES) {
   });
 }
 
+for (const [extension, mime] of [
+  [".ppt", "application/vnd.ms-powerpoint"],
+  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+]) {
+  test(`PowerPoint 附件支持 ${extension} 和对应 MIME`, () => {
+    assert.ok(ATTACHMENT_ACCEPT.split(",").includes(extension));
+    assert.ok(isAllowedAttachment(`slides${extension.toUpperCase()}`, "application/octet-stream"));
+    assert.ok(isAllowedAttachment("slides", mime));
+  });
+}
+
 test("CSV 大写扩展名同样放行", () => {
   assert.equal(isAllowedAttachment("REPORT.CSV", ""), true);
 });

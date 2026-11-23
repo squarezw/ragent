@@ -168,7 +168,7 @@
   "uploadFilesTitle": "Upload Files",
   "continueAddFiles": "Add More Files",
   "selectFiles": "Select Files",
-  "supportedFormats": "Supports PDF, Word, Excel, text, and image formats",
+  "supportedFormats": "Supports PDF, Word, PowerPoint (.ppt/.pptx), Excel, text, and image formats",
   "canAddMoreFiles": " - can add more files",
   "checkingDuplicates": "Checking for duplicates...",
   "filesToUpload": "Files to Upload",
