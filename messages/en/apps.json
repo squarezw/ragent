@@ -1,4 +1,8 @@
 {
+  "searchEmployees": "Search employees",
+  "noSearchResults": "No matching employees",
+  "clearSearch": "Clear search",
+  "pagination": "Employee list pages",
   "startChat": "Start chat",
   "lastUpdated": "Last updated",
   "title": "Digital Employees",
