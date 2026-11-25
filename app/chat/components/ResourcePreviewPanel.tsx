@@ -1,4 +1,5 @@
 "use client";
+import { downloadChatLink, parseChatArtifactUrl, type PreviewResource } from "@/lib/chatResourcePreview";
 import { workspaceUrl } from "@/lib/workspaceBrowser";
 
 import { attachmentPreviewUrl } from "@/lib/sessionAttachments";
@@ -9,7 +10,6 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import styles from "./ResourcePreviewPanel.module.css";
-import type { PreviewResource } from "@/lib/chatResourcePreview";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -20,7 +20,7 @@ interface ResourcePreviewPanelProps {
 
 function getEmbedUrl(resource: PreviewResource): string {
   if (resource.kind !== "url") return resource.url;
-  if (resource.url.startsWith("/api/oss/")) return `/api/chat/preview-artifact?url=${encodeURIComponent(resource.url)}`;
+  if (resource.url.startsWith("/api/oss/") || parseChatArtifactUrl(resource.url)) return `/api/chat/preview-artifact?url=${encodeURIComponent(resource.url)}`;
   try {
     const url = new URL(resource.url);
     if (url.protocol === "https:" && url.hostname.endsWith(".cos.ap-shanghai.myqcloud.com") && url.pathname.startsWith("/skill-artifacts/") && url.pathname.toLowerCase().endsWith(".html") && url.searchParams.has("X-Amz-Signature")) {
@@ -178,6 +178,10 @@ export default function ResourcePreviewPanel({ resource, onClose }: ResourcePrev
                 setDownloading(true);
                 setDownloadError(false);
                 try {
+                  if (parseChatArtifactUrl(resource.url)) {
+                    downloadChatLink(workspaceUrl(resource.url), resource.filename);
+                    return;
+                  }
                   let downloadUrl = resource.url;
                   const parsed = new URL(downloadUrl, window.location.origin);
                   if (parsed.protocol === "https:" && parsed.hostname.endsWith(".cos.ap-shanghai.myqcloud.com") && parsed.pathname.startsWith("/skill-artifacts/")) {

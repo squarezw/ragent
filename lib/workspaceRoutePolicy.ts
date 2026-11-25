@@ -83,6 +83,7 @@ export const workspaceProxyRoutes = [
   "/api/chat/turns/[id]/stop",
   "/api/chat/turns/[id]/playback",
   "/api/chat/feedback",
+  "/api/chat/sessions/[id]/artifacts/[artifactId]/download",
   "/api/images/[filename]",
   "/api/uploads/convert-docx",
   "/api/uploads/convert-excel",

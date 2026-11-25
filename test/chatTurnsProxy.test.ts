@@ -146,6 +146,7 @@ test("start admission survives browser abort and preserves receipts/idempotency 
   const pending = proxy.proxyChatTurn(req, res, "start");
   req.emit("aborted");
   assert.equal(captured.options.signal.aborted, false);
+  assert.equal(captured.options.headers["X-Chat-Artifact-Links"], "session");
   release(Response.json({ run_id: "r1" }));
   await pending;
   const body = JSON.parse(captured.options.body);

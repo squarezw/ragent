@@ -1,3 +1,5 @@
+import { parseChatArtifactUrl } from "@/lib/chatResourcePreview";
+import { resolveChatArtifact } from "@/lib/chatArtifactRedirect";
 import { ossClient } from "@/lib/ossClient";
 import { requireAuth } from "@/lib/auth";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -35,7 +37,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const raw = req.query.url;
   if (typeof raw !== "string") return res.status(400).json({ error: "url is required" });
 
-  {
+  let target: URL | null;
+  if (parseChatArtifactUrl(raw)) {
+    target = await resolveChatArtifact(req, res, raw);
+    if (!target) return;
+  } else {
     const local = raw.startsWith("/api/oss/");
     const allowed = local || isAllowedArtifactUrl(raw);
     if (!allowed) return res.status(400).json({ error: "unsupported artifact URL" });
@@ -43,15 +49,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const key = decodeURIComponent(parsed.pathname.slice(local ? "/api/oss/".length : 1));
     const ctx = await (await import("@/lib/workspaceFiles")).requireWorkspaceObject(req,res,key);
     if (!ctx) return;
-  }
 
-  let resolved = raw;
-  if (raw.startsWith("/api/oss/") && /\.html?$/i.test(new URL(raw, "https://workspace.invalid").pathname)) {
-    try { resolved = (await ossClient.sign({ objectKey: decodeURIComponent(new URL(raw, "https://workspace.invalid").pathname.slice(9)) })).url; }
-    catch { return res.status(502).json({ error: "artifact unavailable" }); }
+    let resolved = raw;
+    if (raw.startsWith("/api/oss/") && /\.html?$/i.test(new URL(raw, "https://workspace.invalid").pathname)) {
+      try { resolved = (await ossClient.sign({ objectKey: decodeURIComponent(new URL(raw, "https://workspace.invalid").pathname.slice(9)) })).url; }
+      catch { return res.status(502).json({ error: "artifact unavailable" }); }
+    }
+    target = resolved !== raw ? new URL(resolved) : isAllowedArtifactUrl(raw);
+    if (!target) return res.status(400).json({ error: "unsupported artifact URL" });
   }
-  const target = resolved !== raw ? new URL(resolved) : isAllowedArtifactUrl(raw);
-  if (!target) return res.status(400).json({ error: "unsupported artifact URL" });
 
   try {
     const upstream = await fetch(target, {
