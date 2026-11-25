@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next";
+import { sessionToolUsageQuery, type SessionToolUsage } from "@/lib/sessionToolUsage";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
@@ -179,6 +180,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    let toolUsage: SessionToolUsage = { coverage: "unavailable", tools: [] };
+    if (detailsResult.rows.length && workspace.tenantId != null) {
+      try {
+        const result = await pool.query<SessionToolUsage>(sessionToolUsageQuery, [session.id, workspace.tenantId]);
+        toolUsage = result.rows[0] ?? toolUsage;
+      } catch (error: unknown) {
+        if ((error as { code?: string }).code !== "42P01") throw error;
+      }
+    }
+
     // 本会话显式调用过哪些 skill。
     //
     // 口径刻意窄：只统计 execute_skill / load_skill 两条**可观测**路径。
@@ -284,6 +295,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 cacheWriteTokens: detail.cache_write_tokens,
               },
       })),
+      toolUsage,
       skillsInvoked: skillsResult.rows.map((r: any) => ({
         skillName: r.skill_name,
         displayName: r.display_name ?? undefined,

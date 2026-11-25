@@ -1,4 +1,6 @@
 "use client";
+import { SessionToolSummary } from "./SessionToolSummary";
+import type { SessionToolUsage } from "@/lib/sessionToolUsage";
 import { useWorkspace } from "@/app/components/WorkspaceProvider";
 
 import { useState, useEffect, useDeferredValue } from "react";
@@ -132,6 +134,7 @@ interface SkillInvocation {
 interface SessionWithDetails extends Session {
   details: SessionDetail[];
   datasets?: Array<{ id: string; name: string }>;
+  toolUsage?: SessionToolUsage;
   skillsInvoked?: SkillInvocation[];
 }
 
@@ -982,6 +985,7 @@ export default function ChatSessionsPage() {
                                         {t("noSessionSummary")}
                                       </div>
                                     )}
+                                    <SessionToolSummary usage={selectedSession.toolUsage} />
                                     {selectedSession.datasets &&
                                       selectedSession.datasets.length > 0 && (
                                         <div>
