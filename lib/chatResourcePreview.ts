@@ -1,3 +1,10 @@
+/** Recognize only the canonical relative chat artifact route produced by the service. */
+export function parseChatArtifactUrl(raw: string) {
+  const match = /^\/api\/chat\/sessions\/([1-9]\d*)\/artifacts\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/download(?:\?([^#]*))?$/.exec(raw);
+  if (!match) return null;
+  return { path: raw.split("?")[0], filename: new URLSearchParams(match[3]).get("filename") };
+}
+
 export type PreviewResource =
   | { kind: "image"; url: string; alt?: string }
   | { kind: "url" | "dxf"; url: string }
@@ -23,23 +30,24 @@ export function toPreviewResource(
   if (!rawUrl) return null;
 
   try {
-    const local = rawUrl.startsWith("/api/oss/");
+    const artifact = parseChatArtifactUrl(rawUrl);
+    const local = Boolean(artifact) || rawUrl.startsWith("/api/oss/");
     const url = new URL(rawUrl, local ? "https://local.invalid" : undefined);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 
     const mediaKind = kind === "url"
       ? chatMediaKind(url.searchParams.get("filename") || url.searchParams.get("file") || url.pathname) || chatMediaKind(alt || "")
       : null;
-    if (mediaKind) return {kind: mediaKind, url: local ? url.pathname + url.search : url.href, ...(alt ? {filename: alt} : {})};
+    if (mediaKind) return {kind: mediaKind, url: local ? url.pathname + url.search : url.href, ...((artifact?.filename || alt) ? {filename: artifact?.filename || alt} : {})};
 
     // Only explicit supported file types enter the chat preview.
     if (kind === "url") {
-      const name = alt || url.searchParams.get("filename") || url.searchParams.get("file") || decodeURIComponent(url.pathname);
+      const name = artifact?.filename || alt || url.searchParams.get("filename") || url.searchParams.get("file") || decodeURIComponent(url.pathname);
       if (isChatDownloadOnly(name)) return null;
     }
     const href = local ? url.pathname + url.search : url.href;
-    if (kind === "url" && /\.dxf$/i.test(url.pathname)) return { kind: "dxf", url: href };
-    if (kind === "url" && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url.pathname)) return { kind: "image", url: href };
+    if (kind === "url" && /\.dxf$/i.test(artifact?.filename || url.pathname)) return { kind: "dxf", url: href };
+    if (kind === "url" && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(artifact?.filename || url.pathname)) return { kind: "image", url: href };
     return kind === "image"
       ? { kind, url: href, ...(alt ? { alt } : {}) }
       : { kind, url: href };
@@ -63,6 +71,7 @@ export function attachmentPreviewResource(file: { filename: string; url?: string
 
 /** All files outside the supported preview list use normal downloads in Chat. */
 export function isChatDownloadOnly(name: string, _mimetype = ""): boolean {
+  name = parseChatArtifactUrl(name)?.filename || name;
   if (chatMediaKind(name, _mimetype)) return false;
   try {
     return !/\.(html?|dxf|png|jpe?g|gif|webp|bmp|svg)$/i.test(decodeURIComponent(name.split(/[?#]/)[0]));

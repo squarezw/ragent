@@ -22,6 +22,7 @@ export async function proxyChatTurn(
     return reject(409, "business", "WORKSPACE_TENANT_REQUIRED", "Select a workspace to continue");
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(action === "start" ? { "X-Chat-Artifact-Links": "session" } : {}),
     "X-Workspace-Tenant-ID": tenant,
   };
   if (typeof req.headers.authorization === "string")
