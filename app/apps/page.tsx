@@ -51,6 +51,7 @@ import {
   Code,
   Sparkles,
   LayoutGrid,
+  Search,
   List,
 } from "lucide-react";
 import VisibilityIcon from "@/components/VisibilityIcon";
@@ -127,6 +128,8 @@ const platformIcons: Record<string, any> = {
   Android: Smartphone,
 };
 
+const APPS_PER_PAGE = 20;
+
 export default function AppsPage() {
   const router = useRouter();
   const { user } = useCurrentUser();
@@ -147,6 +150,9 @@ export default function AppsPage() {
   };
 
   const [apps, setApps] = useState<App[]>([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const tp = useTranslations("chatSessions");
   /** 超管的租户筛选。"all" = 不筛。 */
   const [tenantFilter, setTenantFilter] = useState<string>("all");
   const [createTenantId, setCreateTenantId] = useState("");
@@ -161,10 +167,15 @@ export default function AppsPage() {
    * 前端过滤改变不了任何人能拿到什么。
    */
   const visibleApps = useMemo(() => {
-    if (workspace.enabled || !isSuperAdmin || tenantFilter === "all") return apps;
-    if (tenantFilter === "none") return apps.filter((a) => !a.owner_tenant_id);
-    return apps.filter((a) => String(a.owner_tenant_id) === tenantFilter);
-  }, [apps, isSuperAdmin, tenantFilter, workspace.enabled]);
+    const query = search.trim().toLowerCase();
+    return apps.filter((app) => {
+      if (!workspace.enabled && isSuperAdmin && tenantFilter !== "all" &&
+          String(app.owner_tenant_id ?? "none") !== tenantFilter) return false;
+      return !query || [app.name, app.description, String(app.id)].some(
+        (value) => value?.toLowerCase().includes(query)
+      );
+    });
+  }, [apps, isSuperAdmin, tenantFilter, workspace.enabled, search]);
 
   /** 只在真的存在未归属应用时才给这个选项，免得挂一个永远为空的条目。 */
   const hasUnassigned = useMemo(() => apps.some((a) => !a.owner_tenant_id), [apps]);
@@ -183,18 +194,27 @@ export default function AppsPage() {
    * 更新时间排，同一租户的应用并不连续（新加坡分公司同时出现在第 2 和第 7 位），
    * 第 7 位那张就落到了上一个组头底下。组头对了、归属错了，比不分组更糟。
    */
-  const { renderApps, groupHeaders } = useMemo(() => {
+  const { renderApps: orderedApps, groupHeaders } = useMemo(() => {
     if (workspace.enabled || !isSuperAdmin || tenantFilter !== "all") {
       return { renderApps: visibleApps, groupHeaders: null };
     }
     const names = new Map(tenants.map((tn) => [tn.id, tn.name]));
     const groups = groupAppsByTenant(visibleApps, names, t("unassignedTenant"));
     const headers = new Map<number, { label: string; count: number }>();
+    let offset = 0;
     for (const g of groups) {
-      if (g.apps.length > 0) headers.set(g.apps[0].id, { label: g.label, count: g.apps.length });
+      g.apps.forEach((app, index) => {
+        if (index === 0 || (offset + index) % APPS_PER_PAGE === 0) {
+          headers.set(app.id, { label: g.label, count: g.apps.length });
+        }
+      });
+      offset += g.apps.length;
     }
     return { renderApps: groups.flatMap((g) => g.apps), groupHeaders: headers };
   }, [isSuperAdmin, tenantFilter, tenants, visibleApps, t, workspace.enabled]);
+  const pages = Math.max(1, Math.ceil(orderedApps.length / APPS_PER_PAGE));
+  const currentPage = Math.min(page, pages);
+  const renderApps = orderedApps.slice((currentPage - 1) * APPS_PER_PAGE, currentPage * APPS_PER_PAGE);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [wechatAgents, setWechatAgents] = useState<WechatAgent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -310,15 +330,28 @@ export default function AppsPage() {
   }, [dialogOpen, formData.visibility, modelOwnerTenantId]);
 
   // 定义加载函数（必须在 useEffect 之前）
+  const appsRequest = useRef(0);
   const loadApps = useCallback(async () => {
+    const request = ++appsRequest.current;
     try {
       setLoading(true);
-      const response = await axios.get("/api/v1/apps");
-      setApps(response.data.items || []);
+      // Search, tenant grouping and the embed picker share the full accessible list.
+      const items = new Map<number, App>();
+      let skip = 0;
+      while (true) {
+        const { data } = await axios.get<{ items: App[]; total: number }>("/api/v1/apps", {
+          params: { skip, limit: 100 },
+        });
+        if (request !== appsRequest.current) return;
+        for (const app of data.items) items.set(app.id, app);
+        skip += data.items.length;
+        if (!data.items.length || skip >= data.total) break;
+      }
+      setApps(Array.from(items.values()));
     } catch (error: any) {
       toast.error(error.response?.data?.detail || t("operationFailed"));
     } finally {
-      setLoading(false);
+      if (request === appsRequest.current) setLoading(false);
     }
   }, [t]);
 
@@ -644,12 +677,12 @@ export default function AppsPage() {
                     {t("totalApps", { count: visibleApps.length })}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {/* 租户筛选：仅超管可见。
                       非超管本来就只拿得到自己租户的应用（后端收窄），给他一个
                       只有一个选项的下拉是噪音。 */}
                   {!workspace.enabled && isSuperAdmin && tenants.length > 0 && (
-                    <Select value={tenantFilter} onValueChange={setTenantFilter}>
+                    <Select value={tenantFilter} onValueChange={(value) => { setTenantFilter(value); setPage(1); }}>
                       <SelectTrigger className="h-9 w-[180px]">
                         <SelectValue placeholder={t("filterByTenant")} />
                       </SelectTrigger>
@@ -666,6 +699,12 @@ export default function AppsPage() {
                       </SelectContent>
                     </Select>
                   )}
+                  <div className="relative min-w-0 w-44 max-w-full">
+                    <Search aria-hidden="true" className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <Input type="search" value={search} aria-label={t("searchEmployees")}
+                      placeholder={t("searchEmployees")} className="h-9 pl-8"
+                      onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
+                  </div>
                   <Button
                     variant={viewMode === "table" ? "default" : "outline"}
                     size="sm"
@@ -686,14 +725,14 @@ export default function AppsPage() {
                   否则用户会以为这个租户下的应用被删了。 */}
               {visibleApps.length === 0 ? (
                 <div className="py-16 text-center">
-                  <p className="text-sm text-muted-foreground">{t("noAppsForTenant")}</p>
+                  <p className="text-sm text-muted-foreground">{search.trim() ? t("noSearchResults") : t("noAppsForTenant")}</p>
                   <Button
                     variant="link"
                     size="sm"
                     className="mt-1"
-                    onClick={() => setTenantFilter("all")}
+                    onClick={() => { if (search.trim()) setSearch(""); else setTenantFilter("all"); setPage(1); }}
                   >
-                    {t("clearTenantFilter")}
+                    {search.trim() ? t("clearSearch") : t("clearTenantFilter")}
                   </Button>
                 </div>
               ) : viewMode === "table" ? (
@@ -1115,6 +1154,15 @@ export default function AppsPage() {
                     );
                   })}
                 </div>
+              )}
+              {pages > 1 && (
+                <nav aria-label={t("pagination")} className="mt-4 flex items-center justify-end gap-3 border-t pt-4">
+                  <Button variant="outline" size="sm" disabled={currentPage === 1}
+                    onClick={() => setPage(currentPage - 1)}>{tp("prevPage")}</Button>
+                  <span aria-live="polite" className="text-sm tabular-nums">{currentPage} / {pages}</span>
+                  <Button variant="outline" size="sm" disabled={currentPage === pages}
+                    onClick={() => setPage(currentPage + 1)}>{tp("nextPage")}</Button>
+                </nav>
               )}
             </>
           )}

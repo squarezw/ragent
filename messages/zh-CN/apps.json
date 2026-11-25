@@ -1,4 +1,8 @@
 {
+  "searchEmployees": "搜索数字员工",
+  "noSearchResults": "没有找到匹配的数字员工",
+  "clearSearch": "清空搜索",
+  "pagination": "数字员工列表分页",
   "startChat": "开始聊天",
   "lastUpdated": "更新时间",
   "title": "数字员工",
