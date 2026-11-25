@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentName } from "./DocumentName";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -239,8 +240,8 @@ export const FileList = ({
                 />
               </TableCell>
               <TableCell style={{ maxWidth: "28rem" }}>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">{file.originalname}</span>
+                <div className="flex w-[clamp(9rem,22vw,25rem)] max-w-full items-center gap-2">
+                  <DocumentName name={file.originalname} />
                   <Button
                     size="sm"
                     variant="ghost"
