@@ -18,6 +18,7 @@ async function details(
       error_message: "DeepSeek HTTP 400: unsupported input",
       error_code: "CHAT_STREAM_FAILED",
       raw_body: "private",
+      tool_steps: [{ name: "execute_skill", phase: "finished", ok: false, error_summary: "Exit code 2", detail: "example", stderr: "private" }],
     },
     {
       detail_id: 2,
@@ -174,4 +175,12 @@ test("history exposes turn-owned download cards with safe fields even after a fa
   assert.equal(first.skill_artifacts[0].url, "/api/chat/sessions/11/artifacts/00000000-0000-4000-8000-000000000001/download?filename=report.xlsx");
   assert.deepEqual(Object.keys(first.skill_artifacts[0]).sort(), ["filename", "id", "url"]);
   assert.equal(second.skill_artifacts.length, 0);
+});
+
+test("history allows the command and safe failure summary but excludes raw tool output", async () => {
+  const { body } = await details();
+  const [first] = body.details as { tool_steps: Record<string, unknown>[] }[];
+  assert.equal(first.tool_steps[0].error_summary, "Exit code 2");
+  assert.equal(first.tool_steps[0].detail, "example");
+  assert.equal(first.tool_steps[0].stderr, undefined);
 });

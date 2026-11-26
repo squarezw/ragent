@@ -13,6 +13,7 @@ export interface ToolStep {
   /** 实际执行的命令行。与 purpose 并列显示——自报意图和实际行为可能不符，
    *  只给前者就成了单方面的说法，用户没有地方能看出来 */
   detail?: string;
+  errorSummary?: string;
   /** undefined while running; true/false once the finished frame arrives. */
   ok?: boolean;
   startedAt: number;
@@ -94,6 +95,8 @@ export default function ToolActivity({
         <div className="mt-1 space-y-1 border-l pl-3 ml-1.5">
           {steps.map((s) => {
             const dur = (s.endedAt ?? now) - s.startedAt;
+              const error = s.ok === false ? s.errorSummary : undefined;
+              const expandable = Boolean(s.detail || error);
               const open = openDetails.has(s.id);
               const toggle = () =>
                 setOpenDetails((prev) => {
@@ -132,7 +135,7 @@ export default function ToolActivity({
                             {fmt(dur)}
                           </span>
                         )}
-                        {s.detail && (
+                        {expandable && (
                           <ChevronRight
                             className={`h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform ${
                               open ? "rotate-90" : ""
@@ -141,7 +144,7 @@ export default function ToolActivity({
                         )}
                       </>
                     );
-                    return s.detail ? (
+                    return expandable ? (
                       <button
                         type="button"
                         onClick={toggle}
@@ -159,6 +162,11 @@ export default function ToolActivity({
                     <code className="mt-0.5 ml-[18px] block whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground/60">
                       {s.detail}
                     </code>
+                  )}
+                  {open && error && (
+                    <p className="mt-1 ml-[18px] whitespace-pre-wrap break-words text-destructive">
+                      {t("activityError", { reason: error })}
+                    </p>
                   )}
                 </div>
               );

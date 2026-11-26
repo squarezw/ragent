@@ -108,3 +108,17 @@ test("中英文案齐全", () => {
   }
   assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort());
 });
+
+test("failed Skill summary stays on its own command after completion", async () => {
+  const failed = { name: "execute_skill", tool_call_id: "failed", detail: "tool 2>/dev/null", phase: "finished", ok: false, error_summary: "Exit code 2" };
+  const success = { ...failed, tool_call_id: "success", ok: true };
+  const page = mount({ active: [run({ tool_steps: [success, failed] })] });
+  await page.settle();
+  const live = page.find("MessageList")?.props.toolSteps;
+  assert.equal(live[0].errorSummary, undefined);
+  assert.equal(live[1].errorSummary, "Exit code 2");
+  page.emit(run({ cursor: 2, status: "completed", tool_steps: [success, failed] }));
+  const completed = page.find("MessageList")?.props.messages.at(-1).toolSteps;
+  assert.equal(completed[1].detail, "tool 2>/dev/null");
+  assert.equal(completed[1].errorSummary, "Exit code 2");
+});

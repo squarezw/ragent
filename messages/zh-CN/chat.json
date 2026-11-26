@@ -133,6 +133,7 @@
   "tokenCached": "缓存命中 {count}",
   "insufficientBalance": "可用积分不足，本次消息未能发送。请联系管理员补充积分后再试。",
   "activityRunning": "执行中",
+  "activityError": "失败原因：{reason}",
   "activityDone": "已完成",
   "resourcePreview": "资源预览",
   "previewRetry": "重新加载预览",

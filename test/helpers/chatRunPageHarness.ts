@@ -1,3 +1,4 @@
+import { turnArtifacts } from "../../lib/chatTurnArtifacts.ts";
 /** biome-ignore-all lint/suspicious/noExplicitAny: VM test harness models heterogeneous React and HTTP interfaces. */
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -141,6 +142,7 @@ export function mount(
     "@/app/components/WorkspaceProvider": { useWorkspace: () => ({ ready: true }) },
     "@/hooks/useCurrentUser": { useCurrentUser: () => ({ user: { id: actor } }) },
     "@/lib/qaBusinessError": { chatAdmissionNotice },
+    "@/lib/chatTurnArtifacts": { turnArtifacts },
     "@/lib/chatRun": { terminalRun, chatRunFailureNotice, chatRunErrorMessageKey },
     "@/lib/chatSse": { parseWorkspaceBindingWarning: () => null },
     "@/lib/knowledgeWrite": { parseKnowledgeWriteConfirmation },
