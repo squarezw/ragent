@@ -48,7 +48,10 @@ import {
   type PreviewResource,
 } from "@/lib/chatResourcePreview";
 
+import { turnArtifacts, type ChatTurnArtifact } from "@/lib/chatTurnArtifacts";
+
 interface Message {
+  skillArtifacts?: ChatTurnArtifact[];
   voice?: boolean;
   heardChars?: number;
   role: "user" | "assistant";
@@ -412,6 +415,7 @@ export default function ChatPage() {
             heardChars: boundary.current?.run_id === next.run_id ? boundary.current.heard_chars : undefined,
             error: next.status === "failed" ? chatRunFailureNotice(next.error, t) : undefined,
             detail_id: next.detail_id,
+            skillArtifacts: turnArtifacts(next.session_id, result.skill_artifacts),
             reference: (result.references ?? result.reference) as Message["reference"],
             segment_ids: Array.isArray(result.segment_ids) ? (result.segment_ids as number[]) : [],
             usage: normalizeTurnUsage(next.usage ?? result.usage),
@@ -602,6 +606,7 @@ export default function ChatPage() {
           historyMessages.push({
             role: "assistant",
             content: detail.answer || "",
+            skillArtifacts: turnArtifacts(sessionId, detail.skill_artifacts),
             voice: detail.interaction_mode === "voice",
             heardChars: detail.voice_heard_chars ?? undefined,
             error: detail.error ? chatRunFailureNotice(detail.error, t) : undefined,

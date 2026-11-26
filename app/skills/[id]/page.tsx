@@ -189,7 +189,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
         skill 没声明 env 模板时组件自己整块不渲染。
       */}
       {skill.is_executable === true && <SkillLoginStatePanel skillId={skill.id} />}
-      {skill.is_executable === true && <SkillUserEnvPanel skillId={skill.id} skillDisplayName={skill.display_name || skill.name} />}
+      {skill.is_executable === true && <SkillUserEnvPanel key={accessScope + ":" + skill.id} accessScope={accessScope} allowShared={skill.visibility !== "private"} skillId={skill.id} />}
 
       {/* 草稿 vs 已发布对照 */}
       {canViewContent && <SkillDiffDialog

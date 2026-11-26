@@ -7,7 +7,10 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { chatMediaKind, isChatDownloadOnly, toPreviewResource, type PreviewResource } from "@/lib/chatResourcePreview";
 
+import { relativeArtifactUrl, type ChatTurnArtifact } from "@/lib/chatTurnArtifacts";
+
 interface MarkdownRendererProps {
+  artifacts?: ChatTurnArtifact[];
   content: string;
   className?: string;
   highlightText?: string;
@@ -45,6 +48,7 @@ function highlightContent(text: string, searchText: string): React.ReactNode {
  */
 export function MarkdownRenderer({
   content,
+  artifacts,
   className = "",
   highlightText,
   onPreviewResource,
@@ -138,27 +142,35 @@ export function MarkdownRenderer({
               {renderWithHighlight(children)}
             </blockquote>
           ),
-          a: ({ node, href, onClick, ...props }) => (
-            <a
-              className="text-blue-500 underline hover:text-blue-400"
-              href={href ? workspaceUrl(href) : href}
-              download={onPreviewResource && isChatDownloadOnly(href || "") ? "" : undefined}
-              onClick={(event) => {
-                const label = event.currentTarget.textContent || "";
-                const resource = toPreviewResource("url", href, chatMediaKind(label) ? label : undefined);
-                if (resource && onPreviewResource) {
-                  event.preventDefault();
-                  onPreviewResource(resource);
-                  return;
-                }
-                onClick?.(event);
-              }}
-              rel="noopener noreferrer"
-              target="_blank"
-              {...props}
-            />
-          ),
+          a: ({ node, href, onClick, ...props }) => {
+            const resolved = relativeArtifactUrl(href, artifacts);
+            if (resolved === null) return <span>{props.children}</span>;
+            href = resolved ?? href;
+            return (
+              <a
+                className="text-blue-500 underline hover:text-blue-400"
+                href={href ? workspaceUrl(href) : href}
+                download={onPreviewResource && isChatDownloadOnly(href || "") ? "" : undefined}
+                onClick={(event) => {
+                  const label = event.currentTarget.textContent || "";
+                  const resource = toPreviewResource("url", href, chatMediaKind(label) ? label : undefined);
+                  if (resource && onPreviewResource) {
+                    event.preventDefault();
+                    onPreviewResource(resource);
+                    return;
+                  }
+                  onClick?.(event);
+                }}
+                rel="noopener noreferrer"
+                target="_blank"
+                {...props}
+              />
+            );
+          },
           img: ({ node, src, alt, className: imageClassName, ...props }) => {
+            const resolved = relativeArtifactUrl(typeof src === "string" ? src : undefined, artifacts);
+            if (resolved === null) return alt ? <span>{alt}</span> : null;
+            src = resolved ?? src;
             const resource = toPreviewResource("image", typeof src === "string" ? src : undefined, alt);
             const image = (
               // Chat content can reference arbitrary external image hosts, so it cannot use Next image optimization.
