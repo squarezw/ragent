@@ -35,11 +35,23 @@ const files = receipts.turnArtifacts(7, [
 test("attachment cards display compact file icons and names with no assistant text", () => {
   const html = renderToStaticMarkup(createElement(Cards, { artifacts: files, onPreviewResource() {} }));
   assert.doesNotMatch(html, /<img\b/);
-  assert.ok(html.includes("lark-qr.png"));
-  assert.ok(html.includes("<button"));
+  assert.ok(!html.includes("lark-qr.png"));
+
   assert.ok(html.includes(`href="${files[1].url}"`));
   assert.ok(html.includes('download="报价单.xlsx"'));
   assert.equal(renderToStaticMarkup(createElement(Cards, { artifacts: [] })), "");
+});
+
+test("cards show PDF, Word and Excel files and omit the container for other files", () => {
+  const render = names => renderToStaticMarkup(createElement(Cards, {
+    artifacts: names.map((filename, index) => ({ id: String(index), filename, url: "/files/" + filename })),
+  }));
+  const accepted = ["report.PDF", "归档/计划.Doc", "letter.docx", "book.xls", "book.XLSX", "book.xlsb", "template.dotx", "template.xltx"];
+  const rejected = ["qr.png", "data.csv", "script.js", "report.pdf.sh", "slides.pptx", "macro.xlsm"];
+  const html = render([...accepted, ...rejected]);
+  for (const name of accepted) assert.ok(html.includes(name), name);
+  for (const name of rejected) assert.ok(!html.includes(name), name);
+  assert.equal(render(rejected), "");
 });
 
 test("Markdown and sanitized HTML relative files resolve only against this message's receipts", () => {
