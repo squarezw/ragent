@@ -57,6 +57,8 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
+import ChatArtifactCards from "@/app/chat/components/ChatArtifactCards";
+import type { ChatTurnArtifact } from "@/lib/chatTurnArtifacts";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { getFileUrl } from "@/lib/ossUpload";
@@ -103,6 +105,7 @@ interface Session {
 }
 
 interface SessionDetail {
+  skill_artifacts?: ChatTurnArtifact[];
   id: number;
   sessionId: number;
   question: string;
@@ -894,13 +897,14 @@ export default function ChatSessionsPage() {
                                           )}
                                         </div>
                                       </div>
-                                      {detail.answer && (
+                                      {(detail.answer || !!detail.skill_artifacts?.length) && (
                                         <div>
                                           <div className="text-sm font-medium text-muted-foreground mb-1">
                                             {t("answer")}:
                                           </div>
                                           <div className="p-3 bg-muted rounded-md">
-                                            <MarkdownRenderer content={detail.answer} />
+                                            <MarkdownRenderer content={detail.answer} artifacts={detail.skill_artifacts} />
+                                            <ChatArtifactCards artifacts={detail.skill_artifacts} />
                                           </div>
 
                                           {/* 参考文件和引用显示 */}

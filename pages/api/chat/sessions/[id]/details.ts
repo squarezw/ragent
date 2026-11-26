@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { sessionToolUsageQuery, type SessionToolUsage } from "@/lib/sessionToolUsage";
+import { turnArtifacts } from "@/lib/chatTurnArtifacts";
 import pool from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { buildVisibilityScope, canViewOwner } from "@/lib/visibilityScope";
@@ -153,6 +154,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const detailsResult = await pool.query(detailsQuery, [id]);
 
+    const receipts = new Map<number, ReturnType<typeof turnArtifacts>>();
+    if (detailsResult.rows.length) {
+      try {
+        const result = await pool.query(`
+          SELECT d.id, jsonb_agg(jsonb_build_object('id', receipt.key, 'filename', receipt.value->>'name')
+                                ORDER BY receipt.value->>'name', receipt.key) AS files
+          FROM chat_session_detail d
+          CROSS JOIN LATERAL jsonb_each(
+            CASE WHEN jsonb_typeof(d.skill_artifacts) = 'object' THEN d.skill_artifacts ELSE '{}'::jsonb END
+          ) receipt
+          WHERE d.session_id = $1 AND d.skill_artifacts IS NOT NULL
+          GROUP BY d.id
+        `, [session.id]);
+        for (const row of result.rows) receipts.set(row.id, turnArtifacts(session.id, row.files));
+      } catch (error: unknown) {
+        // Older databases can still serve the conversation before the receipt migration.
+        if ((error as { code?: string }).code !== "42703") throw error;
+      }
+    }
+
     // Read only the sanitized terminal error projection after session authorization.
     // Old installations without the optional chat-run migration still serve history.
     const failedErrors = new Map<number, { message?: string; code?: string }>();
@@ -261,6 +282,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         answer: detail.answer,
         error: failedErrors.get(detail.id),
         attachments: normalizeSessionAttachments(detail.attachments),
+        skill_artifacts: receipts.get(detail.id) ?? [],
         submittedAt: detail.submitted_at,
         answeredAt: detail.answered_at,
         durationMs: detail.duration_ms,

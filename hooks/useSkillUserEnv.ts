@@ -14,7 +14,6 @@ const EMPTY_META: SkillUserEnvMeta = {
   configured_keys: [],
 };
 
-const EMPTY_ENV: SkillUserEnv = { env: {}, declared_keys: [], updated_at: null };
 /**
  * 未加载时的兜底必须是**模块级常量**，不能写 `?? {}` / `?? []`。
  * 后者每次渲染都是新引用，会让消费方按 env / declaredKeys 建行的 useEffect
@@ -32,14 +31,8 @@ const metaFetcher = async (url: string): Promise<SkillUserEnvMeta> => {
   }
 };
 
-/** 从未配过 = 没有行，不是错误 */
-const envFetcher = async (url: string): Promise<SkillUserEnv> => {
-  try {
-    return parseUserEnv((await axios.get(url, { suppressErrorToast: true } as never)).data);
-  } catch {
-    return EMPTY_ENV;
-  }
-};
+const envFetcher = async (url: string): Promise<SkillUserEnv> =>
+  parseUserEnv((await axios.get(url, { suppressErrorToast: true } as never)).data);
 
 function detailOf(error: unknown): string {
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
@@ -47,26 +40,32 @@ function detailOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * 个人环境变量数据层（迁移 041）。
- *
- * 两条请求：meta（是否可配置 + 键名，**无值**）与 env（自己那份，含值）。
- * 保存是**全量替换**：payload 里没有的键后端就删掉。
- *
- * 值只在 payload 与 SWR 缓存里存在——**任何分支都不得把它写进 console/埋点**，
- * 出错只取后端 detail（保存失败的 detail 是中文校验信息，可直接展示）。
- */
-export function useSkillUserEnv(skillId: number | null, enabled: boolean) {
-  const key = enabled && skillId ? skillId : null;
+export interface SharedEnv {
+  can_manage: boolean;
+  use_organization: boolean;
+  configured_keys: string[];
+  shareable_keys: string[];
+  revision: number;
+}
 
-  const meta = useSWR(key ? `/api/v1/skills/${key}/user-env/meta` : null, metaFetcher, {
+export function useSkillUserEnv(skillId: number | null, enabled: boolean, scope: string | null, allowShared: boolean) {
+  const key = enabled && scope && skillId ? skillId : null;
+
+  const meta = useSWR(key ? [`/api/v1/skills/${key}/user-env/meta`, scope] : null, ([url]) => metaFetcher(url), {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   });
   // 值只在确认可配置后才取，避免给不相关的 skill 拉一份凭据到浏览器内存
   const env = useSWR(
-    key && meta.data?.configurable ? `/api/v1/skills/${key}/user-env` : null,
-    envFetcher,
+    key && meta.data?.configurable ? [`/api/v1/skills/${key}/user-env`, scope] : null,
+    ([url]) => envFetcher(url),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+
+  const sharedUrl = `/api/v1/skills/${skillId}/shared-env`;
+  const shared = useSWR<SharedEnv>(
+    key && allowShared ? [sharedUrl, scope] : null,
+    async ([url]: [string, string]) => (await axios.get<SharedEnv>(url, { suppressErrorToast: true } as never)).data,
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
@@ -95,6 +94,10 @@ export function useSkillUserEnv(skillId: number | null, enabled: boolean) {
     declaredKeys: env.data?.declared_keys ?? meta.data?.declared_keys ?? EMPTY_KEYS,
     updatedAt: env.data?.updated_at ?? null,
     envLoading: env.isLoading,
+    envError: env.error,
+    reloadEnv: () => env.mutate(),
     saveEnv,
+    shared,
+    sharedUrl,
   };
 }

@@ -32,6 +32,8 @@ export const workspaceProxyRoutes = [
   "/api/v1/skills/[id]/tenant",
   "/api/v1/skills/[id]/user-env/meta",
   "/api/v1/skills/[id]/user-env",
+  "/api/v1/skills/[id]/shared-env",
+  "/api/v1/skills/[id]/shared-env/preferences",
   "/api/v1/skills/[id]/assets/[...path]",
   "/api/v1/skills/[id]/assets/archive",
   "/api/v1/skills/[id]/assets",

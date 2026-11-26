@@ -4,6 +4,8 @@ import ToolActivity, { type ToolStep } from "./ToolActivity";
 import { useTranslations } from "next-intl";
 import { Bot, FileSpreadsheet, FileText, FileType } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import ChatArtifactCards from "./ChatArtifactCards";
+import type { ChatTurnArtifact } from "@/lib/chatTurnArtifacts";
 import FeedbackUI from "@/app/chat/components/FeedbackUI";
 import ReferencesDisplay from "@/app/chat/components/ReferencesDisplay";
 import type { Attachment } from "@/app/chat/hooks/useFileAttachments";
@@ -28,6 +30,7 @@ function getFileIcon(mimetype?: string) {
 }
 
 interface Message {
+  skillArtifacts?: ChatTurnArtifact[];
   voice?: boolean;
   heardChars?: number;
   role: "user" | "assistant";
@@ -124,7 +127,7 @@ export default function MessageList({
               </div>
             </div>
           </div>
-        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error ? (
+        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error && !msg.skillArtifacts?.length ? (
           <p key={i} className="self-end text-xs text-muted-foreground">{t("voiceInterruptedBeforeReply")}</p>
         ) : (
           <div key={i} className="flex justify-start">
@@ -144,9 +147,11 @@ export default function MessageList({
                     </>}
                   </div> : <MarkdownRenderer
                     content={msg.content}
+                    artifacts={msg.skillArtifacts}
                     onPreviewResource={onPreviewResource}
                   />}
                 </div>
+                <ChatArtifactCards artifacts={msg.skillArtifacts} onPreviewResource={onPreviewResource} />
                 {msg.error && <p role="alert" className="mt-2 whitespace-pre-wrap break-words text-sm text-destructive">{msg.error}</p>}
                 <ReferencesDisplay
                   messageIndex={i}
@@ -230,6 +235,7 @@ export default function MessageList({
               <div className="break-words">
                 {streamingVoice ? <span className="whitespace-pre-wrap">{spokenText(streamingMessage)}</span> : <MarkdownRenderer
                   content={streamingMessage}
+                  artifacts={[]}
                   onPreviewResource={onPreviewResource}
                 />}
                 <span className="inline-flex items-center gap-1 ml-1 align-middle">

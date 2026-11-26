@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+/* @ts-expect-error Node runs this test directly and requires the .ts extension. */
+import { turnArtifacts } from "../lib/chatTurnArtifacts.ts";
 import { chatRunFailureNotice } from "../lib/chatRun.ts";
 
 async function details(
@@ -43,6 +45,8 @@ async function details(
             buildVisibilityScope: async () => ({ conditions: [], params: [], nextIndex: 1 }),
             canViewOwner: async () => options.allowed !== false,
           };
+        if (name === "@/lib/sessionToolUsage") return { sessionToolUsageQuery: "SELECT mocked_usage" };
+        if (name === "@/lib/chatTurnArtifacts") return { turnArtifacts };
         if (name === "@/lib/sessionAttachments") return { normalizeSessionAttachments: () => [] };
         if (name === "@/lib/db")
           return {
@@ -60,6 +64,9 @@ async function details(
                     throw Object.assign(new Error("missing table"), { code: "42P01" });
                   return { rows: errors };
                 }
+                if (sql.includes("jsonb_each")) return { rows: [{ id: 1, files: [
+                  { id: "00000000-0000-4000-8000-000000000001", filename: "dir/report.xlsx", source: "private storage" }
+                ] }] };
                 if (sql.includes("FROM chat_session_detail"))
                   return {
                     rows: [1, 2].map((id) => ({
@@ -158,4 +165,13 @@ test("assistant error notice is rendered as React text instead of markdown or HT
   );
   assert.match(list, /<p role="alert"[^>]*>\{msg.error\}<\/p>/);
   assert.doesNotMatch(list, /content=\{msg.error\}|dangerouslySetInnerHTML/);
+});
+
+test("history exposes turn-owned download cards with safe fields even after a failed answer", async () => {
+  const { body } = await details();
+  const [first, second] = body.details as { skill_artifacts: { id: string; filename: string; url: string }[] }[];
+  assert.equal(first.skill_artifacts[0].filename, "dir/report.xlsx");
+  assert.equal(first.skill_artifacts[0].url, "/api/chat/sessions/11/artifacts/00000000-0000-4000-8000-000000000001/download?filename=report.xlsx");
+  assert.deepEqual(Object.keys(first.skill_artifacts[0]).sort(), ["filename", "id", "url"]);
+  assert.equal(second.skill_artifacts.length, 0);
 });
