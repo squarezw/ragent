@@ -50,7 +50,22 @@ import {
 
 import { turnArtifacts, type ChatTurnArtifact } from "@/lib/chatTurnArtifacts";
 
+function projectToolSteps(steps: ChatRunSnapshot["tool_steps"], updatedAt: string): ToolStep[] {
+  return steps.map((step, index) => ({
+    id: typeof step.tool_call_id === "string" ? step.tool_call_id : index,
+    toolCallId: typeof step.tool_call_id === "string" ? step.tool_call_id : undefined,
+    label: String(step.display_name || step.skill || step.name || ""),
+    purpose: typeof step.purpose === "string" ? step.purpose : undefined,
+    detail: typeof step.detail === "string" ? step.detail : undefined,
+    errorSummary: step.name === "execute_skill" && step.phase === "finished" && step.ok === false && typeof step.error_summary === "string" ? step.error_summary : undefined,
+    startedAt: Date.parse(String(step.started_at || updatedAt)) || 0,
+    endedAt: step.ended_at ? Date.parse(String(step.ended_at)) : undefined,
+    ok: step.phase === "finished" ? step.ok !== false : undefined,
+  }));
+}
+
 interface Message {
+  toolSteps?: ToolStep[];
   skillArtifacts?: ChatTurnArtifact[];
   voice?: boolean;
   heardChars?: number;
@@ -381,18 +396,8 @@ export default function ChatPage() {
             return value ? [value] : [];
           })
         );
-        setToolSteps(
-          next.tool_steps.map((step, index) => ({
-            id: typeof step.tool_call_id === "string" ? step.tool_call_id : index,
-            toolCallId: typeof step.tool_call_id === "string" ? step.tool_call_id : undefined,
-            label: String(step.display_name || step.skill || step.name || ""),
-            purpose: typeof step.purpose === "string" ? step.purpose : undefined,
-            detail: typeof step.detail === "string" ? step.detail : undefined,
-            startedAt: Date.parse(String(step.started_at || next.updated_at)) || 0,
-            endedAt: step.ended_at ? Date.parse(String(step.ended_at)) : undefined,
-            ok: step.phase === "finished" ? step.ok !== false : undefined,
-          }))
-        );
+        const projectedSteps = projectToolSteps(next.tool_steps, next.updated_at);
+        setToolSteps(projectedSteps);
         setMessages((previous) => {
           const messages = previous.filter(
             (message) => !(message.role === "assistant" && message.detail_id === next.detail_id)
@@ -411,6 +416,7 @@ export default function ChatPage() {
           messages.push({
             role: "assistant",
             content,
+            toolSteps: projectedSteps,
             voice,
             heardChars: boundary.current?.run_id === next.run_id ? boundary.current.heard_chars : undefined,
             error: next.status === "failed" ? chatRunFailureNotice(next.error, t) : undefined,
@@ -606,6 +612,7 @@ export default function ChatPage() {
           historyMessages.push({
             role: "assistant",
             content: detail.answer || "",
+            toolSteps: projectToolSteps(detail.tool_steps ?? [], detail.updated_at ?? ""),
             skillArtifacts: turnArtifacts(sessionId, detail.skill_artifacts),
             voice: detail.interaction_mode === "voice",
             heardChars: detail.voice_heard_chars ?? undefined,

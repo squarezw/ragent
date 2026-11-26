@@ -176,11 +176,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Read only the sanitized terminal error projection after session authorization.
     // Old installations without the optional chat-run migration still serve history.
+    const ownedSteps = new Map<number, Record<string, unknown>[]>();
     const failedErrors = new Map<number, { message?: string; code?: string }>();
     if (detailsResult.rows.length > 0) {
       try {
         const runs = await pool.query(`
           SELECT DISTINCT ON (r.detail_id) r.detail_id, r.status,
+            ${String(session.user_id) === String(currentUserId) ? "r.projection->'tool_steps'" : "NULL"} AS tool_steps,
             r.projection->'error'->>'message' AS error_message,
             r.projection->'error'->>'code' AS error_code
           FROM chat_runs r
@@ -190,6 +192,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ORDER BY r.detail_id, r.updated_at DESC
         `, workspace.enabled ? [id, detailsResult.rows.map(detail => detail.id), workspace.tenantId] : [id, detailsResult.rows.map(detail => detail.id)]);
         for (const run of runs.rows) {
+          if (Array.isArray(run.tool_steps) && String(session.user_id) === String(currentUserId)) {
+            const fields = ["name", "phase", "ok", "display_name", "skill", "purpose", "detail", "tool_call_id", "started_at", "ended_at"];
+            ownedSteps.set(run.detail_id, run.tool_steps.filter((step: unknown) => step && typeof step === "object").map((step: Record<string, unknown>) => {
+              const row = Object.fromEntries(fields.filter(key => typeof step[key] === "string" || (key === "ok" && typeof step[key] === "boolean")).map(key => [key, step[key]]));
+              if (step.name === "execute_skill" && step.phase === "finished" && step.ok === false && typeof step.error_summary === "string") row.error_summary = step.error_summary;
+              return row;
+            }));
+          }
           if (run.status !== "failed") continue;
           failedErrors.set(run.detail_id, {
             message: typeof run.error_message === "string" ? run.error_message : undefined,
@@ -281,6 +291,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         question: detail.question,
         answer: detail.answer,
         error: failedErrors.get(detail.id),
+        tool_steps: ownedSteps.get(detail.id),
         attachments: normalizeSessionAttachments(detail.attachments),
         skill_artifacts: receipts.get(detail.id) ?? [],
         submittedAt: detail.submitted_at,

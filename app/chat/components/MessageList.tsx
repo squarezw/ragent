@@ -30,6 +30,7 @@ function getFileIcon(mimetype?: string) {
 }
 
 interface Message {
+  toolSteps?: ToolStep[];
   skillArtifacts?: ChatTurnArtifact[];
   voice?: boolean;
   heardChars?: number;
@@ -127,7 +128,7 @@ export default function MessageList({
               </div>
             </div>
           </div>
-        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error && !msg.skillArtifacts?.length ? (
+        ) : msg.voice && msg.heardChars != null && !spokenText(msg.content) && !msg.error && !msg.skillArtifacts?.length && !msg.toolSteps?.length ? (
           <p key={i} className="self-end text-xs text-muted-foreground">{t("voiceInterruptedBeforeReply")}</p>
         ) : (
           <div key={i} className="flex justify-start">
@@ -135,6 +136,7 @@ export default function MessageList({
               <div className="w-8 h-8 flex items-center justify-start flex-shrink-0">
                 <Bot className="w-4 h-4 text-success" />
               </div>
+              {Boolean(msg.toolSteps?.length) && <ToolActivity steps={msg.toolSteps!} running={false} />}
               <div className="py-3 min-w-0 w-full">
                 <div className="break-words">
                   {msg.voice ? <div className="whitespace-pre-wrap">

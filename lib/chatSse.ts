@@ -18,6 +18,7 @@ export interface ToolStatusEvent {
   purpose?: string;
   /** 实际执行的命令行。只有 execute_skill 会带 */
   detail?: string;
+  error_summary?: string;
   phase: "started" | "finished";
   ok?: boolean;
 }
@@ -46,6 +47,9 @@ export function parseToolStatusPayload(parsed: unknown): ToolStatusEvent | null 
   }
   if (typeof obj.ok === "boolean") {
     event.ok = obj.ok;
+  }
+  if (obj.name === "execute_skill" && obj.phase === "finished" && obj.ok === false && typeof obj.error_summary === "string") {
+    event.error_summary = obj.error_summary;
   }
   return event;
 }

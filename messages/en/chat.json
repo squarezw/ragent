@@ -133,6 +133,7 @@
   "tokenCached": "{count} cached",
   "insufficientBalance": "Insufficient credits to start this reply. Ask your administrator to add credits, then try again.",
   "activityRunning": "Working",
+  "activityError": "Failure reason: {reason}",
   "activityDone": "Done",
   "resourcePreview": "Resource preview",
   "previewRetry": "Retry preview",
