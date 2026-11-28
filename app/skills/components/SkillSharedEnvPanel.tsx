@@ -102,7 +102,7 @@ export default function SkillSharedEnvPanel({ url, config, update }: Props) {
                 <span className="break-all font-mono">{key}</span>
               </label>
               {draft.keys.includes(key) && (
-                <Input type="password" autoComplete="new-password" aria-label={t("sharedValue", { key })}
+                <Input type="text" spellCheck={false} autoComplete="off" aria-label={t("sharedValue", { key })}
                   placeholder={config.configured_keys.includes(key) ? t("sharedKeepValue") : t("envValuePlaceholder")}
                   value={draft.values[key] ?? ""} onChange={(e) => setDraft({
                     ...draft, values: { ...draft.values, [key]: e.target.value },
@@ -110,7 +110,15 @@ export default function SkillSharedEnvPanel({ url, config, update }: Props) {
               )}
             </div>
           ))}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            {config.configured_keys.length > 0 && (
+              <Button type="button" variant="ghost" size="sm" className="mr-auto text-destructive"
+                onClick={() => {
+                  if (window.confirm(t("sharedClearConfirm"))) {
+                    return save(url, { revision: draft.revision, keys: [], values: {} });
+                  }
+                }}>{t("sharedClear")}</Button>
+            )}
             <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(null)}>{tc("cancel")}</Button>
             <Button type="button" size="sm" disabled={busy || !hasValidValues}
               onClick={() => save(url, {

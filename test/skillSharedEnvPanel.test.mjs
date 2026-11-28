@@ -8,7 +8,7 @@ const code = ts.transpileModule(readFileSync(new URL("../app/skills/components/S
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 
-function setup(canManage) {
+function setup(canManage, confirm = () => false) {
   const calls = [];
   let index = 0;
   const state = [];
@@ -31,7 +31,7 @@ function setup(canManage) {
     sonner: { toast: { success() {} } },
     "@/lib/axios": { default: { put: async (url, body) => { calls.push({ url, body }); return { data: config }; } } },
   };
-  runInNewContext(code, { module, exports: module.exports, require: (key) => deps[key] });
+  runInNewContext(code, { window: { confirm }, module, exports: module.exports, require: (key) => deps[key] });
   function flatten(tree) {
     if (Array.isArray(tree)) return tree.flatMap(flatten);
     return tree?.props ? [tree, ...flatten(tree.props.children)] : [];
@@ -57,13 +57,35 @@ test("an admin rotates one value without overwriting the other saved value", asy
   const h = setup(true);
   h.render().find((el) => el.props.children === "sharedManage").props.onClick();
   const view = h.render();
-  const secretInputs = view.filter((el) => el.type === "input" && el.props.type === "password");
-  assert.deepEqual(secretInputs.map((el) => el.props.value), ["", ""]);
-  secretInputs[1].props.onChange({ target: { value: "replacement" } });
+  const valueInputs = view.filter((el) => el.type === "input" && el.props.type === "text");
+  assert.deepEqual(valueInputs.map((el) => el.props.value), ["", ""]);
+  valueInputs[1].props.onChange({ target: { value: "replacement" } });
   await h.render().find((el) => el.props.children === "sharedSave").props.onClick();
   const { body } = h.calls[0];
   assert.deepEqual(JSON.parse(JSON.stringify(body.values)), { TOKEN: "replacement" });
   assert.equal(body.revision, 4);
+});
+
+test("a newly selected organization variable is visible while typing", () => {
+  const h = setup(true);
+  h.config.configured_keys = ["ID"];
+  h.render().find((el) => el.props.children === "sharedManage").props.onClick();
+  h.render().find((el) => el.props.type === "checkbox" && !el.props.checked)
+    .props.onChange({ target: { checked: true } });
+  h.render().find((el) => el.props.placeholder === "envValuePlaceholder" && el.props.type === "text").props.onChange({ target: { value: "new-token" } });
+  assert.equal(h.render().find((el) => el.props.placeholder === "envValuePlaceholder").props.value, "new-token");
+  assert.equal(h.render().find((el) => el.props.placeholder === "sharedKeepValue").props.value, "");
+});
+
+test("clearing shared values requires confirmation and uses the edited revision", async () => {
+  for (const confirmed of [false, true]) {
+    const h = setup(true, () => confirmed);
+    h.render().find((el) => el.props.children === "sharedManage").props.onClick();
+    await h.render().find((el) => el.props.children === "sharedClear").props.onClick();
+    assert.deepEqual(JSON.parse(JSON.stringify(h.calls)), confirmed
+      ? [{ url: "/shared-env", body: { revision: 4, keys: [], values: {} } }]
+      : []);
+  }
 });
 
 test("private skill visibility disables the shared query", () => {

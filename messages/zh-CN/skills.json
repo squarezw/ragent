@@ -423,6 +423,8 @@
   "sharedAccessNotice": "仅共享允许成员在运行脚本时使用和读取的凭据。",
   "sharedValue": "{key} 的共享值",
   "sharedKeepValue": "留空保留已保存的值",
+  "sharedClear": "清空组织配置",
+  "sharedClearConfirm": "确定清空当前组织为此 Skill 保存的所有共享变量吗？成员下次运行时将使用各自的个人配置。",
   "sharedSave": "保存组织配置",
   "sharedUseOrg": "使用组织配置",
   "sharedActive": "组织提供",

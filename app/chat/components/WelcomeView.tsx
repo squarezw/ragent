@@ -111,7 +111,7 @@ export default function WelcomeView({
   const greeting = useTimeGreeting();
   const { user } = useCurrentUser();
 
-  const username = user?.username || user?.name || "";
+  const displayName = user?.nickname?.trim() || user?.username?.trim() || "";
 
   return (
     <div className={`flex flex-col items-center h-full min-h-0 w-full ${styles.welcome}`}>
@@ -126,7 +126,7 @@ export default function WelcomeView({
         {/* Greeting */}
         <h1 className={`${styles.welcomeIntro} text-2xl font-semibold text-foreground mb-8`}>
           {greeting}
-          {username && <span className="text-primary">, {username}</span>}
+          {displayName && <span className="text-primary">, {displayName}</span>}
         </h1>
 
         {/* Input Composite */}
