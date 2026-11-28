@@ -423,6 +423,8 @@
   "sharedAccessNotice": "Only share credentials that members may use and read when running this Skill.",
   "sharedValue": "Shared value for {key}",
   "sharedKeepValue": "Leave blank to keep the saved value",
+  "sharedClear": "Clear organization configuration",
+  "sharedClearConfirm": "Delete all shared values for this Skill in the current organization? Members will use their personal values on their next run.",
   "sharedSave": "Save organization configuration",
   "sharedUseOrg": "Use organization configuration",
   "sharedActive": "Provided by organization",
